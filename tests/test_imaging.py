@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 from PIL import Image, ImageCms, PngImagePlugin
@@ -35,6 +36,17 @@ class RawGeometryTests(unittest.TestCase):
         for f, e in enumerate(expected):
             with self.subTest(flip=f):
                 np.testing.assert_array_equal(imaging.orient(a, f), e)
+
+    def test_import_metadata_dimensions_follow_all_raw_orientations(self):
+        for flip in range(8):
+            with self.subTest(flip=flip), patch.object(server.rawpy, 'imread') as read, patch.object(server, 'preview_result', return_value={}):
+                read.return_value.__enter__.return_value.sizes = sizes(flip=flip)
+                result = server.import_image(b'synthetic RAW metadata test', 'fixture.NEF')
+                try:
+                    expected = (8, 6) if flip < 4 else (6, 8)
+                    self.assertEqual((result['width'], result['height']), expected)
+                finally:
+                    server.SESSIONS.pop(result['id'])['path'].unlink()
 
     def test_fractional_odd_crop_keeps_sampling_center(self):
         # Cell values are a linear coordinate ramp at each 2x2 cell's center.

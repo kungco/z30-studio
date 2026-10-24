@@ -153,7 +153,7 @@ def import_image(body, name):
         if session['raw']:
             with rawpy.imread(str(path)) as raw:
                 _, _, w, h = raw_crop(raw.sizes)
-                if raw.sizes.flip in (5, 6):
+                if raw.sizes.flip & 4:
                     w, h = h, w
             try:
                 with Image.open(path) as im:
