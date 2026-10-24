@@ -26,6 +26,8 @@ import automation
 import api_backend
 import spatial
 import zipfile
+import diagnostics
+import drafts
 from app_runtime import APP_VERSION, resource_root, data_root
 from imaging import raw_crop, raw_pixels, raster_linear, resize_linear, srgb_to_linear
 
@@ -40,7 +42,7 @@ SESSIONS = {}
 LOCK = threading.RLock()  # Serialize interactive work; background exports have one worker.
 PROJECT_TICKETS = {}
 PROJECT_READERS = {}
-SESSION_TTL = 30 * 60
+SESSION_TTL = 24 * 60 * 60
 MAX_UPLOAD = 150 * 1024 * 1024
 ICC = ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes()
 ADVISOR = codex_assist.Advisor()
@@ -48,6 +50,8 @@ AI_SETTINGS = api_backend.Settings()
 CACHE = ByteLRU(128 * 1024 * 1024)
 EXPORTS = None
 EXPORTS_LOCK = threading.RLock()
+STORES_LOCK = threading.RLock()
+STORES = {}
 DEFAULTS = dict(exposure=0, contrast=0, highlights=0, shadows=0,
                 temperature=0, tint=0, saturation=0, vibrance=0,
                 sharpen=0, rotation=0, crop='original', wb='camera') | spatial.DEFAULTS | {'lens_profile':'手动 / 未校准'}
@@ -76,6 +80,11 @@ def settings(data):
 
 
 def decode(session, wb, preview):
+    if session.get('asset'):
+        stamp = (session['path'].stat().st_mtime_ns, session['path'].stat().st_size)
+        if session.get('verified_stamp') != stamp:
+            get_drafts().asset_path(session['asset'], verify=True)
+            session['verified_stamp'] = stamp
     token = session.setdefault('_cache_id', session.get('meta', {}).get('id') or secrets.token_hex(16))
     cache_key = (token, 'linear', wb)
     if preview:
@@ -172,6 +181,74 @@ def get_exports():
         return EXPORTS
 
 
+def get_drafts():
+    root = data_root() / 'drafts'
+    with STORES_LOCK:
+        if root not in STORES:
+            STORES[root] = drafts.DraftStore(root)
+        return STORES[root]
+
+
+def recipe(data):
+    p = settings(data.get('settings', {}))
+    h = projects.history(data.get('history'), settings)
+    if h and h['states'][h['index']]['settings'] != p:
+        raise ValueError('草稿参数与历史不一致，未覆盖上次自动保存')
+    return dict(settings=p, history=h, preset=str(data.get('preset', 'custom'))[:32],
+                undo=projects.undo(data.get('undo'), settings), analysis=projects.analysis(data.get('analysis'), settings))
+
+
+def save_draft(data, owner):
+    ids = data.get('ids', [])
+    if not isinstance(ids, list) or len(ids) > projects.MAX_PHOTOS or any(not isinstance(k,str) for k in ids) or len(set(ids)) != len(ids):
+        raise ValueError('草稿照片数量或编号无效')
+    with LOCK:
+        if any(k not in SESSIONS or SESSIONS[k].get('owner') != owner for k in ids):
+            raise ValueError('草稿包含已关闭的照片；上次自动保存未改变')
+        sources = [SESSIONS[k] for k in ids]
+        recipes = [recipe(data.get('recipes', {}).get(k, {})) for k in ids]
+        for k in ids:
+            PROJECT_READERS[k] = PROJECT_READERS.get(k, 0) + 1
+    try:
+        store = get_drafts(); photos = []
+        for source, edit in zip(sources, recipes):
+            asset = source.get('asset') or store.add_asset(source['path'])
+            source['asset'] = asset
+            photos.append(dict(asset=asset, meta=source['meta'], thumbnail=source.get('thumbnail'), **edit))
+        document = dict(photos=photos, selected=max(0, min(len(photos)-1, int(data.get('selected', 0)))))
+        revision = store.save(data['draft_id'], document, data.get('expected_version', 0), data['request_id'], bool(data.get('snapshot', False)))
+        return dict(draft_id=data['draft_id'], revision=revision, saved=time.time())
+    finally:
+        with LOCK:
+            for k in ids:
+                PROJECT_READERS[k] -= 1
+                if not PROJECT_READERS[k]:
+                    del PROJECT_READERS[k]
+
+
+def restore_draft(data, owner):
+    store = get_drafts(); saved = store.load(data['draft_id'], data.get('revision'))
+    document = saved['document']; photos = document['photos']
+    # Check every original's presence before adding any sessions. Full checksums
+    # run lazily before decode; opening a 200-photo draft does not decode 200 NEFs.
+    paths = [store.asset_path(photo['asset']) for photo in photos]
+    edits = [recipe(photo) for photo in photos]
+    with LOCK:
+        if len(SESSIONS) + len(photos) > 1024 or sum(s.get('owner') == owner for s in SESSIONS.values()) + len(photos) > projects.MAX_PHOTOS:
+            raise ValueError('请先关闭当前工作区，再恢复这个草稿')
+        result = []
+        for photo, path, edit in zip(photos, paths, edits):
+            key = secrets.token_hex(16)
+            meta = {k: photo['meta'][k] for k in ('name','width','height','camera','raw','bytes')}
+            meta['id'] = key
+            session = dict(path=path, name=meta['name'], raw=meta['raw'], cache={}, owner=owner,
+                           persistent=True, asset=photo['asset'], meta=meta, thumbnail=photo.get('thumbnail'), last_seen=time.monotonic())
+            SESSIONS[key] = session
+            result.append(meta | edit | dict(image=photo.get('thumbnail'), thumbnail=photo.get('thumbnail')))
+        return dict(photos=result, selected=document['selected'], draft_id=saved['id'], revision=saved['revision'],
+                    restored_revision=saved['restored_revision'])
+
+
 def data_url(im):
     return 'data:image/jpeg;base64,' + base64.b64encode(image_bytes(im, quality=90)).decode()
 
@@ -184,9 +261,11 @@ def preview_result(session, p, include_before=False):
         return dict(cached)
     arr = decode(session, p['wb'], True)
     im = develop(arr, p)
+    if not session.get('thumbnail'):
+        thumb = im.copy(); thumb.thumbnail((240, 240)); session['thumbnail'] = data_url(thumb)
     a = np.asarray(im)
     hist = [np.histogram(a[:, :, c], bins=128, range=(0, 256))[0].tolist() for c in range(3)]
-    result = dict(image=data_url(im), histogram=hist, width=im.width, height=im.height)
+    result = dict(image=data_url(im), histogram=hist, width=im.width, height=im.height, thumbnail=session['thumbnail'])
     result['quality'] = quality_checks.measure(im)
     if include_before:
         base = DEFAULTS | {'rotation': p['rotation'], 'crop': p['crop']}
@@ -220,7 +299,8 @@ def release_photo(key):
     ADVISOR.cancel_source(key)
     CACHE.remove_source(key)
     session['cache'].clear()
-    session['path'].unlink(missing_ok=True)
+    if not session.get('persistent'):
+        session['path'].unlink(missing_ok=True)
 
 
 def reap_sessions(now=None):
@@ -243,15 +323,19 @@ def release_project(ticket):
                 del PROJECT_READERS[key]
 
 
-def import_image(body, name, owner=None):
+def import_image(body, name, owner=None, make_preview=True):
     ext = Path(name).suffix.lower()
     if ext not in ('.nef', '.jpg', '.jpeg', '.png'):
         raise ValueError('请选择 NEF、JPG 或 PNG 照片')
     reap_sessions()
-    if sum(s.get('owner') == owner for s in SESSIONS.values()) >= 8:
-        raise ValueError('当前已打开 8 张照片，请移除照片后再导入')
-    if len(SESSIONS) >= 32:
+    if sum(s.get('owner') == owner for s in SESSIONS.values()) >= projects.MAX_PHOTOS:
+        raise ValueError('当前已打开 256 张照片，请分组编辑')
+    if len(SESSIONS) >= 1024:
         raise ValueError('本机照片会话已达上限，请关闭不用的照片或等待过期会话回收')
+    if sum(s['meta']['bytes'] for s in SESSIONS.values() if s.get('owner') == owner) + len(body) > projects.PROJECT_LIMIT:
+        raise ValueError('当前工作区原片超过 8 GiB，请分组编辑')
+    if shutil.disk_usage(TEMP.name).free < len(body) + 256 * 1024 ** 2:
+        raise ValueError('本机临时存储空间不足，请先释放磁盘空间')
     key = secrets.token_hex(16)
     path = Path(TEMP.name) / (key + ext)
     path.write_bytes(body)
@@ -275,7 +359,7 @@ def import_image(body, name, owner=None):
                     raise ValueError('图像超过 8000 万像素限制')
         session['meta'] = dict(id=key, name=name, width=w, height=h, camera=model,
                                raw=session['raw'], bytes=len(body))
-        result = preview_result(session, DEFAULTS, True)
+        result = preview_result(session, DEFAULTS, True) if make_preview else {}
         session['meta'].update(color_policy=session.get('color_policy', 'RAW → linear sRGB'),
                                warnings=session.get('color_warnings', []))
         SESSIONS[key] = session
@@ -347,6 +431,20 @@ class Handler(BaseHTTPRequestHandler):
         if route == '/api/health':
             return self.json(dict(app='Z30 Studio', version=APP_VERSION, rawpy=rawpy.__version__,
                                   libraw='.'.join(map(str, rawpy.libraw_version)), cache=CACHE.stats()))
+        if route == '/api/diagnostics':
+            return self.send(diagnostics.bundle(data_root(), APP_VERSION), 'application/zip',
+                             headers={'Content-Disposition': 'attachment; filename="Z30-diagnostics.zip"'})
+        if route == '/api/drafts' or route.startswith('/api/drafts/'):
+            try:
+                store = get_drafts()
+                if route == '/api/drafts':
+                    return self.json(store.list())
+                parts = route.split('/')
+                if len(parts) == 5 and parts[4] == 'versions':
+                    return self.json({'versions': store.version_list(parts[3])})
+                raise ValueError('草稿接口不存在')
+            except (ValueError, OSError) as exc:
+                return self.json({'error': str(exc)}, 400)
         if route.startswith('/api/projects/download/'):
             ticket = route.rsplit('/', 1)[-1]
             with LOCK:
@@ -395,7 +493,8 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 queue = get_exports()
                 if route == '/api/exports':
-                    return self.json({'jobs': queue.list(), 'storage_bytes': queue.disk_bytes(), 'limit_bytes': queue.max_bytes})
+                    return self.json({'jobs': queue.list(), 'storage_bytes': queue.disk_bytes(), 'limit_bytes': queue.max_bytes,
+                                      'recovery_warnings': queue.recovery_warnings})
                 parts = route.split('/')
                 key = parts[3]
                 job = queue.get(key)
@@ -429,6 +528,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({'error': '建议任务不存在，请重新生成'}, 404)
         files = {'/': ('index.html', 'text/html; charset=utf-8'),
                  '/app.js': ('app.js', 'application/javascript; charset=utf-8'),
+                 '/draft-save.js': ('draft-save.js', 'application/javascript; charset=utf-8'),
                  '/model-settings.js': ('model-settings.js', 'application/javascript; charset=utf-8'),
                  '/batch-grade.js': ('batch-grade.js', 'application/javascript; charset=utf-8'),
                  '/history.js': ('history.js', 'application/javascript; charset=utf-8'),
@@ -446,7 +546,10 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError('页面会话编号无效')
         if not 0 < size <= projects.PROJECT_LIMIT:
             self.close_connection = True
-            return self.json({'error': '项目为空或超过 512 MiB'}, 413)
+            return self.json({'error': '项目为空或超过 8 GiB'}, 413)
+        if shutil.disk_usage(TEMP.name).free < size * 3 + 256 * 1024 ** 2:
+            self.close_connection = True
+            return self.json({'error': '打开项目需临时解包空间，当前磁盘可用空间不足'}, 413)
         path = Path(TEMP.name) / (secrets.token_hex(16)+'.z30proj')
         imported = []
         try:
@@ -458,14 +561,15 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError('项目上传不完整')
                     out.write(chunk); remaining -= len(chunk)
             with projects.read_project(path, TEMP.name, settings) as document, LOCK:
-                if sum(x.get('owner') == owner for x in SESSIONS.values()) + len(document['photos']) > 8:
-                    raise ValueError('打开项目后超过 8 张，请先移除照片')
+                if sum(x.get('owner') == owner for x in SESSIONS.values()) + len(document['photos']) > projects.MAX_PHOTOS:
+                    raise ValueError('打开项目后超过 256 张，请先移除照片')
                 photos = []
                 for photo in document['photos']:
                     name = str(photo['name']).replace('\\', '/').split('/')[-1][:200]
-                    result = import_image(photo['staged'].read_bytes(), name, owner)
+                    eager = len(document['photos']) <= 8 or len(photos) == int(document.get('selected',0))
+                    result = import_image(photo['staged'].read_bytes(), name, owner, make_preview=eager)
                     key = result['id']; imported.append(key)
-                    preview = preview_result(SESSIONS[key], photo['settings'], True)
+                    preview = preview_result(SESSIONS[key], photo['settings'], True) if eager else {}
                     photos.append(preview | SESSIONS[key]['meta'] | dict(settings=photo['settings'], history=photo.get('history'),
                                   preset=photo.get('preset','custom'), analysis=photo.get('analysis'), undo=photo.get('undo')))
                 return self.json({'photos': photos, 'selected': max(0,min(len(photos)-1,int(document.get('selected',0))))})
@@ -497,6 +601,20 @@ class Handler(BaseHTTPRequestHandler):
             owner = self.headers.get('X-Z30-Client')
             if owner is not None and (len(owner) != 32 or any(c not in '0123456789abcdef' for c in owner)):
                 raise ValueError('无效的页面会话编号')
+            if route.startswith('/api/drafts/'):
+                if owner is None:
+                    raise ValueError('页面会话编号缺失')
+                data = json.loads(body)
+                if route == '/api/drafts/save':
+                    return self.json(save_draft(data, owner))
+                if route == '/api/drafts/restore':
+                    return self.json(restore_draft(data, owner))
+                if route == '/api/drafts/delete':
+                    with LOCK:
+                        protected = [s['asset'] for s in SESSIONS.values() if s.get('asset')]
+                        get_drafts().delete(data['draft_id'], protected)
+                    return self.json({'ok': True})
+                raise ValueError('草稿接口不存在')
             if route in ('/api/ai/config','/api/ai/test'):
                 data=json.loads(body)
                 if route=='/api/ai/test':
@@ -508,8 +626,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json(AI_SETTINGS.save(data))
             if route == '/api/projects/prepare':
                 data = json.loads(body); ids = data.get('ids')
-                if not isinstance(ids, list) or not 1 <= len(ids) <= 8 or len(set(ids)) != len(ids):
-                    raise ValueError('请选择 1–8 张不同照片')
+                if not isinstance(ids, list) or not 1 <= len(ids) <= projects.MAX_PHOTOS or len(set(ids)) != len(ids):
+                    raise ValueError('请选择 1–256 张不同照片')
                 with LOCK:
                     reap_sessions()
                     if len(PROJECT_TICKETS) >= 8:
@@ -535,7 +653,7 @@ class Handler(BaseHTTPRequestHandler):
                     if route.endswith('heartbeat'):
                         return self.json({'ids': [k for k, _ in owned], 'ttl_seconds': SESSION_TTL})
                     recipes = data.get('recipes', {})
-                    if not isinstance(recipes, dict) or len(recipes) > 8:
+                    if not isinstance(recipes, dict) or len(recipes) > projects.MAX_PHOTOS:
                         raise ValueError('恢复参数格式无效')
                     photos = []
                     for key, session in owned:
@@ -543,8 +661,10 @@ class Handler(BaseHTTPRequestHandler):
                         p = settings(recipe.get('settings', {}))
                         if not session['raw']:
                             p['wb'] = 'camera'
-                        preview = preview_result(session, p, True)
-                        item = preview | session['meta'] | {'settings': p, 'previewWidth': preview['width'], 'previewHeight': preview['height']}
+                        eager = len(owned) <= 8 or key == data.get('selected', owned[0][0])
+                        preview = preview_result(session, p, True) if eager else dict(image=session.get('thumbnail'))
+                        item = preview | session['meta'] | {'settings': p, 'thumbnail':session.get('thumbnail'),
+                                'previewWidth': preview.get('width'), 'previewHeight': preview.get('height')}
                         item['history'] = projects.history(recipe.get('history'), settings)
                         if recipe.get('undo'):
                             item['undo'] = {'settings': settings(recipe['undo'].get('settings', {})), 'preset': recipe['undo'].get('preset', 'custom')}
@@ -555,9 +675,9 @@ class Handler(BaseHTTPRequestHandler):
                 queue = get_exports()
                 if route == '/api/exports/create':
                     ids = data.get('ids')
-                    if (not isinstance(ids, list) or not 1 <= len(ids) <= 8 or
+                    if (not isinstance(ids, list) or not 1 <= len(ids) <= projects.MAX_PHOTOS or
                             any(not isinstance(x, str) for x in ids) or len(set(ids)) != len(ids)):
-                        raise ValueError('请选择 1 到 8 张不同照片')
+                        raise ValueError('请选择 1 到 256 张不同照片')
                     p = settings(data.get('settings', {}))
                     fmt = data.get('format', 'JPEG')
                     if fmt not in FORMATS:
@@ -569,7 +689,16 @@ class Handler(BaseHTTPRequestHandler):
                         if any(key not in SESSIONS or SESSIONS[key].get('owner') != owner for key in ids):
                             return self.json({'error': '部分照片会话已关闭，请重新选择'}, 410)
                         sources = [SESSIONS[key] for key in ids]
+                        for source_id in ids:
+                            PROJECT_READERS[source_id] = PROJECT_READERS.get(source_id, 0) + 1
+                    try:
                         key = queue.submit(sources, p, fmt, max(60, min(100, int(data.get('quality', 95)))), protect)
+                    finally:
+                        with LOCK:
+                            for source_id in ids:
+                                PROJECT_READERS[source_id] -= 1
+                                if not PROJECT_READERS[source_id]:
+                                    del PROJECT_READERS[source_id]
                     return self.json({'job': key}, 202)
                 action = {'/api/exports/retry': queue.retry, '/api/exports/cancel': queue.cancel,
                           '/api/exports/delete': queue.delete}.get(route)
@@ -650,6 +779,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(content, {'JPEG': 'image/jpeg', 'PNG': 'image/png', 'TIFF16': 'image/tiff'}[fmt],
                                      headers={'Content-Disposition': "attachment; filename*=UTF-8''" + name})
                 return self.json({'error': '接口不存在'}, 404)
+        except drafts.Conflict as exc:
+            self.json({'error': str(exc)}, 409)
         except (ValueError, TypeError, KeyError) as exc:
             self.json({'error': str(exc)}, 400)
         except rawpy.LibRawError:
@@ -677,7 +808,7 @@ def create_server(port=8730):
         return LocalHTTPServer(('127.0.0.1', 0), Handler)
 
 
-def serve(server):
+def serve(server, shutdown_phase=None):
     stop_reaper = threading.Event()
     def maintain_sessions():
         while not stop_reaper.wait(60):
@@ -691,6 +822,8 @@ def serve(server):
     finally:
         shutdown_started = time.monotonic()
         def note(message):
+            if shutdown_phase:
+                shutdown_phase(message)
             logging.info('%s (shutdown %.2fs)', message, time.monotonic() - shutdown_started)
         note('Stopping session maintenance')
         stop_reaper.set(); reaper.join(timeout=2)

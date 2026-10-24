@@ -19,7 +19,7 @@ INPUTS = {'.nef', '.jpg', '.jpeg', '.png'}
 
 
 class ExportQueue:
-    def __init__(self, root, exporter, max_jobs=20, max_bytes=1024 ** 3, shutdown_timeout=5.0):
+    def __init__(self, root, exporter, max_jobs=20, max_bytes=20 * 1024 ** 3, shutdown_timeout=5.0):
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self.owner_file = (self.root / '.owner.lock').open('a+b')
@@ -41,8 +41,12 @@ class ExportQueue:
         self.shutdown_timeout = max(0.0, float(shutdown_timeout))
         self.lock = threading.RLock()
         self.jobs = {}
+        self.recovery_warnings = []
         self.readers = {}
         self.stopped = False
+        self.preparing = {}
+        self._shutdown_started = threading.Lock()
+        self._shutdown_saved = threading.Event()
         self._work = queue.Queue()
         self._stop_signalled = False
         self._owner_lock = threading.Lock()
@@ -56,7 +60,7 @@ class ExportQueue:
                 job = json.loads(path.read_text(encoding='utf8'))
                 if self._folder(job['id']) != path.parent.resolve() or job['format'] not in FORMATS:
                     continue
-                if not 1 <= len(job['items']) <= 8:
+                if not 1 <= len(job['items']) <= 256:
                     continue
                 if any(x['index'] != i or x['extension'] not in INPUTS for i, x in enumerate(job['items'])):
                     continue
@@ -64,15 +68,37 @@ class ExportQueue:
                        for i, x in enumerate(job['items'])):
                     continue
                 job['worker_active'] = False
-                if job['state'] in ('queued', 'running'):
+                recovered = job['state'] in ('queued', 'running', 'interrupted')
+                if recovered:
                     job['state'] = 'interrupted'
                     job['error'] = '上次导出被中断；可从本机快照重试'
-                    for item in job['items']:
-                        if item['state'] == 'running':
-                            item['state'] = 'pending'
+                    job['recovered_at'] = time.time()
+                for item in job['items']:
+                    source = path.parent / f"input-{item['index']}{item['extension']}"
+                    try:
+                        with source.open('rb') as file:
+                            valid = hashlib.file_digest(file, 'sha256').hexdigest() == item['sha256']
+                    except OSError:
+                        valid = False
+                    if not valid:
+                        item.update(state='error', error='原片快照校验失败；请重新导入原片')
+                        job.update(state='error', error='导出快照损坏；未自动执行')
+                    elif item['state'] == 'running':
+                        item['state'] = 'pending'
+                    elif item['state'] == 'done':
+                        output = path.parent / item.get('output', f"output-{item['index']}.{FORMATS[job['format']]}")
+                        valid_output = output.is_file() and output.stat().st_size > 0
+                        if valid_output and item.get('output_sha256'):
+                            with output.open('rb') as file:
+                                valid_output = hashlib.file_digest(file, 'sha256').hexdigest() == item['output_sha256']
+                        if not valid_output:
+                            item.update(state='pending', error='结果文件丢失；可重试')
+                            job.update(state='interrupted', error='结果文件丢失；可从快照重试')
+                if recovered or job['state'] in ('interrupted', 'error'):
                     self._save(job)
                 self.jobs[job['id']] = job
             except (OSError, ValueError, KeyError, TypeError):
+                self.recovery_warnings.append('有一个导出任务记录无法读取；未自动执行，请导出诊断并保留本机任务目录')
                 continue  # Never run an incomplete/unrecognized disk manifest.
         self.worker = threading.Thread(target=self._work_loop, name='z30-export', daemon=True)
         self.worker.start()
@@ -91,6 +117,8 @@ class ExportQueue:
                 finally:
                     self._work.task_done()
         finally:
+            if self.stopped:
+                self._shutdown_saved.wait()
             self._release_owner()
 
     def _release_owner(self):
@@ -122,7 +150,9 @@ class ExportQueue:
     def _save(self, job):
         folder = self._folder(job['id'])
         temp = folder / 'manifest.json.tmp'
-        temp.write_text(json.dumps(job, ensure_ascii=False, allow_nan=False), encoding='utf8')
+        with temp.open('w', encoding='utf8') as file:
+            file.write(json.dumps(job, ensure_ascii=False, allow_nan=False))
+            file.flush(); os.fsync(file.fileno())
         os.replace(temp, folder / 'manifest.json')
 
     def disk_bytes(self):
@@ -136,38 +166,50 @@ class ExportQueue:
         return total
 
     def submit(self, sources, settings, fmt, quality, protect):
-        if fmt not in FORMATS or not 1 <= len(sources) <= 8:
-            raise ValueError('导出格式或批量数量无效（1–8 张）')
+        if fmt not in FORMATS or not 1 <= len(sources) <= 256:
+            raise ValueError('导出格式或批量数量无效（1–256 张）')
         total = sum(Path(x['path']).stat().st_size for x in sources)
         with self.lock:
             if self.stopped:
                 raise ValueError('后台导出服务已停止')
-            if len(self.jobs) >= self.max_jobs or total > 512 * 1024 ** 2 or self.disk_bytes() + total > self.max_bytes:
+            if len(self.jobs) + len(self.preparing) >= self.max_jobs or total > 8 * 1024 ** 3 or self.disk_bytes() + total + sum(self.preparing.values()) > self.max_bytes:
                 raise ValueError('本机导出快照空间或任务数已达上限，请先删除旧任务')
             key = secrets.token_hex(16); folder = self._folder(key)
             folder.mkdir()
             job = dict(id=key, state='queued', created=time.time(), format=fmt, quality=quality,
                        protect=bool(protect), settings=dict(settings), items=[])
-            try:
-                for i, source in enumerate(sources):
-                    extension = Path(source['path']).suffix.lower()
-                    if extension not in INPUTS:
-                        raise ValueError('不支持此快照格式')
-                    copied = folder / f'input-{i}{extension}'
-                    shutil.copyfile(source['path'], copied)
-                    with copied.open('rb') as file:
-                        digest = hashlib.file_digest(file, 'sha256').hexdigest()
-                    name = source['name'].replace('\\', '/').split('/')[-1].replace('\x00', '')[:200]
-                    job['items'].append(dict(index=i, name=name, extension=extension,
-                                             raw=extension == '.nef', state='pending', sha256=digest))
+            self.preparing[key] = total
+        try:
+            for i, source in enumerate(sources):
+                extension = Path(source['path']).suffix.lower()
+                if extension not in INPUTS:
+                    raise ValueError('不支持此快照格式')
+                copied = folder / f'input-{i}{extension}'
+                digest = hashlib.sha256()
+                with Path(source['path']).open('rb') as src, copied.open('wb') as dst:
+                    while chunk := src.read(1024 * 1024):
+                        if self.stopped:
+                            raise ValueError('服务正在停止，未提交未完成的快照')
+                        dst.write(chunk); digest.update(chunk)
+                    dst.flush(); os.fsync(dst.fileno())
+                name = source['name'].replace('\\', '/').split('/')[-1].replace('\x00', '')[:200]
+                job['items'].append(dict(index=i, name=name, extension=extension,
+                                        raw=extension == '.nef', state='pending', sha256=digest.hexdigest()))
+            with self.lock:
+                if self.stopped:
+                    raise ValueError('服务正在停止，未提交未完成的快照')
                 self._save(job)
                 self.jobs[key] = job
                 self._work.put(key)
-            except Exception:
+        except Exception:
+            with self.lock:
                 self.jobs.pop(key, None)
-                shutil.rmtree(folder)
-                raise
-            return key
+            shutil.rmtree(folder)
+            raise
+        finally:
+            with self.lock:
+                self.preparing.pop(key, None)
+        return key
 
     def get(self, key):
         with self.lock:
@@ -265,14 +307,18 @@ class ExportQueue:
                     data, applied, quality = self.exporter(source, item['raw'], params, job['format'], job['quality'], job['protect'])
                     if self.disk_bytes() + len(data) > self.max_bytes:
                         raise ValueError('本机任务空间不足，请删除旧任务后重试')
-                    partial.write_bytes(data)
+                    output_digest = hashlib.sha256(data).hexdigest()
+                    output_size = len(data)
+                    with partial.open('wb') as file:
+                        file.write(data); file.flush(); os.fsync(file.fileno())
                     del data
                     with self.lock:
                         if job['state'] != 'running' or self.stopped:
                             return
                         output = f"output-{item['index']}.{FORMATS[job['format']]}"
                         os.replace(partial, folder / output)
-                        item.update(state='done', output=output, applied_settings=applied, quality=quality)
+                        item.update(state='done', output=output, output_sha256=output_digest, output_bytes=output_size,
+                                    applied_settings=applied, quality=quality)
                         item.pop('error', None); self._save(job)
                 except Exception as exc:
                     with self.lock:
@@ -303,16 +349,34 @@ class ExportQueue:
                 self._save(job)
 
     def shutdown(self, timeout=None):
-        """Bound process exit; the current single encode may finish after this returns."""
+        """Bound the whole call, including contended locks / slow manifest storage.
+
+        An independent launcher watchdog bounds the process if native code stalls.
+        Unflushed queued/running manifests are recovered on next startup.
+        """
+        deadline = time.monotonic() + (self.shutdown_timeout if timeout is None else max(0., float(timeout)))
+        self.stopped = True  # Late publication is barred even while self.lock is busy.
+        if self._shutdown_started.acquire(blocking=False):
+            threading.Thread(target=self._interrupt, name='z30-export-stop', daemon=True).start()
+        self._shutdown_saved.wait(max(0., deadline - time.monotonic()))
+        if threading.current_thread() is not self.worker:
+            self.worker.join(max(0., deadline - time.monotonic()))
+
+    def _interrupt(self):
+        try:
+            self._persist_interrupted()
+        finally:
+            self._shutdown_saved.set()
+
+    def _persist_interrupted(self):
         with self.lock:
-            self.stopped = True
             for job in self.jobs.values():
                 if job['state'] in ('running', 'queued'):
                     job.update(state='interrupted', error='服务已关闭；可从本机快照重试')
                     try:
                         self._save(job)
                     except OSError:
-                        pass
+                        logging.warning('Could not checkpoint interrupted export; restart recovery will validate its last manifest')
             if not self._stop_signalled:
                 self._stop_signalled = True
                 while True:
@@ -323,12 +387,6 @@ class ExportQueue:
                     else:
                         self._work.task_done()
                 self._work.put(None)
-        if threading.current_thread() is not self.worker:
-            self.worker.join(self.shutdown_timeout if timeout is None else max(0.0, float(timeout)))
-            if not self.worker.is_alive():
-                self._release_owner()
-        else:
-            self._release_owner()
 
 
 def write_zip(target, entries, report):

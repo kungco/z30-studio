@@ -13,6 +13,9 @@ import time
 import urllib.parse
 import urllib.request
 import zipfile
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from shutdown_watchdog import wait_for_exit
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 
 import numpy as np
@@ -48,9 +51,9 @@ def main():
         env=dict(os.environ,Z30_DATA_DIR=str(data),PATH=os.path.join(os.environ['SystemRoot'],'System32'))
         for key in ('PYTHONPATH','PYTHONHOME','PYTHONSTARTUP'):env.pop(key,None)
         owner=secrets.token_hex(16)
-        process=None;stop=None;url=None
+        process=None;stop=None;url=None;watchdog_pid=None
         def start(index):
-            nonlocal process,stop,url
+            nonlocal process,stop,url,watchdog_pid
             ready=root/f'ready{index}.json';stop=root/f'stop{index}.signal'
             process=subprocess.Popen([str(exe),'--headless','--no-browser','--port','0','--ready-file',str(ready),'--stop-file',str(stop)],cwd=cwd,env=env)
             deadline=time.monotonic()+60
@@ -58,7 +61,8 @@ def main():
                 if process.poll() is not None:raise RuntimeError('EXE exited: '+str(process.returncode))
                 if time.monotonic()>deadline:raise TimeoutError('EXE startup timed out')
                 time.sleep(.1)
-            url=json.loads(ready.read_text(encoding='utf8'))['url']
+            startup=json.loads(ready.read_text(encoding='utf8'))
+            url=startup['url'];watchdog_pid=startup.get('watchdog_pid')
         def end(index=None):
             if process and process.poll() is None:
                 stop.write_text('stop',encoding='ascii')
@@ -70,6 +74,8 @@ def main():
                 except subprocess.TimeoutExpired:
                     report['shutdowns'].append(dict(cycle=index,seconds=round(time.monotonic()-started,3),timeout=True))
                     process.kill();process.wait();raise
+                finally:
+                    wait_for_exit(watchdog_pid)
         def get(route):
             request=urllib.request.Request(url+route,headers={'X-Z30-Client':owner})
             with urllib.request.urlopen(request,timeout=120) as response:return response.read()
@@ -163,13 +169,18 @@ def main():
             report['python_removed_from_PATH']=True
             report['unicode_and_space_paths']=True
             report['exe_sha256']=hashlib.sha256(exe.read_bytes()).hexdigest()
-        except Exception:
-            args.out.parent.mkdir(parents=True,exist_ok=True)
-            for name in ('launcher.log','shutdown-stacks.log'):
-                log=data/'logs'/name
-                if log.exists():args.out.with_name(args.out.stem+'-'+name).write_bytes(log.read_bytes())
+        except Exception as exc:
+            report['failed'] = type(exc).__name__
             raise
-        finally:end()
+        finally:
+            try:
+                end()
+            finally:
+                args.out.parent.mkdir(parents=True,exist_ok=True)
+                for name in ('launcher.log','shutdown-stacks.log','shutdown-watchdog.log'):
+                    log=data/'logs'/name
+                    if log.exists():args.out.with_name(args.out.stem+'-'+name).write_bytes(log.read_bytes())
+                args.out.write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf8')
     args.out.parent.mkdir(parents=True,exist_ok=True)
     args.out.write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf8')
     print(json.dumps(report,ensure_ascii=False,indent=2))

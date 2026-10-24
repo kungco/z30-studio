@@ -13,6 +13,32 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @unittest.skipUnless(os.name == 'nt', 'Windows launcher process')
 class LauncherShutdownTests(unittest.TestCase):
+    def test_independent_watchdog_observes_stop_even_without_parent_shutdown_log(self):
+        from shutdown_watchdog import wait_for_exit
+        with tempfile.TemporaryDirectory(prefix='z30-independent-watchdog-') as folder:
+            root=Path(folder);ready=root/'ready.json';stop=root/'stop.signal'
+            code=('import sys,time,json,os;from pathlib import Path;import shutdown_watchdog as w;'
+                  'state,watch,event=w.launch(Path(sys.argv[1]),Path(sys.argv[2]),4.,2.);'
+                  'Path(sys.argv[3]).write_text(json.dumps({"watchdog_pid":watch.pid}));time.sleep(60)')
+            process=subprocess.Popen([sys.executable,'-c',code,str(root),str(stop),str(ready)],cwd=ROOT)
+            watchdog_pid=None
+            try:
+                deadline=time.monotonic()+20
+                while not ready.exists():
+                    self.assertIsNone(process.poll())
+                    if time.monotonic()>deadline:self.fail('watchdog was not ready')
+                    time.sleep(.05)
+                watchdog_pid=json.loads(ready.read_text())['watchdog_pid']
+                stop.write_text('stop');started=time.monotonic()
+                self.assertEqual(process.wait(10),3)
+                self.assertLess(time.monotonic()-started,8)
+                text=(root/'shutdown-watchdog.log').read_text(encoding='utf8')
+                self.assertIn('stop observed independently',text)
+                self.assertIn('waiting for shutdown acknowledgement',text)
+            finally:
+                if process.poll() is None:process.kill();process.wait()
+                wait_for_exit(watchdog_pid)
+
     def test_headless_stop_file_exits_with_recorded_shutdown_phases(self):
         with tempfile.TemporaryDirectory(prefix='z30-shutdown-test-') as folder:
             root = Path(folder)
@@ -29,7 +55,8 @@ class LauncherShutdownTests(unittest.TestCase):
                 deadline = time.monotonic() + 30
                 while not ready.exists():
                     if process.poll() is not None:
-                        self.fail(f'launcher exited before ready: {process.returncode}')
+                        log = data/'logs'/'launcher.log'
+                        self.fail(f'launcher exited before ready: {process.returncode}\n' + (log.read_text(encoding='utf8') if log.exists() else 'no log'))
                     if time.monotonic() > deadline:
                         self.fail('launcher did not become ready')
                     time.sleep(.05)

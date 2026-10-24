@@ -2,6 +2,7 @@ import hashlib
 import io
 import json
 from pathlib import Path
+from unittest.mock import patch
 import tempfile
 import threading
 import time
@@ -167,6 +168,28 @@ class ExportQueueTests(unittest.TestCase):
         self.queue(lambda *args: None)
         with self.assertRaises(ValueError):
             ExportQueue(self.root / 'jobs', lambda *args: None)
+
+    def test_shutdown_deadline_includes_contended_lock_and_slow_manifest_write(self):
+        q = self.queue(lambda *args: (b'output',{},None), shutdown_timeout=.1)
+        entered,release=threading.Event(),threading.Event()
+        def hold_lock():
+            with q.lock:entered.set();release.wait(3)
+        thread=threading.Thread(target=hold_lock);thread.start();self.assertTrue(entered.wait(2))
+        started=time.monotonic();q.shutdown();elapsed=time.monotonic()-started
+        self.assertLess(elapsed,.8);self.assertTrue(q.stopped)
+        release.set();thread.join(3);self.assertTrue(q.closed.wait(3))
+
+    def test_restart_marks_missing_completed_results_and_damaged_inputs_for_user_action(self):
+        q=self.queue(lambda *args:(b'output',{},None))
+        key=q.submit([self.source()],{},'PNG',95,False);self.wait(q,key);q.shutdown()
+        (q.root/key/'output-0.png').unlink()
+        recovered=self.queue(lambda *args:(b'retry',{},None))
+        self.assertEqual(recovered.get(key)['state'],'interrupted')
+        self.assertEqual(recovered.get(key)['items'][0]['state'],'pending')
+        recovered.shutdown();(q.root/key/'input-0.png').unlink()
+        damaged=self.queue(lambda *args:self.fail('must not run automatically'))
+        self.assertEqual(damaged.get(key)['state'],'error')
+        self.assertIn('校验',damaged.get(key)['items'][0]['error'])
 
     def test_changed_snapshot_is_rejected_on_retry(self):
         q = self.queue(lambda *args: (_ for _ in ()).throw(OSError('retry later')))

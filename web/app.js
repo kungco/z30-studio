@@ -1,6 +1,7 @@
 'use strict';
 const $ = id => document.getElementById(id);
 let aiProvider=null;
+var draftSaver=null,draftsReady=false;
 let clientId;
 try{clientId=sessionStorage.getItem('z30-client');if(!/^[a-f0-9]{32}$/.test(clientId||'')){clientId=crypto.randomUUID().replaceAll('-','');sessionStorage.setItem('z30-client',clientId);}}
 catch{clientId=crypto.randomUUID().replaceAll('-','');}
@@ -11,7 +12,8 @@ function persistWorkspace(){
   const recipes={};for(const f of files)recipes[f.id]={settings:f.settings,preset:f.preset,undo:f.aiUndo,history:f.history?.snapshot(),
    pending:f.autoPending?{base:f.autoPending.base,requestId:f.autoPending.requestId}:null};
   sessionStorage.setItem('z30-workspace',boundedWorkspace({selected:current?.id,recipes}));
- }catch{/* Manual recipe download remains available if browser storage is disabled. */}
+ }catch{/* The server draft remains available if browser storage is disabled. */}
+ if(draftsReady&&draftSaver)draftSaver.schedule();
 }
 
 const defaults = {exposure:0,contrast:0,highlights:0,shadows:0,temperature:0,tint:0,saturation:0,vibrance:0,sharpen:0,rotation:0,crop:'original',wb:'camera',denoise_luma:0,denoise_chroma:0,lens_k1:0,lens_k2:0,lens_red:0,lens_blue:0,vignette:0,lens_profile:'手动 / 未校准',masks:[]};
@@ -57,12 +59,12 @@ function syncLabels(){syncHistory();const p=current?current.settings:defaults;sl
 async function api(path,data,binary=false,extra={},options={}){if(['/api/codex/suggest','/api/codex/auto'].includes(path))data={...data,backend_revision:data.backend_revision??aiProvider?.revision};const r=await localFetch(path,{method:'POST',headers:{'Content-Type':binary?'application/octet-stream':'application/json','X-Z30-Request':'1',...extra},body:binary?data:JSON.stringify(data),...options});if(!r.ok){let message;try{message=(await r.json()).error;}catch{message=`处理失败 (${r.status})`;}throw Object.assign(Error(message),{status:r.status,retryable:r.status>=500||r.status===408||r.status===429});}return r;}
 function histogram(hist){const c=$('histogram'),ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#2b2d2f';ctx.lineWidth=1;[.25,.5,.75].forEach(t=>{ctx.beginPath();ctx.moveTo(t*c.width,0);ctx.lineTo(t*c.width,c.height);ctx.stroke();});if(!hist)return;const peak=Math.max(1,...hist.flat());ctx.globalCompositeOperation='screen';['#b65e56','#599173','#5c83ae'].forEach((color,ch)=>{ctx.beginPath();ctx.moveTo(0,c.height);hist[ch].forEach((n,i)=>ctx.lineTo(i*c.width/127,c.height-(Math.log1p(n)/Math.log1p(peak))*c.height*.92));ctx.lineTo(c.width,c.height);ctx.closePath();ctx.fillStyle=color+'90';ctx.fill();});ctx.globalCompositeOperation='source-over';}
 function drawLibrary(){$('fileList').replaceChildren();files.forEach(f=>{const card=document.createElement('div');card.className='filecard'+(current===f?' selected':'');const b=document.createElement('button');b.className='selectfile';b.title=f.name;const img=new Image();img.src=f.thumb;img.alt=f.name;const name=document.createElement('strong');name.textContent=f.name;const sub=document.createElement('small');sub.textContent=`${f.raw?'NEF RAW':'IMAGE'} · ${(f.bytes/1024/1024).toFixed(1)} MB`;b.append(img,name,sub);b.onclick=()=>selectFile(f);const remove=document.createElement('button');remove.className='remove';remove.textContent='×';remove.setAttribute('aria-label','移除 '+f.name);remove.onclick=()=>removeFile(f);card.append(b,remove);$('fileList').append(card);});$('count').textContent=String(files.length).padStart(2,'0');$('libraryHint').hidden=files.length>0;}
-function selectFile(f){current=f;revision++;showingBefore=false;$('beforeLabel').hidden=true;$('empty').hidden=!!f;$('imageWrap').hidden=!f;setEnabled();syncLabels();drawLibrary();if(!f){$('filename').textContent='尚未选择照片';$('filetype').textContent='RAW WORKSPACE';$('imageMeta').textContent='为 NEF 照片而设计';$('renderState').textContent='准备就绪';histogram();return;}$('filename').textContent=f.name;$('filetype').textContent=f.raw?'NEF RAW':'IMAGE';$('imageMeta').textContent=`${f.camera} · ${f.width} × ${f.height} · sRGB`;$('preview').src=f.image;histogram(f.histogram);$('qualityStatus').textContent=f.quality?.message||'等待画质检查';schedulePreview(0);}
+function selectFile(f){for(const other of files){if(other!==f){other.image=other.thumb;other.before=null;other.histogram=null;}}current=f;revision++;showingBefore=false;$('beforeLabel').hidden=true;$('empty').hidden=!!f;$('imageWrap').hidden=!f;setEnabled();syncLabels();drawLibrary();if(!f){$('filename').textContent='尚未选择照片';$('filetype').textContent='RAW WORKSPACE';$('imageMeta').textContent='为 NEF 照片而设计';$('renderState').textContent='准备就绪';histogram();return;}$('filename').textContent=f.name;$('filetype').textContent=f.raw?'NEF RAW':'IMAGE';$('imageMeta').textContent=`${f.camera} · ${f.width} × ${f.height} · sRGB`;$('preview').src=f.image||f.thumb||'';histogram(f.histogram);$('qualityStatus').textContent=f.quality?.message||'等待画质检查';schedulePreview(0);}
 async function removeFile(f){if(exportBusy||importBusy)return;try{await api('/api/close',{id:f.id});files.splice(files.indexOf(f),1);if(current===f)selectFile(files[0]||null);else drawLibrary();persistWorkspace();}catch(e){toast(e.message);}}
-async function importFiles(list){if(importBusy||exportBusy){toast('请等待当前处理完成');return;}const incoming=Array.from(list);if(!incoming.length)return;importBusy=true;setEnabled();let succeeded=0;const colorWarnings=[];for(const file of incoming){if(files.length>=8){toast('最多同时打开 8 张照片，请先移除照片');break;}if(!/\.(nef|jpg|jpeg|png)$/i.test(file.name)){toast('不支持 '+file.name+'，请选择 NEF、JPG 或 PNG');continue;}if(file.size>150*1024*1024){toast(file.name+' 超过 150 MB');continue;}busy(true,'正在解码 '+file.name+'…');try{const r=await api('/api/open',file,true,{'X-Filename':encodeURIComponent(file.name)});const d=await r.json();colorWarnings.push(...(d.warnings||[]));const f={...d,settings:cloneEdit(defaults),preset:'neutral',thumb:d.image};f.history=new EditHistory(f.settings,f.preset);files.push(f);selectFile(f);succeeded++;}catch(e){toast(file.name+'：'+e.message);}}importBusy=false;setEnabled();busy(false);if(succeeded)toast(`已导入 ${succeeded} 张照片，原文件保持不变`+(colorWarnings.length?"；"+[...new Set(colorWarnings)].join("；"):""));if(previewWanted)runPreview();$('fileInput').value='';}
+async function importFiles(list){if(importBusy||exportBusy){toast('请等待当前处理完成');return;}const incoming=Array.from(list);if(!incoming.length)return;importBusy=true;setEnabled();let succeeded=0;const colorWarnings=[];for(const file of incoming){if(files.length>=256){toast('最多同时打开 256 张照片，请先移除照片');break;}if(!/\.(nef|jpg|jpeg|png)$/i.test(file.name)){toast('不支持 '+file.name+'，请选择 NEF、JPG 或 PNG');continue;}if(file.size>150*1024*1024){toast(file.name+' 超过 150 MB');continue;}busy(true,'正在解码 '+file.name+'…');try{const r=await api('/api/open',file,true,{'X-Filename':encodeURIComponent(file.name)});const d=await r.json();colorWarnings.push(...(d.warnings||[]));const f={...d,settings:cloneEdit(defaults),preset:'neutral',thumb:d.thumbnail||d.image};f.history=new EditHistory(f.settings,f.preset);files.push(f);selectFile(f);succeeded++;}catch(e){toast(file.name+'：'+e.message);}}importBusy=false;setEnabled();busy(false);if(succeeded)toast(`已导入 ${succeeded} 张照片，原文件保持不变`+(colorWarnings.length?"；"+[...new Set(colorWarnings)].join("；"):""));if(previewWanted)runPreview();$('fileInput').value='';}
 function schedulePreview(delay=180){recordEdit();revision++;persistWorkspace();previewWanted=true;clearTimeout(previewTimer);previewTimer=setTimeout(runPreview,delay);$('renderState').textContent='等待更新…';}
 async function runPreview(){if(previewRunning||importBusy||exportBusy||!current)return;previewRunning=true;previewWanted=false;const f=current,rev=revision;busy(true);const p={...f.settings};try{const d=await(await api('/api/preview',{id:f.id,settings:p,before:true})).json();if(rev===revision&&current===f){f.image=d.image;f.before=d.before;f.histogram=d.histogram;f.previewWidth=d.width;f.previewHeight=d.height;if(!showingBefore)$('preview').src=d.image;else $('preview').src=d.before;histogram(d.histogram);$('qualityStatus').textContent=d.quality?.message||'未发现明显的输出异常';$('renderState').textContent=`已更新 · 预览 ${d.width} × ${d.height}`;}}catch(e){toast(e.message);$('renderState').textContent='预览失败';}finally{previewRunning=false;if(!importBusy&&!exportBusy)busy(false);if(previewWanted)runPreview();}}
-function compare(on){if(!current)return;showingBefore=on;$('preview').src=on?current.before:current.image;$('beforeLabel').hidden=!on;$('compare').classList.toggle('on',on);}
+function compare(on){if(!current)return;showingBefore=on;$('preview').src=(on?current.before:current.image)||current.thumb||'';$('beforeLabel').hidden=!on;$('compare').classList.toggle('on',on);}
 ['importTop','importSide','importEmpty'].forEach(id=>$(id).onclick=()=>$('fileInput').click());
 $('fileInput').onchange=e=>importFiles(e.target.files);
 document.querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>{if(!current)return;current.settings=applyGlobalPreset(current.settings,defaults,presets[b.dataset.preset]);current.preset=b.dataset.preset;syncLabels();schedulePreview(0);});
@@ -227,7 +229,7 @@ $('autoUndo').onclick=undoAI;
 setEnabled();syncLabels();histogram();
 
 const jobLabels={queued:'排队中',running:'正在导出',done:'已完成',partial:'部分完成',error:'失败，可重试',cancelled:'已取消',interrupted:'上次中断，可重试'};
-let jobsTimer=null,jobsLoading=false;
+let jobsTimer=null,jobsLoading=false,recoveryNotified=false;
 async function jobAction(action,id){
  try{await api('/api/exports/'+action,{job:id});await refreshExportJobs();}
  catch(e){toast(e.message);}
@@ -237,6 +239,8 @@ async function refreshExportJobs(){
  jobsLoading=true;clearTimeout(jobsTimer);
  try{
   const response=await localFetch('/api/exports');const data=await response.json();if(!response.ok)throw Error(data.error||'无法读取后台任务');
+  const interrupted=data.jobs.filter(j=>j.state==='interrupted'||j.recovered_at);
+  if((interrupted.length||data.recovery_warnings?.length)&&!recoveryNotified){recoveryNotified=true;$('exportRecovery').hidden=false;$('exportRecovery').textContent=`检测到 ${interrupted.length} 个上次中断的导出；已校验本机快照，请检查后重试未完成项。`;toast('上次导出被中断，可在后台任务中检查并重试');if(data.recovery_warnings?.length)$('exportRecovery').textContent+=' '+data.recovery_warnings.join('；');$('jobsDialog').showModal();}
   const active=data.jobs.filter(j=>j.state==='running'||j.state==='queued'||j.worker_active).length;
   $('jobsTop').textContent=active?'后台任务 · '+active:'后台任务';
   $('jobsStorage').textContent=`本机快照与结果 ${(data.storage_bytes/1048576).toFixed(1)} MiB / ${(data.limit_bytes/1048576).toFixed(0)} MiB；${data.jobs.length} 个任务`;
@@ -315,7 +319,7 @@ const gradeIO={
   // Invalidate a pending old preview before publishing the verified new image.
   revision++;clearTimeout(previewTimer);previewWanted=false;showingBefore=false;
   Object.assign(f,{image:preview.image,before:preview.before,histogram:preview.histogram,quality:preview.quality});
-  $('beforeLabel').hidden=true;$('preview').src=f.image;histogram(f.histogram);
+  $('beforeLabel').hidden=true;$('preview').src=f.image||f.thumb||'';histogram(f.histogram);
   $('qualityStatus').textContent=preview.quality.message;
   $('renderState').textContent=`AI 自动调色已应用 · 预览 ${preview.width} × ${preview.height}`;
   syncLabels();
@@ -357,19 +361,19 @@ setEnabled();
 async function restoreWorkspace(){
  const saved=savedWorkspace();importBusy=true;setEnabled();
  try{
-  const data=await(await api('/api/sessions/restore',{recipes:saved.recipes||{}})).json();
+  const data=await(await api('/api/sessions/restore',{recipes:saved.recipes||{},selected:saved.selected})).json();
   for(const photo of data.photos){
    const recipe=saved.recipes?.[photo.id]||{};
-   const f={...photo,preset:recipe.preset||'custom',thumb:photo.image};
+   const f={...photo,preset:recipe.preset||'custom',thumb:photo.thumbnail||photo.image};
    f.history=new EditHistory(f.settings,f.preset,photo.history);
    if(photo.undo)f.aiUndo=photo.undo;
    if(recipe.pending?.requestId)f.autoPending={source:f,base:recipe.pending.base,requestId:recipe.pending.requestId,revision:-1,recoverOnly:true};
    files.push(f);
   }
   selectFile(files.find(f=>f.id===saved.selected)||files[0]||null);
-  if(!files.length&&Object.keys(saved.recipes||{}).length)toast('照片会话已过期或服务已重启，请打开此前保存的项目；也可重新导入原片并载入参数。');
+  if(!files.length){draftSaver.reset();await showDrafts(true);}else{try{const d=JSON.parse(sessionStorage.getItem('z30-draft-state')||'null');if(d)draftSaver.reset(d.id,d.version);}catch{}}
  }catch(e){toast('恢复照片会话失败：'+e.message);}
- finally{importBusy=false;setEnabled();if(previewWanted)runPreview();}
+ finally{importBusy=false;draftsReady=true;setEnabled();if(previewWanted)runPreview();}
 }
 restoreWorkspace();
 setInterval(()=>api('/api/sessions/heartbeat',{}).catch(()=>{}),30000);
@@ -415,10 +419,10 @@ $('saveProject').onclick=async()=>{
 $('openProject').onclick=()=>$('projectInput').click();
 $('projectInput').onchange=async e=>{
  const file=e.target.files[0];if(!file)return;
- if(file.size>512*1024*1024){toast('项目超过 512 MiB');return;}
+ if(file.size>8*1024*1024*1024){toast('项目超过 8 GiB');return;}
  importBusy=true;setEnabled();
  try{const data=await(await api('/api/projects/open',file,true)).json();const added=[];
-  for(const photo of data.photos){const f={...photo,thumb:photo.image};f.history=new EditHistory(f.settings,f.preset,photo.history);if(photo.undo)f.aiUndo=photo.undo;
+  for(const photo of data.photos){const f={...photo,thumb:photo.thumbnail||photo.image};f.history=new EditHistory(f.settings,f.preset,photo.history);if(photo.undo)f.aiUndo=photo.undo;
    if(photo.analysis?.result)f.autoResult={base:photo.analysis.base,result:photo.analysis.result,currentImage:photo.image};
    files.push(f);added.push(f);
   }selectFile(added[data.selected]||added[0]);toast('项目原片、参数与历史已恢复');
@@ -545,3 +549,56 @@ const modelSettings=new ModelSettings({read:()=>localFetch('/api/ai/config'),pos
  const privacy=config.provider==='codex'?'点击分析会发送两张去除 EXIF/GPS 的缩小预览至 Codex，使用现有 CLI 登录与额度。':`点击分析会发送两张去除 EXIF/GPS 的缩小预览至 ${config.base_url}（${config.model}），可能使用该服务商的付费额度。`;
  $('modelPrivacy').textContent=privacy+' 原片留在本机，不自动重试。';document.querySelector('.ai-privacy').textContent=privacy+' 原片留在本机。';$('batchPrivacy').textContent=privacy+' 每张照片独立分析，次数由下方上限约束。';syncAssistantControls();
 }});modelSettings.init();
+
+// Durable autosave is independent of sessionStorage and never submits AI jobs.
+function draftDocument(){
+ const recipes={};for(const f of files)recipes[f.id]={settings:cloneEdit(f.settings),preset:f.preset,
+  history:f.history?.snapshot(),undo:f.aiUndo,analysis:f.autoResult?{base:f.autoResult.base,result:f.autoResult.result}:null};
+ return {ids:files.map(f=>f.id),recipes,selected:Math.max(0,files.indexOf(current))};
+}
+draftSaver=new DraftSaver({snapshot:draftDocument,uuid:()=>crypto.randomUUID().replaceAll('-',''),
+ save:async data=>(await api('/api/drafts/save',data)).json(),
+ ack:data=>{try{sessionStorage.setItem('z30-draft-state',JSON.stringify(data));}catch{}},
+ state:(state,detail)=>{
+  const labels={pending:'有编辑待自动保存',saving:'正在自动保存到本机…',saved:'已自动保存到本机',error:'自动保存失败：'+(detail?.message||'连接中断')};
+  $('draftStatus').textContent=labels[state]+(state==='saved'?' · '+new Date(detail.saved*1000).toLocaleTimeString():'');
+  $('draftRetry').hidden=state!=='error';
+ }});
+$('draftRetry').onclick=()=>draftSaver.blocked?showDrafts():draftSaver.flush();
+$('draftSnapshot').onclick=async()=>{if(!files.length)return;const ok=await draftSaver.flush(true);if(ok)toast('版本快照已保存');};
+$('diagnosticsTop').onclick=async()=>{try{const r=await localFetch('/api/diagnostics');if(!r.ok)throw Error('诊断导出失败');download(await r.blob(),'Z30-diagnostics.zip');toast('诊断仅含日志，可能包含本机路径；不含照片与模型设置');}catch(e){toast(e.message);}};
+async function showDrafts(startup=false){
+ try{
+  const r=await localFetch('/api/drafts');if(!r.ok)throw Error('无法读取本机草稿');const data=await r.json();
+  $('draftStorage').textContent=`原片去重存储 ${(data.storage_bytes/1073741824).toFixed(2)} / ${(data.limit_bytes/1073741824).toFixed(0)} GiB · 最多 256 张 / 项目`;
+  $('draftList').replaceChildren();
+  for(const draft of data.drafts){
+   const row=document.createElement('div');row.className='export-job';
+   const title=document.createElement('p');title.textContent=`${draft.count} 张照片 · ${new Date(draft.saved*1000).toLocaleString()}`;
+   const select=document.createElement('select');select.setAttribute('aria-label','选择草稿版本');
+   const versions=await(await localFetch('/api/drafts/'+draft.id+'/versions')).json();
+   for(const version of versions.versions){const opt=document.createElement('option');opt.value=version.revision;opt.textContent='版本 '+version.revision+' · '+new Date(version.saved*1000).toLocaleString();select.append(opt);}
+   const restore=document.createElement('button');restore.textContent='恢复所选版本';restore.onclick=()=>restoreDraft(draft.id,Number(select.value));
+   const remove=document.createElement('button');remove.textContent='删除草稿及未使用原片副本';remove.onclick=async()=>{if(draftSaver.id===draft.id&&draftSaver.unsaved){toast('请先完成当前自动保存，再删除草稿');return;}if(!confirm('删除这个自动草稿及其版本？已另存的项目和原始照片不受影响。'))return;try{await api('/api/drafts/delete',{draft_id:draft.id});if(draftSaver.id===draft.id)draftSaver.reset();await showDrafts();}catch(e){toast(e.message);}};
+   row.append(title,select,restore,remove);$('draftList').append(row);
+  }
+  if(!data.drafts.length)$('draftList').textContent='暂无草稿。导入并编辑照片后自动保存。';
+  if(!startup||data.drafts.some(d=>d.count))$('draftDialog').showModal();
+ }catch(e){toast(e.message);}
+}
+async function restoreDraft(id,version){
+ if(files.length||importBusy||draftSaver.running){toast('请先保存并移除当前照片，再恢复草稿；现有编辑没有改变');return;}
+ importBusy=true;draftsReady=false;setEnabled();busy(true,'正在恢复草稿…');
+ try{
+  const data=await(await api('/api/drafts/restore',{draft_id:id,revision:version})).json();
+  for(const photo of data.photos){const f={...photo,preset:photo.preset||'custom',thumb:photo.thumbnail||photo.image};f.history=new EditHistory(f.settings,f.preset,photo.history);if(photo.undo)f.aiUndo=photo.undo;if(photo.analysis)f.autoResult=photo.analysis;files.push(f);}
+  draftSaver.reset(data.draft_id,data.revision);try{sessionStorage.setItem('z30-draft-state',JSON.stringify({id:data.draft_id,version:data.revision}));}catch{}
+  selectFile(files[data.selected]||files[0]||null);$('draftDialog').close();
+  $('draftStatus').textContent='已恢复版本 '+data.restored_revision+'；旧版本仍保留';
+  if(data.restored_revision!==data.revision){draftsReady=true;draftSaver.dirty=true;await draftSaver.flush(true);}
+  toast('草稿已恢复；原片校验与预览按当前选中照片加载');
+ }catch(e){toast('恢复失败：'+e.message);}finally{importBusy=false;draftsReady=true;setEnabled();busy(false);if(previewWanted)runPreview();}
+}
+$('recoverDraft').onclick=()=>showDrafts();$('draftClose').onclick=()=>$('draftDialog').close();
+window.addEventListener('pagehide',()=>draftSaver.flush());
+window.addEventListener('beforeunload',e=>{if(draftSaver.unsaved){draftSaver.flush();e.preventDefault();e.returnValue='';}});

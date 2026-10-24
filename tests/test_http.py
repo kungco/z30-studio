@@ -68,6 +68,35 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(image.shape, (12, 8, 3))
         self.post('/api/close', {'id': key}).close()
 
+    def test_disk_draft_recovers_closed_sessions_with_history_and_rejects_stale_save(self):
+        self.owner='f'*32
+        with patch.object(server,'data_root',return_value=Path(self.tmp.name)/'durable'):
+            key=self.open_photo();body=dict(draft_id='d'*32,expected_version=0,request_id='1'*32,
+                ids=[key],recipes={key:dict(settings={'exposure':.4},history=dict(index=0,
+                    states=[dict(settings=server.settings({'exposure':.4}),preset='custom')]))},selected=0)
+            with self.post('/api/drafts/save',body) as response:
+                self.assertEqual(json.load(response)['revision'],1)
+            with self.post('/api/drafts/save',body) as response:
+                self.assertEqual(json.load(response)['revision'],1)
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                self.post('/api/drafts/save',body|{'request_id':'2'*32})
+            self.assertEqual(cm.exception.code,409);cm.exception.close()
+            self.post('/api/close',{'id':key}).close()
+            with self.post('/api/drafts/restore',{'draft_id':'d'*32}) as response:
+                photo=json.load(response)['photos'][0]
+            restored=photo['id']
+            try:
+                self.assertNotEqual(restored,key);self.assertEqual(photo['settings']['exposure'],.4)
+                self.assertEqual(photo['history']['index'],0)
+                with self.post('/api/preview',{'id':restored,'settings':photo['settings']}) as response:
+                    self.assertEqual(json.load(response)['width'],12)
+                with urllib.request.urlopen(self.base+'/api/diagnostics') as response:
+                    with zipfile.ZipFile(io.BytesIO(response.read())) as archive:
+                        self.assertNotIn('drafts.sqlite3',archive.namelist())
+            finally:
+                self.post('/api/close',{'id':restored}).close()
+                server.STORES.pop(Path(self.tmp.name)/'durable'/'drafts',None)
+
     def test_compatible_backend_uses_actual_http_images_and_quality_guard(self):
         import base64
         import api_backend

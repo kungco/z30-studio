@@ -8,8 +8,9 @@ import stat
 import tempfile
 import zipfile
 
-PROJECT_LIMIT = 512 * 1024 ** 2
-MANIFEST_LIMIT = 16 * 1024 ** 2
+MAX_PHOTOS = 256
+PROJECT_LIMIT = 8 * 1024 ** 3
+MANIFEST_LIMIT = 32 * 1024 ** 2
 EXTENSIONS = {'.nef', '.jpg', '.jpeg', '.png'}
 
 
@@ -70,7 +71,7 @@ def manifest(sources, recipes, selected, normalize):
     if len(encoded) > MANIFEST_LIMIT:
         raise ValueError('项目历史过大，请减少历史或照片数量')
     if sum(p['size'] for p in photos) + len(encoded) > PROJECT_LIMIT:
-        raise ValueError('项目超过 512 MiB 限制，请分组保存')
+        raise ValueError('项目超过 8 GiB 限制，请分组保存')
     return result
 
 
@@ -85,7 +86,7 @@ def write_project(target, sources, document):
 def read_project(path, parent, normalize):
     with tempfile.TemporaryDirectory(prefix='project-', dir=parent) as staging, zipfile.ZipFile(path) as archive:
         infos = archive.infolist()
-        if len(infos) > 9 or len({x.filename for x in infos}) != len(infos):
+        if len(infos) > MAX_PHOTOS + 1 or len({x.filename for x in infos}) != len(infos):
             raise ValueError('项目文件数量或重复条目无效')
         if any(x.flag_bits & 1 or stat.S_ISLNK(x.external_attr >> 16) for x in infos):
             raise ValueError('不支持加密或链接项目条目')
@@ -95,8 +96,8 @@ def read_project(path, parent, normalize):
         if document.get('app') != 'Z30 Studio' or document.get('version') != 1:
             raise ValueError('不支持此项目版本')
         photos = document.get('photos')
-        if not isinstance(photos, list) or not 1 <= len(photos) <= 8:
-            raise ValueError('项目需包含 1–8 张照片')
+        if not isinstance(photos, list) or not 1 <= len(photos) <= MAX_PHOTOS:
+            raise ValueError('项目需包含 1–256 张照片')
         expected = {'project.json'}
         for i, photo in enumerate(photos):
             suffix = Path(photo['file']).suffix.lower()
