@@ -1,11 +1,12 @@
 """One-worker durable local batch exports with immutable input snapshots."""
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 import copy
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
+import queue
 import re
 import secrets
 import shutil
@@ -18,7 +19,7 @@ INPUTS = {'.nef', '.jpg', '.jpeg', '.png'}
 
 
 class ExportQueue:
-    def __init__(self, root, exporter, max_jobs=20, max_bytes=1024 ** 3):
+    def __init__(self, root, exporter, max_jobs=20, max_bytes=1024 ** 3, shutdown_timeout=5.0):
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self.owner_file = (self.root / '.owner.lock').open('a+b')
@@ -37,13 +38,21 @@ class ExportQueue:
             raise ValueError('另一软件实例正在管理后台导出，请关闭多余实例') from exc
         self.exporter = exporter
         self.max_jobs, self.max_bytes = max_jobs, max_bytes
+        self.shutdown_timeout = max(0.0, float(shutdown_timeout))
         self.lock = threading.RLock()
         self.jobs = {}
         self.readers = {}
-        self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix='z30-export')
         self.stopped = False
+        self._work = queue.Queue()
+        self._stop_signalled = False
+        self._owner_lock = threading.Lock()
+        self._owner_closed = False
+        self.closed = threading.Event()
         for path in self.root.glob('*/manifest.json'):
             try:
+                for stale in path.parent.glob('*.part'):
+                    stale.unlink(missing_ok=True)
+                (path.parent / 'manifest.json.tmp').unlink(missing_ok=True)
                 job = json.loads(path.read_text(encoding='utf8'))
                 if self._folder(job['id']) != path.parent.resolve() or job['format'] not in FORMATS:
                     continue
@@ -65,6 +74,42 @@ class ExportQueue:
                 self.jobs[job['id']] = job
             except (OSError, ValueError, KeyError, TypeError):
                 continue  # Never run an incomplete/unrecognized disk manifest.
+        self.worker = threading.Thread(target=self._work_loop, name='z30-export', daemon=True)
+        self.worker.start()
+
+    def _work_loop(self):
+        try:
+            while True:
+                key = self._work.get()
+                try:
+                    if key is None:
+                        return
+                    try:
+                        self._run(key)
+                    except Exception:
+                        logging.exception('Background export worker failed')
+                finally:
+                    self._work.task_done()
+        finally:
+            self._release_owner()
+
+    def _release_owner(self):
+        with self._owner_lock:
+            if self._owner_closed:
+                return
+            self._owner_closed = True
+            try:
+                if not self.owner_file.closed:
+                    self.owner_file.seek(0)
+                    if os.name == 'nt':
+                        import msvcrt
+                        msvcrt.locking(self.owner_file.fileno(), msvcrt.LK_UNLCK, 1)
+                    else:
+                        import fcntl
+                        fcntl.flock(self.owner_file.fileno(), fcntl.LOCK_UN)
+                    self.owner_file.close()
+            finally:
+                self.closed.set()
 
     def _folder(self, key):
         if not isinstance(key, str) or not re.fullmatch('[a-f0-9]{32}', key):
@@ -117,7 +162,7 @@ class ExportQueue:
                                              raw=extension == '.nef', state='pending', sha256=digest))
                 self._save(job)
                 self.jobs[key] = job
-                self.pool.submit(self._run, key)
+                self._work.put(key)
             except Exception:
                 self.jobs.pop(key, None)
                 shutil.rmtree(folder)
@@ -145,7 +190,7 @@ class ExportQueue:
                     item.pop('error', None)
             (self._folder(key) / 'results.zip').unlink(missing_ok=True)
             job['state'] = 'queued'; job.pop('error', None)
-            self._save(job); self.pool.submit(self._run, key)
+            self._save(job); self._work.put(key)
 
     def cancel(self, key):
         with self.lock:
@@ -257,23 +302,33 @@ class ExportQueue:
                         item['state'] = 'pending'
                 self._save(job)
 
-    def shutdown(self):
+    def shutdown(self, timeout=None):
+        """Bound process exit; the current single encode may finish after this returns."""
         with self.lock:
             self.stopped = True
             for job in self.jobs.values():
                 if job['state'] in ('running', 'queued'):
                     job.update(state='interrupted', error='服务已关闭；可从本机快照重试')
-                    self._save(job)
-        self.pool.shutdown(wait=True, cancel_futures=True)
-        if not self.owner_file.closed:
-            self.owner_file.seek(0)
-            if os.name == 'nt':
-                import msvcrt
-                msvcrt.locking(self.owner_file.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                import fcntl
-                fcntl.flock(self.owner_file.fileno(), fcntl.LOCK_UN)
-            self.owner_file.close()
+                    try:
+                        self._save(job)
+                    except OSError:
+                        pass
+            if not self._stop_signalled:
+                self._stop_signalled = True
+                while True:
+                    try:
+                        key = self._work.get_nowait()
+                    except queue.Empty:
+                        break
+                    else:
+                        self._work.task_done()
+                self._work.put(None)
+        if threading.current_thread() is not self.worker:
+            self.worker.join(self.shutdown_timeout if timeout is None else max(0.0, float(timeout)))
+            if not self.worker.is_alive():
+                self._release_owner()
+        else:
+            self._release_owner()
 
 
 def write_zip(target, entries, report):

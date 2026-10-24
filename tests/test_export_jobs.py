@@ -130,6 +130,39 @@ class ExportQueueTests(unittest.TestCase):
         self.assertFalse((q.root / key / 'output-0.png').exists())
         q.delete(key); self.assertTrue(self.input.exists())
 
+    def test_bounded_shutdown_interrupts_queued_work_and_never_publishes_late_output(self):
+        entered, release = threading.Event(), threading.Event()
+        calls = []
+        def blocked(path, raw, p, *args):
+            calls.append(path.name); entered.set(); release.wait(3)
+            return b'late result', p, None
+        q = self.queue(blocked, shutdown_timeout=.2)
+        first = q.submit([self.source()], {}, 'PNG', 95, False)
+        second = q.submit([self.source()], {}, 'PNG', 95, False)
+        self.assertTrue(entered.wait(2))
+        started = time.monotonic(); q.shutdown()
+        self.assertLess(time.monotonic() - started, 2)
+        self.assertEqual(q.get(first)['state'], 'interrupted')
+        self.assertEqual(q.get(second)['state'], 'interrupted')
+        release.set()
+        self.assertTrue(q.closed.wait(3))
+        self.assertEqual(calls, ['input-0.png'])
+        self.assertFalse((q.root / first / 'output-0.png').exists())
+        self.assertFalse((q.root / second / 'output-0.png').exists())
+        self.assertFalse(q.get(first)['worker_active'])
+
+    def test_restart_removes_stale_partial_and_manifest_temporary_files(self):
+        q = self.queue(lambda path, raw, p, *args: (b'done', p, None))
+        key = q.submit([self.source()], {}, 'PNG', 95, False)
+        self.assertEqual(self.wait(q, key)['state'], 'done')
+        q.shutdown()
+        partial = q.root / key / 'output-0.part'; partial.write_bytes(b'partial')
+        temporary = q.root / key / 'manifest.json.tmp'; temporary.write_text('{', encoding='utf8')
+        recovered = self.queue(lambda path, raw, p, *args: (b'again', p, None))
+        self.assertFalse(partial.exists())
+        self.assertFalse(temporary.exists())
+        self.assertEqual(recovered.get(key)['state'], 'done')
+
     def test_same_root_cannot_have_two_live_queue_owners(self):
         self.queue(lambda *args: None)
         with self.assertRaises(ValueError):

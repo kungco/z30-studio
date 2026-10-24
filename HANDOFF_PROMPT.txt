@@ -5,7 +5,7 @@
 PR：https://github.com/kungco/z30-studio/pull/1（交接时尚未合并；请重新核实）
 已验收代码基线：67015ba67aaa6bf442e060037d4d408279e91d74；后续交接文档提交没有修改运行时代码。
 
-项目是中文本地 Nikon Z30 RAW 暗房，包含 Windows 便携 EXE、Codex CLI、DeepSeek/兼容视觉接口、非破坏性调色、局部蒙版、RGB16 TIFF、历史/项目、原尺寸检视和后台导出。现有记录为本地 102 项 Python + 25 项 Node 通过（含 1 项 Windows 启动器退出回归），真实 DeepSeek 云端推理尚未验证。
+项目是中文本地 Nikon Z30 RAW 暗房，包含 Windows 便携 EXE、Codex CLI、DeepSeek/兼容视觉接口、非破坏性调色、局部蒙版、RGB16 TIFF、历史/项目、原尺寸检视和后台导出。现有记录为本地 104 项 Python + 25 项 Node 通过（含 Windows 启动器退出回归及后台导出有界关停回归），真实 DeepSeek 云端推理尚未验证。
 
 必须保留原始照片、现有 Codex 登录方式、严格参数校验、画质保护、撤销、任务归属与调用预算。不要把 API Key 放进聊天、源码、日志或项目，不要自动消耗模型额度。修改后运行相关测试，不能仅改 README 或修改测试来掩盖实际问题；较大阶段独立提交，报告测试和未验证范围。
 

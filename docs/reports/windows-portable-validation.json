@@ -1,7 +1,7 @@
 {
   "date": "2026-10-24",
   "platform": "Windows-11-10.0.22631-SP0",
-  "python_tests": 102,
+  "python_tests": 104,
   "node_tests": 25,
   "full_exe_cycles": 3,
   "exe_sha256": "f776108af41ec8b613bdb55c7bfeb2b310dbf8aed100b8480db2862f2178d927",
@@ -118,7 +118,7 @@
   "early_timeout_cause": "Not identified; not reproduced in three consecutive current-build full cycles",
   "clean_virtual_machine_tested": false,
   "real_deepseek_inference_tested": false,
-  "further_shutdown_investigation": "Open. Eight more full EXE cycles and 30 idle exits passed; original 30s timeout not reproduced; diagnostics added but not yet in the packaged EXE.",
+  "further_shutdown_investigation": "Bounded export shutdown implemented (5s default); original intermittent 30s launcher timeout still not reproduced and remains open.",
   "additional_full_exe_cycles": 8,
   "total_full_exe_cycles_observed": 11,
   "continued_shutdown_investigation": {
@@ -146,6 +146,26 @@
     "background_export_measured_from": "source launcher, not packaged EXE",
     "root_cause_identified": false,
     "regression_test": "tests/test_shutdown.py",
-    "diagnostics_in_current_exe": false
+    "diagnostics_in_current_exe": false,
+    "background_raw_export_stop_seconds_before_fix": [
+      18.14,
+      19.32,
+      19.92
+    ],
+    "background_raw_export_stop_seconds_after_fix": [
+      5.576
+    ],
+    "bounded_export_shutdown": true
+  },
+  "bounded_export_shutdown": {
+    "default_timeout_seconds": 5,
+    "measured_source_exit_seconds": 5.576,
+    "restart_state": "interrupted",
+    "late_output_published": false,
+    "stale_partial_cleanup": true,
+    "regression_tests": [
+      "test_bounded_shutdown_interrupts_queued_work_and_never_publishes_late_output",
+      "test_restart_removes_stale_partial_and_manifest_temporary_files"
+    ]
   }
 }
