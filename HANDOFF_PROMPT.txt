@@ -3,7 +3,7 @@
 仓库：https://github.com/kungco/z30-studio
 开发分支：fix/staged-image-pipeline
 PR：https://github.com/kungco/z30-studio/pull/1（交接时尚未合并；请重新核实）
-已验收代码基线：67015ba67aaa6bf442e060037d4d408279e91d74；后续交接文档提交没有修改运行时代码。
+上一验收代码基线：67015ba67aaa6bf442e060037d4d408279e91d74；当前交付构建源码：188351838a8c9ec05a6c2de0772226278718627f（含关停诊断与有界导出关停）。交接文档提交不修改运行时代码。
 
 项目是中文本地 Nikon Z30 RAW 暗房，包含 Windows 便携 EXE、Codex CLI、DeepSeek/兼容视觉接口、非破坏性调色、局部蒙版、RGB16 TIFF、历史/项目、原尺寸检视和后台导出。现有记录为本地 104 项 Python + 25 项 Node 通过（含 Windows 启动器退出回归及后台导出有界关停回归），真实 DeepSeek 云端推理尚未验证。
 

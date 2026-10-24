@@ -4,7 +4,7 @@
   "python_tests": 104,
   "node_tests": 25,
   "full_exe_cycles": 3,
-  "exe_sha256": "f776108af41ec8b613bdb55c7bfeb2b310dbf8aed100b8480db2862f2178d927",
+  "exe_sha256": "0a1d7fc3be2f72a87793c8955f92938881526e2beb54bdcf43d076faa92059cf",
   "sample_run": {
     "model_requests": 0,
     "raw": [
@@ -35,6 +35,19 @@
         "original_unchanged": true
       }
     ],
+    "shutdowns": [
+      {
+        "cycle": 1,
+        "seconds": 0.388,
+        "exit_code": 0
+      },
+      {
+        "cycle": 2,
+        "seconds": 0.534,
+        "exit_code": 0
+      }
+    ],
+    "shutdown_timeout_seconds": 30,
     "health": {
       "app": "Z30 Studio",
       "version": "1.3.0",
@@ -70,7 +83,7 @@
     "durable_export_after_restart": true,
     "python_removed_from_PATH": true,
     "unicode_and_space_paths": true,
-    "exe_sha256": "f776108af41ec8b613bdb55c7bfeb2b310dbf8aed100b8480db2862f2178d927"
+    "exe_sha256": "0a1d7fc3be2f72a87793c8955f92938881526e2beb54bdcf43d076faa92059cf"
   },
   "https_check": {
     "model_requests": 0,
@@ -115,10 +128,10 @@
   "native_launcher_observed": true,
   "native_quit_button_verified": true,
   "early_shutdown_timeouts": 2,
-  "early_timeout_cause": "User reports the two early 30s waits occurred while debugging the app with Codex; treated as a debugging-environment artifact, not a product runtime defect.",
+  "early_timeout_cause": "User reports the two early waits occurred while debugging with Codex; one post-build smoke timeout later occurred without Codex and did not reproduce. Both remain under observation, not a confirmed product defect.",
   "clean_virtual_machine_tested": false,
   "real_deepseek_inference_tested": false,
-  "further_shutdown_investigation": "Closed per user explanation: early 30s waits occurred during Codex debugging, not a product runtime defect. Bounded export shutdown remains fixed and verified.",
+  "further_shutdown_investigation": "Bounded export shutdown shipped in the 1883518 delivery build. One post-build first-smoke 30s timeout occurred and did not reproduce; the early waits are mainly attributed by the user to Codex debugging but this occurrence remains under observation.",
   "additional_full_exe_cycles": 8,
   "total_full_exe_cycles_observed": 11,
   "continued_shutdown_investigation": {
@@ -145,18 +158,20 @@
     ],
     "background_export_measured_from": "source launcher, not packaged EXE",
     "regression_test": "tests/test_shutdown.py",
-    "diagnostics_in_current_exe": false,
+    "diagnostics_in_current_exe": true,
     "background_raw_export_stop_seconds_before_fix": [
       18.14,
       19.32,
       19.92
     ],
     "background_raw_export_stop_seconds_after_fix": [
-      5.576
+      5.576,
+      5.583
     ],
     "bounded_export_shutdown": true,
-    "user_attributed_cause": "Codex-assisted debugging session",
-    "treated_as_product_defect": false
+    "user_attributed_cause": "Codex-assisted debugging session (primary explanation); one post-build smoke timeout later did not reproduce",
+    "treated_as_product_defect": false,
+    "post_build_timeout_under_observation": true
   },
   "bounded_export_shutdown": {
     "default_timeout_seconds": 5,
@@ -167,6 +182,13 @@
     "regression_tests": [
       "test_bounded_shutdown_interrupts_queued_work_and_never_publishes_late_output",
       "test_restart_removes_stale_partial_and_manifest_temporary_files"
-    ]
-  }
+    ],
+    "measured_exe_exit_seconds": 5.583
+  },
+  "zip_sha256": "0c87e6575a91c0f06a663a36761cfb54a01d8945bf7b138529567bfd009d25b4",
+  "build_source_commit": "188351838a8c9ec05a6c2de0772226278718627f",
+  "post_build_first_smoke_timeout": true,
+  "post_build_first_smoke_timeout_note": "The first smoke run after rebuilding the delivery ZIP timed out at 30s with no shutdown log; the same build passed on immediate rerun and final delivery smoke. Not reproduced; do not attribute the whole family of early waits to Codex debugging.",
+  "current_build_smoke_passes": 2,
+  "current_build_smoke_timeouts": 1
 }
