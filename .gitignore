@@ -33,3 +33,8 @@ work/
 !docs/images/*.png
 
 *.z30proj
+
+# Windows packaging outputs
+build/
+dist/
+*.exe

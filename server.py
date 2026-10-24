@@ -19,10 +19,12 @@ from cache import ByteLRU
 import quality as quality_checks
 from export_jobs import ExportQueue, FORMATS, write_zip
 import shutil
+import socket
 import projects
 import automation
 import spatial
 import zipfile
+from app_runtime import APP_VERSION, resource_root, data_root
 from imaging import raw_crop, raw_pixels, raster_linear, resize_linear, srgb_to_linear
 
 os.environ.setdefault('OMP_NUM_THREADS', '4')
@@ -30,7 +32,7 @@ import numpy as np
 import rawpy
 from PIL import Image, ImageCms, ImageFilter, ImageOps
 
-ROOT = Path(__file__).resolve().parent
+ROOT = resource_root()
 TEMP = tempfile.TemporaryDirectory(prefix='z30-studio-')
 SESSIONS = {}
 LOCK = threading.RLock()  # Serialize interactive work; background exports have one worker.
@@ -163,7 +165,7 @@ def get_exports():
     global EXPORTS
     with EXPORTS_LOCK:
         if EXPORTS is None:
-            EXPORTS = ExportQueue(ROOT / '.data' / 'exports', export_snapshot)
+            EXPORTS = ExportQueue(data_root() / 'exports', export_snapshot)
         return EXPORTS
 
 
@@ -340,7 +342,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         route = urllib.parse.urlsplit(self.path).path
         if route == '/api/health':
-            return self.json(dict(app='Z30 Studio', version='1.2', rawpy=rawpy.__version__,
+            return self.json(dict(app='Z30 Studio', version=APP_VERSION, rawpy=rawpy.__version__,
                                   libraw='.'.join(map(str, rawpy.libraw_version)), cache=CACHE.stats()))
         if route.startswith('/api/projects/download/'):
             ticket = route.rsplit('/', 1)[-1]
@@ -639,20 +641,23 @@ class Handler(BaseHTTPRequestHandler):
             self.json({'error': '处理失败。请检查照片是否完整，或在启动窗口查看详情。'}, 500)
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--port', type=int, default=8730)
-    parser.add_argument('--no-browser', action='store_true')
-    args = parser.parse_args()
+class LocalHTTPServer(ThreadingHTTPServer):
+    allow_reuse_address = os.name != 'nt'
+
+    def server_bind(self):
+        if os.name == 'nt':
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
+def create_server(port=8730):
     try:
-        server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
+        return LocalHTTPServer(('127.0.0.1', port), Handler)
     except OSError:
-        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
-    url = f'http://127.0.0.1:{server.server_port}'
-    print(f'Z30 Studio ready: {url}', flush=True)
-    print('Photos stay on this computer. Close this window or press Ctrl+C to stop.', flush=True)
-    if not args.no_browser:
-        threading.Timer(.5, lambda: webbrowser.open(url)).start()
+        return LocalHTTPServer(('127.0.0.1', 0), Handler)
+
+
+def serve(server):
     stop_reaper = threading.Event()
     def maintain_sessions():
         while not stop_reaper.wait(60):
@@ -670,6 +675,20 @@ def main():
         if EXPORTS is not None:
             EXPORTS.shutdown()
         TEMP.cleanup()
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--port', type=int, default=8730)
+    parser.add_argument('--no-browser', action='store_true')
+    args = parser.parse_args()
+    server = create_server(args.port)
+    url = f'http://127.0.0.1:{server.server_port}'
+    print(f'Z30 Studio ready: {url}', flush=True)
+    print('Photos stay on this computer. Close this window or press Ctrl+C to stop.', flush=True)
+    if not args.no_browser:
+        threading.Timer(.5, lambda: webbrowser.open(url)).start()
+    serve(server)
 
 
 if __name__ == '__main__':
