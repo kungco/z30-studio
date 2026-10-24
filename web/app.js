@@ -1,5 +1,6 @@
 'use strict';
 const $ = id => document.getElementById(id);
+let aiProvider=null;
 let clientId;
 try{clientId=sessionStorage.getItem('z30-client');if(!/^[a-f0-9]{32}$/.test(clientId||'')){clientId=crypto.randomUUID().replaceAll('-','');sessionStorage.setItem('z30-client',clientId);}}
 catch{clientId=crypto.randomUUID().replaceAll('-','');}
@@ -53,7 +54,7 @@ function toast(message){$('toast').textContent=message;$('toast').hidden=false;c
 function busy(show,message='正在更新预览…'){$('busy').hidden=!show;$('busyText').textContent=message;}
 function setEnabled(){const yes=!!current,locked=exportBusy||importBusy; $('controls').disabled=!yes||locked;$('wb').disabled=!yes||!current.raw||locked; ['compare','rotate','zoom','reset','saveRecipe','loadRecipe'].forEach(id=>$(id).disabled=!yes||locked);$('exportTop').disabled=!yes||locked;document.querySelectorAll('.advanced-panel input,.advanced-panel button,.advanced-panel select').forEach(el=>el.disabled=!yes||locked);document.querySelectorAll('[data-preset]').forEach(b=>b.disabled=!yes||locked);syncAssistantControls();syncMaskUI();syncHistory();}
 function syncLabels(){syncHistory();const p=current?current.settings:defaults;sliderSpecs.forEach(([,id,,,,step,suffix])=>{const n=p[id];$(id).value=n;$(id+'Value').textContent=(n>0?'+':'')+(step<1?n.toFixed(step<.01?3:2):n)+suffix;});$('wb').value=p.wb;$('crop').value=p.crop;$('lensProfileName').value=p.lens_profile||'手动 / 未校准';syncMaskUI();document.querySelectorAll('[data-preset]').forEach(b=>b.classList.toggle('selected',b.dataset.preset===(current?.preset||'neutral')));}
-async function api(path,data,binary=false,extra={},options={}){const r=await localFetch(path,{method:'POST',headers:{'Content-Type':binary?'application/octet-stream':'application/json','X-Z30-Request':'1',...extra},body:binary?data:JSON.stringify(data),...options});if(!r.ok){let message;try{message=(await r.json()).error;}catch{message=`处理失败 (${r.status})`;}throw Object.assign(Error(message),{status:r.status,retryable:r.status>=500||r.status===408||r.status===429});}return r;}
+async function api(path,data,binary=false,extra={},options={}){if(['/api/codex/suggest','/api/codex/auto'].includes(path))data={...data,backend_revision:data.backend_revision??aiProvider?.revision};const r=await localFetch(path,{method:'POST',headers:{'Content-Type':binary?'application/octet-stream':'application/json','X-Z30-Request':'1',...extra},body:binary?data:JSON.stringify(data),...options});if(!r.ok){let message;try{message=(await r.json()).error;}catch{message=`处理失败 (${r.status})`;}throw Object.assign(Error(message),{status:r.status,retryable:r.status>=500||r.status===408||r.status===429});}return r;}
 function histogram(hist){const c=$('histogram'),ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#2b2d2f';ctx.lineWidth=1;[.25,.5,.75].forEach(t=>{ctx.beginPath();ctx.moveTo(t*c.width,0);ctx.lineTo(t*c.width,c.height);ctx.stroke();});if(!hist)return;const peak=Math.max(1,...hist.flat());ctx.globalCompositeOperation='screen';['#b65e56','#599173','#5c83ae'].forEach((color,ch)=>{ctx.beginPath();ctx.moveTo(0,c.height);hist[ch].forEach((n,i)=>ctx.lineTo(i*c.width/127,c.height-(Math.log1p(n)/Math.log1p(peak))*c.height*.92));ctx.lineTo(c.width,c.height);ctx.closePath();ctx.fillStyle=color+'90';ctx.fill();});ctx.globalCompositeOperation='source-over';}
 function drawLibrary(){$('fileList').replaceChildren();files.forEach(f=>{const card=document.createElement('div');card.className='filecard'+(current===f?' selected':'');const b=document.createElement('button');b.className='selectfile';b.title=f.name;const img=new Image();img.src=f.thumb;img.alt=f.name;const name=document.createElement('strong');name.textContent=f.name;const sub=document.createElement('small');sub.textContent=`${f.raw?'NEF RAW':'IMAGE'} · ${(f.bytes/1024/1024).toFixed(1)} MB`;b.append(img,name,sub);b.onclick=()=>selectFile(f);const remove=document.createElement('button');remove.className='remove';remove.textContent='×';remove.setAttribute('aria-label','移除 '+f.name);remove.onclick=()=>removeFile(f);card.append(b,remove);$('fileList').append(card);});$('count').textContent=String(files.length).padStart(2,'0');$('libraryHint').hidden=files.length>0;}
 function selectFile(f){current=f;revision++;showingBefore=false;$('beforeLabel').hidden=true;$('empty').hidden=!!f;$('imageWrap').hidden=!f;setEnabled();syncLabels();drawLibrary();if(!f){$('filename').textContent='尚未选择照片';$('filetype').textContent='RAW WORKSPACE';$('imageMeta').textContent='为 NEF 照片而设计';$('renderState').textContent='准备就绪';histogram();return;}$('filename').textContent=f.name;$('filetype').textContent=f.raw?'NEF RAW':'IMAGE';$('imageMeta').textContent=`${f.camera} · ${f.width} × ${f.height} · sRGB`;$('preview').src=f.image;histogram(f.histogram);$('qualityStatus').textContent=f.quality?.message||'等待画质检查';schedulePreview(0);}
@@ -92,9 +93,9 @@ $('quality').oninput=()=>$('qualityValue').textContent=$('quality').value;
 $('exportFormat').onchange=()=>$('qualityRow').hidden=$('exportFormat').value!=='JPEG';
 localFetch('/api/health').then(r=>{if(!r.ok)throw Error();return r.json();}).then(d=>{$('engine').textContent='LibRaw '+d.libraw+' · 就绪';}).catch(()=>{$('engine').textContent='解码服务连接失败';toast('请通过 start.bat 启动本地服务，再打开网页');});
 function syncAssistantControls(){
- const locked=importBusy||exportBusy||!!autoGrader?.busy||!!batchGrader?.busy;
+ const locked=importBusy||exportBusy||!!autoGrader?.busy||!!batchGrader?.busy;$('providerOpen').disabled=locked||assistant.running;
  $('autoGrade').disabled=!current||locked||assistant.running;
- $('autoGrade').textContent=autoGrader?.busy?'正在自动调色…':current?.autoPending?'重新连接分析任务':'一键 GPT 调色';
+ $('autoGrade').textContent=autoGrader?.busy?'正在自动调色…':current?.autoPending?'重新连接分析任务':'一键 AI 调色';
  $('autoCancel').hidden=!autoGrader?.busy&&!batchGrader?.busy;
  $('batchOpen').disabled=!files.length||locked||assistant.running;
  $('autoUndo').disabled=!current?.aiUndo||locked||assistant.running;
@@ -117,7 +118,7 @@ function syncAssistantControls(){
 }
 async function checkCodex(){
  if(assistant.checking)return;
- assistant.checking=true;$('codexStatus').textContent='正在检测本机 Codex…';syncAssistantControls();
+ assistant.checking=true;$('codexStatus').textContent='正在检测当前模型后端…';syncAssistantControls();
  try{const r=await localFetch('/api/codex/status');if(!r.ok)throw Error('连接检查失败');assistant.connection=await r.json();$('codexStatus').textContent=assistant.connection.message;}
  catch(e){assistant.connection={ready:false};$('codexStatus').textContent='本地服务连接失败，请检查启动窗口后重试';}
  finally{assistant.checking=false;syncAssistantControls();}
@@ -175,7 +176,7 @@ async function generateAdvice(){
  if(!goal){toast('请先输入调色目标');return;}
  assistant.running=true;assistant.source=source;assistant.base=base;assistant.result=null;assistant.strength=100;assistant.previewSignature=null;
  assistant.trialRevision++;assistant.trialWanted=false;clearTimeout(assistant.trialTimer);
- $('aiResult').hidden=true;$('aiEmpty').hidden=false;$('aiProgress').textContent='正在准备预览并发送给 Codex…';syncAssistantControls();
+ $('aiResult').hidden=true;$('aiEmpty').hidden=false;$('aiProgress').textContent='正在准备预览并发送给当前模型后端…';syncAssistantControls();
  try{
   const d=await(await api('/api/codex/suggest',{id:source.id,settings:base,goal})).json();
   assistant.currentImage=d.current_image;
@@ -187,14 +188,14 @@ async function generateAdvice(){
    if(!response.ok){const error=await response.json();throw Error(error.error||'无法读取建议任务，请重新生成');}job=await response.json();
    if(job.state==='done')break;
    if(job.state==='error'||job.state==='cancelled')throw Error(job.error||'照片会话已关闭');
-   $('aiProgress').textContent=`Codex 正在看图与分析… ${Math.round((Date.now()-start)/1000)} 秒。关闭面板后任务仍会继续。`;
+   $('aiProgress').textContent=`AI 正在看图与分析… ${Math.round((Date.now()-start)/1000)} 秒。关闭面板后任务仍会继续。`;
   }
   if(job.source_id!==source.id)throw Error('建议与当前照片不匹配，请重新生成');
   assistant.result=job.result;
   if(files.includes(source)){source.autoResult={base:cloneEdit(base),result:cloneEdit(job.result),currentImage:assistant.currentImage};persistWorkspace();}
   showAdvice();
   $('aiProgress').textContent='建议已就绪。调整强度、查看试片，再决定是否应用。';
-  if(!$('assistantDialog').open)toast('Codex 建议已就绪，点击“Codex 辅助”查看');
+  if(!$('assistantDialog').open)toast('AI 建议已就绪，点击“AI 辅助”查看');
  }catch(e){$('aiProgress').textContent=e.message;toast(e.message);}
  finally{assistant.running=false;syncAssistantControls();}
 }
@@ -213,7 +214,7 @@ $('aiApply').onclick=()=>{
  if($('aiApply').disabled||assistant.source!==current)return;
  current.aiUndo={settings:cloneEdit(current.settings),preset:current.preset};
  current.settings=assistantCandidate();current.preset='custom';syncLabels();schedulePreview(0);syncAssistantControls();
- $('assistantDialog').close();toast('已应用 Codex 建议，可在辅助面板恢复应用前参数');
+ $('assistantDialog').close();toast('已应用 AI 建议，可在辅助面板恢复应用前参数');
 };
 function undoAI(){
  if(!current?.aiUndo||importBusy||exportBusy||autoGrader?.busy||assistant.running)return;
@@ -288,7 +289,7 @@ const autoPost=(path,data)=>api(path,data,false,{}, {signal:AbortSignal.timeout(
 const gradeIO={
  submit:async context=>{
   assistant.trialRevision++;assistant.trialWanted=false;clearTimeout(assistant.trialTimer);
-  const data=await(await autoPost('/api/codex/auto',{id:context.source.id,settings:context.base,request_id:context.requestId,auto_options:context.autoOptions||autoOptions()})).json();
+  const data=await(await autoPost('/api/codex/auto',{id:context.source.id,settings:context.base,request_id:context.requestId,auto_options:context.autoOptions||autoOptions(),backend_revision:context.providerRevision})).json();
   context.currentImage=data.current_image;return data;
  },
  recover:async context=>{
@@ -308,7 +309,7 @@ const gradeIO={
  apply:(context,result,preview)=>{
   const f=context.source;
   f.aiUndo={settings:cloneEdit(f.settings),preset:f.preset};
-  f.settings=cloneEdit(result.settings);f.preset='custom';recordEdit(f,'GPT 自动调色');
+  f.settings=cloneEdit(result.settings);f.preset='custom';recordEdit(f,'AI 自动调色');
   Object.assign(f,{image:preview.image,before:preview.before,histogram:preview.histogram,quality:preview.quality,thumb:preview.image});
   if(current!==f){drawLibrary();persistWorkspace();return;}
   // Invalidate a pending old preview before publishing the verified new image.
@@ -316,11 +317,11 @@ const gradeIO={
   Object.assign(f,{image:preview.image,before:preview.before,histogram:preview.histogram,quality:preview.quality});
   $('beforeLabel').hidden=true;$('preview').src=f.image;histogram(f.histogram);
   $('qualityStatus').textContent=preview.quality.message;
-  $('renderState').textContent=`GPT 自动调色已应用 · 预览 ${preview.width} × ${preview.height}`;
+  $('renderState').textContent=`AI 自动调色已应用 · 预览 ${preview.width} × ${preview.height}`;
   syncLabels();
  },
  onState:state=>{
-  const labels={preparing:'正在准备预览…',analyzing:'GPT 正在分析画面与调色…',checking:'正在检查通道、层次和色彩…',rendering:'正在验证本地调色预览…',cancelling:'正在取消；不会自动应用结果。',reconnecting:'连接暂时中断，正在取回原分析任务，不会重新调用模型…'};
+  const labels={preparing:'正在准备预览…',analyzing:'AI 正在分析画面与调色…',checking:'正在检查通道、层次和色彩…',rendering:'正在验证本地调色预览…',cancelling:'正在取消；不会自动应用结果。',reconnecting:'连接暂时中断，正在取回原分析任务，不会重新调用模型…'};
   const context=state.context||autoContext;
   if(state.result&&files.includes(context.source))context.source.autoResult={base:context.base,result:state.result,currentImage:context.currentImage};
   if(['done','stale','error','cancelled'].includes(state.state)&&context){
@@ -330,7 +331,7 @@ const gradeIO={
   if(state.state==='done')message='已自动应用。'+state.result.summary+' '+state.result.quality.message;
   if(state.state==='stale')message='照片或参数已改变，未自动应用。可回到原照片查看分析。';
   $('autoStatus').textContent=(context?context.source.name+' · ':'')+(message||'自动调色未完成');
-  $('autoGrade').textContent=autoGrader?.busy?'正在自动调色…':current?.autoPending?'重新连接分析任务':'一键 GPT 调色';
+  $('autoGrade').textContent=autoGrader?.busy?'正在自动调色…':current?.autoPending?'重新连接分析任务':'一键 AI 调色';
   persistWorkspace();syncAssistantControls();
   if(['done','stale','error','cancelled'].includes(state.state))toast(message);
  }
@@ -338,7 +339,7 @@ const gradeIO={
 autoGrader=new AutoGrader(gradeIO);
 $('autoGrade').onclick=()=>{
  if(!current||autoGrader.busy||batchGrader?.busy||assistant.running||importBusy||exportBusy)return;
- autoContext=current.autoPending?{...current.autoPending,recoverOnly:true}:{source:current,base:cloneEdit(current.settings),revision,autoOptions:autoOptions(),requestId:crypto.randomUUID().replaceAll('-','')};
+ autoContext=current.autoPending?{...current.autoPending,recoverOnly:true}:{source:current,base:cloneEdit(current.settings),revision,providerRevision:aiProvider?.revision,autoOptions:autoOptions(),requestId:crypto.randomUUID().replaceAll('-','')};
  current.autoPending=autoContext;persistWorkspace();
  autoGrader.start(autoContext).catch(e=>toast(e.message));
 };
@@ -465,7 +466,7 @@ $('batchClose').onclick=()=>$('batchDialog').close();
 $('batchStop').onclick=()=>batchGrader.cancel();
 $('batchStart').onclick=async()=>{
  if(batchGrader.busy||autoGrader.busy||assistant.running)return;
- const options=autoOptions();const contexts=files.map(f=>({source:f,base:cloneEdit(f.settings),fileRevision:f.editVersion||0,autoOptions:options,requestId:crypto.randomUUID().replaceAll('-','')}));
+ const options=autoOptions();const contexts=files.map(f=>({source:f,base:cloneEdit(f.settings),fileRevision:f.editVersion||0,providerRevision:aiProvider?.revision,autoOptions:options,requestId:crypto.randomUUID().replaceAll('-','')}));
  batchItems=contexts.map(c=>({name:c.source.name,state:'等待'}));$('batchStatus').textContent='顺序逐张分析，可停止；编辑中的照片若有变化会跳过。';drawBatch();
  try{await batchGrader.run(contexts,Number($('batchBudget').value));}catch(e){toast(e.message);}
 };
@@ -536,3 +537,11 @@ $('saveLens').onclick=()=>{if(!current)return;const settings={};for(const key of
 $('loadLens').onclick=()=>$('lensInput').click();
 $('lensInput').onchange=async e=>{try{if(!current||!e.target.files[0])return;const source=current,rev=revision;const update=cloneEdit(source.settings);const file=e.target.files[0];if(file.size>20000)throw Error('配置过大');const data=JSON.parse(await file.text());if(data.app!=='Z30 Manual Optics'||data.version!==1||data.model!=='centered-radial-v1')throw Error('不是兼容的手动镜头配置');for(const key of ['lens_k1','lens_k2','lens_red','lens_blue','vignette','lens_profile'])if(key in data.settings)update[key]=data.settings[key];const validated=(await(await api('/api/settings',{id:source.id,settings:update})).json()).settings;if(current!==source||revision!==rev||!files.includes(source))throw Error('照片或参数已改变，未载入旧镜头配置');source.settings=validated;syncLabels();schedulePreview(0);toast('已载入手动镜头参数，请检查网格和边缘');}catch(error){toast(error.message);}finally{e.target.value='';}};
 setEnabled();syncMaskUI();
+
+const modelSettings=new ModelSettings({read:()=>localFetch('/api/ai/config'),post:(path,data)=>api(path,data),busy:()=>importBusy||exportBusy||!!autoGrader?.busy||!!batchGrader?.busy||assistant.running,changed:config=>{
+ aiProvider=config;assistant.connection=null;
+ const label=config.provider==='codex'?'Codex CLI':config.provider==='deepseek'?'DeepSeek · '+config.model:'兼容接口 · '+config.model;
+ $('providerSummary').textContent=label;$('modelBadge').textContent=label;
+ const privacy=config.provider==='codex'?'点击分析会发送两张去除 EXIF/GPS 的缩小预览至 Codex，使用现有 CLI 登录与额度。':`点击分析会发送两张去除 EXIF/GPS 的缩小预览至 ${config.base_url}（${config.model}），可能使用该服务商的付费额度。`;
+ $('modelPrivacy').textContent=privacy+' 原片留在本机，不自动重试。';document.querySelector('.ai-privacy').textContent=privacy+' 原片留在本机。';$('batchPrivacy').textContent=privacy+' 每张照片独立分析，次数由下方上限约束。';syncAssistantControls();
+}});modelSettings.init();

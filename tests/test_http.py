@@ -30,6 +30,9 @@ class HttpTests(unittest.TestCase):
         server.ADVISOR = codex_assist.Advisor(server.filter_advice)
         self.exports = server.EXPORTS
         self.tmp = tempfile.TemporaryDirectory()
+        import api_backend
+        self.ai_settings=server.AI_SETTINGS
+        server.AI_SETTINGS=api_backend.Settings(self.tmp.name)
         server.EXPORTS = ExportQueue(Path(self.tmp.name), server.export_snapshot)
         self.http = ThreadingHTTPServer(('127.0.0.1', 0), QuietHandler)
         self.thread = threading.Thread(target=self.http.serve_forever, daemon=True)
@@ -40,6 +43,7 @@ class HttpTests(unittest.TestCase):
         self.http.shutdown(); self.http.server_close(); self.thread.join()
         server.ADVISOR.shutdown(); server.ADVISOR = self.advisor
         server.EXPORTS.shutdown(); server.EXPORTS = self.exports
+        server.AI_SETTINGS=self.ai_settings
         self.tmp.cleanup()
 
     def post(self, route, data, binary=False):
@@ -63,6 +67,38 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(str(image.dtype), 'uint16')
         self.assertEqual(image.shape, (12, 8, 3))
         self.post('/api/close', {'id': key}).close()
+
+    def test_compatible_backend_uses_actual_http_images_and_quality_guard(self):
+        import base64
+        import api_backend
+        from tests.test_api_backend import Endpoint,advice
+        fake=ThreadingHTTPServer(('127.0.0.1',0),Endpoint)
+        fake.received=[];fake.result=advice();fake.status=200
+        fake.started=threading.Event();fake.release=threading.Event();fake.release.set()
+        thread=threading.Thread(target=fake.serve_forever,daemon=True);thread.start()
+        try:
+            with patch.object(server,'AI_SETTINGS',api_backend.Settings(self.tmp.name)):
+                self.owner='e'*32;key=self.open_photo()
+                with self.post('/api/ai/config',dict(provider='compatible',base_url=f'http://127.0.0.1:{fake.server_port}',model='vision-model',api_key='fake-test-key')) as response:config=json.load(response)
+                self.assertNotIn('api_key',config)
+                with self.assertRaises(urllib.error.HTTPError) as missing_revision:
+                    self.post('/api/codex/auto',dict(id=key,settings={}))
+                self.assertEqual(missing_revision.exception.code,400);missing_revision.exception.close()
+                self.assertFalse(fake.received)
+                with self.post('/api/codex/auto',dict(id=key,settings={},backend_revision=config['revision'],request_id='c'*32)) as response:job=json.load(response)['job']
+                deadline=time.monotonic()+5
+                while server.ADVISOR.get(job)['state']=='running' and time.monotonic()<deadline:time.sleep(.02)
+                result=server.ADVISOR.get(job)
+                self.assertEqual(result['state'],'done');self.assertTrue(result['result']['quality']['native_preview_checked'])
+                content=fake.received[0][0]['messages'][0]['content']
+                for part in content[1:]:
+                    image=Image.open(io.BytesIO(base64.b64decode(part['image_url']['url'].split(',')[1])))
+                    self.assertFalse(image.getexif());self.assertLessEqual(max(image.size),1600)
+                self.assertNotIn('test.png',json.dumps(content));self.assertEqual(len(fake.received),1)
+                for path in ('/model-settings.js','/batch-grade.js'):
+                    with urllib.request.urlopen(self.base+path) as response:self.assertGreater(len(response.read()),100)
+                self.post('/api/close',dict(id=key)).close()
+        finally:fake.release.set();fake.shutdown();fake.server_close();thread.join()
 
     def test_project_download_reopen_restores_original_and_history(self):
         self.owner='d'*32; key=self.open_photo()

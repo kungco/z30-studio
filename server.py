@@ -3,6 +3,7 @@ import argparse
 import base64
 import io
 import json
+import logging
 import math
 import os
 from pathlib import Path
@@ -22,6 +23,7 @@ import shutil
 import socket
 import projects
 import automation
+import api_backend
 import spatial
 import zipfile
 from app_runtime import APP_VERSION, resource_root, data_root
@@ -42,6 +44,7 @@ SESSION_TTL = 30 * 60
 MAX_UPLOAD = 150 * 1024 * 1024
 ICC = ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes()
 ADVISOR = codex_assist.Advisor()
+AI_SETTINGS = api_backend.Settings()
 CACHE = ByteLRU(128 * 1024 * 1024)
 EXPORTS = None
 EXPORTS_LOCK = threading.RLock()
@@ -368,8 +371,12 @@ class Handler(BaseHTTPRequestHandler):
                 with LOCK:
                     release_project(ticket)
             return
+        if route == '/api/ai/config':
+            return self.json(AI_SETTINGS.public())
         if route == '/api/codex/status':
-            return self.json(codex_assist.status())
+            config=AI_SETTINGS.public()
+            if config['provider']=='codex':return self.json(codex_assist.status() | {'provider':'codex'})
+            return self.json(dict(provider=config['provider'],available=True,ready=config['has_key'],message=('接口已配置，点击分析才发送图片并使用服务商额度' if config['has_key'] else '请在模型设置中填写当前运行使用的 API Key')))
         if route.startswith('/api/codex/requests/'):
             try:
                 source_id = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('source', [''])[0]
@@ -422,6 +429,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({'error': '建议任务不存在，请重新生成'}, 404)
         files = {'/': ('index.html', 'text/html; charset=utf-8'),
                  '/app.js': ('app.js', 'application/javascript; charset=utf-8'),
+                 '/model-settings.js': ('model-settings.js', 'application/javascript; charset=utf-8'),
                  '/batch-grade.js': ('batch-grade.js', 'application/javascript; charset=utf-8'),
                  '/history.js': ('history.js', 'application/javascript; charset=utf-8'),
                  '/auto-grade.js': ('auto-grade.js', 'application/javascript; charset=utf-8'),
@@ -489,6 +497,15 @@ class Handler(BaseHTTPRequestHandler):
             owner = self.headers.get('X-Z30-Client')
             if owner is not None and (len(owner) != 32 or any(c not in '0123456789abcdef' for c in owner)):
                 raise ValueError('无效的页面会话编号')
+            if route in ('/api/ai/config','/api/ai/test'):
+                data=json.loads(body)
+                if route=='/api/ai/test':
+                    config=AI_SETTINGS.snapshot()
+                    if config is None:return self.json(codex_assist.status() | {'model_listed':True})
+                    return self.json(api_backend.test_connection(config))
+                with ADVISOR.lock:
+                    if ADVISOR.workers:raise ValueError('正在分析或取消中，请等任务结束后更换模型配置')
+                    return self.json(AI_SETTINGS.save(data))
             if route == '/api/projects/prepare':
                 data = json.loads(body); ids = data.get('ids')
                 if not isinstance(ids, list) or not 1 <= len(ids) <= 8 or len(set(ids)) != len(ids):
@@ -603,6 +620,9 @@ class Handler(BaseHTTPRequestHandler):
                     ADVISOR.cancel(data['job'])
                     return self.json({'ok': True})
                 if route in ('/api/codex/suggest', '/api/codex/auto'):
+                    backend=AI_SETTINGS.snapshot(data.get('backend_revision'))
+                    if backend is not None and data.get('backend_revision') is None:
+                        raise ValueError('请刷新页面并确认当前模型后端；旧页面不会向新接口发送照片')
                     automatic = route == '/api/codex/auto'
                     auto_options = automation.options(data.get('auto_options')) if automatic else None
                     goal = (codex_assist.AUTO_GOAL+' '+automation.goal(auto_options)) if automatic else data.get('goal', '')
@@ -612,7 +632,7 @@ class Handler(BaseHTTPRequestHandler):
                     before = image_bytes(develop(decode(s, 'camera', True), base), quality=88)
                     current = image_bytes(develop(decode(s, p['wb'], True), p), quality=88)
                     job = ADVISOR.submit(key, before, current, p, goal, s['raw'],
-                                         mode='auto' if automatic else 'suggest', request_id=data.get('request_id'), auto_options=auto_options)
+                                         mode='auto' if automatic else 'suggest', request_id=data.get('request_id'), auto_options=auto_options, backend=backend)
                     return self.json({'job': job,
                                       'current_image': 'data:image/jpeg;base64,' + base64.b64encode(current).decode()}, 202)
                 if route == '/api/codex/preview':
@@ -669,12 +689,18 @@ def serve(server):
     except KeyboardInterrupt:
         pass
     finally:
+        logging.info('Stopping session maintenance')
         stop_reaper.set(); reaper.join(timeout=2)
+        logging.info('Closing HTTP listener')
         server.server_close()
+        logging.info('Stopping Codex workers')
         ADVISOR.shutdown()
         if EXPORTS is not None:
+            logging.info('Stopping export workers')
             EXPORTS.shutdown()
+        logging.info('Removing temporary photo copies')
         TEMP.cleanup()
+        logging.info('Local service stopped')
 
 
 def main():

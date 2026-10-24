@@ -1,6 +1,7 @@
 """Windows launcher; the existing loopback web editor remains the workbench."""
 import argparse
 import ctypes
+import faulthandler
 import hashlib
 import json
 import logging
@@ -89,7 +90,7 @@ class LauncherWindow:
         tk.Button(actions, text='查看运行日志', command=lambda: os.startfile(str(log))).pack(side='left', padx=8)
         self.quit = tk.Button(actions, text='停止服务并退出', command=self.stop)
         self.quit.pack(side='left', padx=8)
-        tk.Label(self.root, text='关闭此窗口会停止服务；请先在工作台保存项目。\n手动处理无需联网；AI 使用现有 Codex CLI 登录与额度。', fg='#a3a3a3', bg='#191b1d', justify='center').pack()
+        tk.Label(self.root, text='关闭此窗口会停止服务；请先在工作台保存项目。\n手动处理无需联网；AI 可选 Codex CLI 或兼容接口。', fg='#a3a3a3', bg='#191b1d', justify='center').pack()
         self.root.protocol('WM_DELETE_WINDOW', self.stop)
         self.root.after(200, self.poll)
 
@@ -120,6 +121,7 @@ def main(argv=None):
     directory = data_root()
     lock = None
     worker = http = None
+    trace_file = None
     instance = directory / 'instance.json'
     try:
         directory.mkdir(parents=True, exist_ok=True)
@@ -166,6 +168,10 @@ def main(argv=None):
             while worker.is_alive():
                 worker.join(.2)
                 if args.stop_file and args.stop_file.exists():
+                    if trace_file is None:
+                        trace_file = (directory/'logs'/'shutdown-stacks.log').open('w', encoding='utf8')
+                        faulthandler.dump_traceback_later(10, file=trace_file)
+                        logging.info('Shutdown signal received')
                     http.shutdown()
     except KeyboardInterrupt:
         pass
@@ -185,6 +191,10 @@ def main(argv=None):
             except (OSError, ValueError):
                 pass
             lock.close()
+        if trace_file:
+            faulthandler.cancel_dump_traceback_later()
+            trace_file.close()
+        logging.info('Launcher stopped')
         logging.shutdown()
     return 0
 

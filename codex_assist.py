@@ -1,6 +1,7 @@
 """Restricted, structured image advice through the official local Codex CLI."""
 import json
 import automation
+import api_backend
 import hashlib
 import re
 import math
@@ -150,13 +151,13 @@ class Advisor:
                     return key
         raise KeyError('未找到该分析请求；不会自动重新发起模型分析')
 
-    def submit(self, source_id, before, current_image, current_settings, goal, is_raw, mode='suggest', request_id=None, auto_options=None):
+    def submit(self, source_id, before, current_image, current_settings, goal, is_raw, mode='suggest', request_id=None, auto_options=None, backend=None):
         if mode not in ('suggest', 'auto'):
             raise ValueError('无效的辅助模式')
         if not isinstance(goal, str) or not goal.strip() or len(goal) > 1200:
             raise ValueError('请输入 1 到 1200 字的调色目标')
         policy = automation.options(auto_options) if mode == 'auto' else None
-        fingerprint = hashlib.sha256(json.dumps([current_settings, goal.strip(), is_raw, mode, policy], sort_keys=True).encode()).hexdigest()
+        fingerprint = hashlib.sha256(json.dumps([current_settings, goal.strip(), is_raw, mode, policy, None if backend is None else {k:backend[k] for k in ('provider','base_url','model','revision')}], sort_keys=True).encode()).hexdigest()
         if request_id is not None and (not isinstance(request_id, str) or not re.fullmatch('[a-f0-9]{32}', request_id)):
             raise ValueError('无效的分析请求编号')
         with self.lock:
@@ -169,7 +170,7 @@ class Advisor:
                     if self.jobs[existing]['fingerprint'] != fingerprint:
                         raise ValueError('同一请求编号不能用于不同调色参数')
                     return existing
-            cmd = codex_command()
+            cmd = codex_command() if backend is None else backend
             if not cmd:
                 raise ValueError('未找到 Codex CLI，请先安装并运行 codex login')
             if self.stopped:
@@ -182,7 +183,7 @@ class Advisor:
             self.jobs[key] = {'state': 'running', 'source_id': source_id, 'started': time.time(),
                               'mode': mode, 'phase': 'analyzing', 'request_id': request_id,
                               'fingerprint': fingerprint, 'base_settings': dict(current_settings), 'auto_options': policy}
-        worker = threading.Thread(target=self._run,
+        worker = threading.Thread(target=self._run if backend is None else self._run_remote,
                                   args=(key, cmd, before, current_image, dict(current_settings), goal.strip(), is_raw),
                                   daemon=True)
         with self.lock:
@@ -277,21 +278,7 @@ class Advisor:
                     result = validate_result(json.loads(output.read_text(encoding='utf8')))
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     raise ValueError('Codex 返回的 JSON 无法读取，请重试')
-                result['adjustments']['wb'] = p['wb'] if is_raw else 'camera'
-                result['settings'] = {**p, **result.pop('adjustments')}
-                with self.lock:
-                    if self.jobs[key]['state'] != 'running' or self.stopped:
-                        return
-                    self.jobs[key]['phase'] = 'checking'
-                policy = self.jobs[key].get('auto_options')
-                if policy is not None:
-                    result['settings'] = automation.constrain(p, result['settings'], policy)
-                    result['automation'] = dict(style=policy['style'],strength=policy['strength'],exposure_limit=policy['exposure_limit'],color_limit=policy['color_limit'])
-                if self.result_filter:
-                    result = self.result_filter(self.jobs[key]['source_id'], p, result)
-                with self.lock:
-                    if self.jobs[key]['state'] == 'running' and not self.stopped:
-                        self.jobs[key].update(state='done', phase='ready', result=result)
+                self._publish(key, result, p, is_raw)
         except (OSError, ValueError) as exc:
             self._fail(key, str(exc) if isinstance(exc, ValueError)
                        else '无法启动 Codex。请检查本机 CLI 安装和目录权限')
@@ -301,3 +288,34 @@ class Advisor:
             with self.lock:
                 self.processes.pop(key, None)
                 self.workers.pop(key, None)
+
+    def _publish(self, key, result, p, is_raw):
+        result['adjustments']['wb'] = p['wb'] if is_raw else 'camera'
+        result['settings'] = {**p, **result.pop('adjustments')}
+        with self.lock:
+            if self.jobs[key]['state'] != 'running' or self.stopped:
+                return
+            self.jobs[key]['phase'] = 'checking'
+        policy = self.jobs[key].get('auto_options')
+        if policy is not None:
+            result['settings'] = automation.constrain(p, result['settings'], policy)
+            result['automation'] = dict(style=policy['style'],strength=policy['strength'],exposure_limit=policy['exposure_limit'],color_limit=policy['color_limit'])
+        if self.result_filter:
+            result = self.result_filter(self.jobs[key]['source_id'], p, result)
+        with self.lock:
+            if self.jobs[key]['state'] == 'running' and not self.stopped:
+                self.jobs[key].update(state='done', phase='ready', result=result)
+
+    def _run_remote(self,key,backend,before,current_image,p,goal,is_raw):
+        try:
+            handle=api_backend.Request(backend)
+            with self.lock:
+                if self.jobs[key]['state']!='running' or self.stopped:return
+                self.processes[key]=handle
+            result=validate_result(handle.generate(before,current_image,build_prompt(p,goal,is_raw),SCHEMA))
+            self._publish(key,result,p,is_raw)
+        except ValueError as exc:self._fail(key,str(exc))
+        except Exception:self._fail(key,'模型接口处理失败；未自动重试')
+        finally:
+            with self.lock:
+                self.processes.pop(key,None);self.workers.pop(key,None)

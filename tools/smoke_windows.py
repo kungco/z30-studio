@@ -8,14 +8,27 @@ from pathlib import Path
 import secrets
 import subprocess
 import tempfile
+import threading
 import time
 import urllib.parse
 import urllib.request
 import zipfile
+from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 
 import numpy as np
 from PIL import Image, ImageCms
 import tifffile
+
+
+class MockVision(BaseHTTPRequestHandler):
+    def log_message(self,*args):pass
+    def do_POST(self):
+        payload=json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+        self.server.calls.append(payload)
+        controls=dict(exposure=.2,contrast=0,highlights=0,shadows=0,temperature=0,tint=0,saturation=0,vibrance=0,sharpen=0,wb='camera')
+        result=dict(title='本地接口验收',summary='模拟服务，无云端调用',observations=['只用于协议验收'],limitations='未验证 DeepSeek 云端效果',adjustments=controls)
+        body=json.dumps(dict(choices=[dict(message=dict(content=json.dumps(result)),finish_reason='stop')])).encode()
+        self.send_response(200);self.end_headers();self.wfile.write(body)
 
 
 def main():
@@ -59,7 +72,7 @@ def main():
             start(1)
             report['health']=json.loads(get('/api/health'))
             assert b'Z30 Studio' in get('/')
-            for path in ('/app.js','/history.js','/batch-grade.js','/auto-grade.js','/style.css','/assistant.css'):
+            for path in ('/app.js','/model-settings.js','/history.js','/batch-grade.js','/auto-grade.js','/style.css','/assistant.css'):
                 assert len(get(path))>100
             report['static_assets']=True
             report['codex_status']=json.loads(get('/api/codex/status'))
@@ -79,6 +92,22 @@ def main():
                 time.sleep(.1)
             with zipfile.ZipFile(io.BytesIO(get('/api/exports/'+job+'/download'))) as z:assert any(n.endswith('.png') for n in z.namelist())
             assert (data/'exports').is_dir()
+            mock=ThreadingHTTPServer(('127.0.0.1',0),MockVision);mock.calls=[]
+            thread=threading.Thread(target=mock.serve_forever,daemon=True);thread.start()
+            try:
+                config=json.loads(post('/api/ai/config',dict(provider='compatible',base_url=f'http://127.0.0.1:{mock.server_port}',model='vision-test',api_key='local-smoke-not-a-secret')))
+                job_ai=json.loads(post('/api/codex/auto',dict(id=photo['id'],settings={},backend_revision=config['revision'],request_id=secrets.token_hex(16))))['job']
+                deadline=time.monotonic()+20
+                while True:
+                    state=json.loads(get('/api/codex/jobs/'+job_ai))
+                    if state['state']!='running':break
+                    if time.monotonic()>deadline:raise TimeoutError('Mock compatible backend')
+                    time.sleep(.1)
+                assert state['state']=='done' and state['result']['quality']['native_preview_checked']
+                assert len(mock.calls)==1 and len(mock.calls[0]['messages'][0]['content'])==3
+                assert 'local-smoke-not-a-secret' not in (data/'ai-provider.json').read_text()
+                report['compatible_mock_requests']=1;report['real_cloud_inference_verified']=False
+            finally:mock.shutdown();mock.server_close();thread.join()
             if args.samples:
                 originals=[];recipes={}
                 for depth in (12,14):
@@ -110,6 +139,7 @@ def main():
                 report['project_roundtrip']=True
             end();report['graceful_exit']=True
             start(2)
+            assert not json.loads(get('/api/ai/config'))['has_key'];report['key_not_persisted_after_restart']=True
             assert json.loads(get('/api/exports/'+job))['state']=='done'
             assert get('/api/exports/'+job+'/files/0').startswith(b'\x89PNG')
             report['durable_export_after_restart']=True
@@ -117,6 +147,12 @@ def main():
             report['python_removed_from_PATH']=True
             report['unicode_and_space_paths']=True
             report['exe_sha256']=hashlib.sha256(exe.read_bytes()).hexdigest()
+        except Exception:
+            args.out.parent.mkdir(parents=True,exist_ok=True)
+            for name in ('launcher.log','shutdown-stacks.log'):
+                log=data/'logs'/name
+                if log.exists():args.out.with_name(args.out.stem+'-'+name).write_bytes(log.read_bytes())
+            raise
         finally:end()
     args.out.parent.mkdir(parents=True,exist_ok=True)
     args.out.write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf8')

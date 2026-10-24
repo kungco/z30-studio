@@ -21,6 +21,10 @@ def main():
     args = p.parse_args()
     if sys.platform != 'win32' or struct.calcsize('P') != 8:
         p.error('Build with 64-bit Python on Windows')
+    for name in ('build','dist'):
+        target=(ROOT/name).resolve()
+        if not target.is_relative_to(ROOT.resolve()):
+            raise ValueError('Build output escapes workspace: '+str(target))
     subprocess.run([sys.executable, '-m', 'PyInstaller', '--noconfirm', str(ROOT/'Z30-Studio.spec')], cwd=ROOT, check=True)
     bundle = ROOT/'dist'/'Z30-Studio'
     licenses = bundle/'licenses';licenses.mkdir(exist_ok=True)
