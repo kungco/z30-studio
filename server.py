@@ -29,6 +29,7 @@ import zipfile
 import diagnostics
 import drafts
 import darkroom
+import workflow
 from app_runtime import APP_VERSION, resource_root, data_root
 from imaging import raw_crop, raw_pixels, raster_linear, resize_linear, srgb_to_linear
 
@@ -206,7 +207,8 @@ def recipe(data):
     if h and h['states'][h['index']]['settings'] != p:
         raise ValueError('草稿参数与历史不一致，未覆盖上次自动保存')
     return dict(settings=p, history=h, preset=str(data.get('preset', 'custom'))[:32],
-                undo=projects.undo(data.get('undo'), settings), analysis=projects.analysis(data.get('analysis'), settings))
+                undo=projects.undo(data.get('undo'), settings), analysis=projects.analysis(data.get('analysis'), settings),
+                catalog=workflow.catalog(data.get('catalog')))
 
 
 def save_draft(data, owner):
@@ -539,6 +541,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({'error': '建议任务不存在，请重新生成'}, 404)
         files = {'/': ('index.html', 'text/html; charset=utf-8'),
                  '/app.js': ('app.js', 'application/javascript; charset=utf-8'),
+                 '/library-workflow.js': ('library-workflow.js','application/javascript; charset=utf-8'),
                  '/darkroom-controls.js': ('darkroom-controls.js', 'application/javascript; charset=utf-8'),
                  '/draft-save.js': ('draft-save.js', 'application/javascript; charset=utf-8'),
                  '/model-settings.js': ('model-settings.js', 'application/javascript; charset=utf-8'),
@@ -584,6 +587,7 @@ class Handler(BaseHTTPRequestHandler):
                     preview = preview_result(SESSIONS[key], photo['settings'], True) if eager else {}
                     photos.append(preview | SESSIONS[key]['meta'] | dict(settings=photo['settings'], history=photo.get('history'),
                                   preset=photo.get('preset','custom'), analysis=photo.get('analysis'), undo=photo.get('undo')))
+                    photos[-1]['catalog']=photo['catalog']
                 return self.json({'photos': photos, 'selected': max(0,min(len(photos)-1,int(document.get('selected',0))))})
         except Exception:
             with LOCK:
@@ -636,6 +640,22 @@ class Handler(BaseHTTPRequestHandler):
                 with ADVISOR.lock:
                     if ADVISOR.workers:raise ValueError('正在分析或取消中，请等任务结束后更换模型配置')
                     return self.json(AI_SETTINGS.save(data))
+            if route == '/api/edits/sync':
+                if owner is None:raise ValueError('页面会话编号缺失')
+                data=json.loads(body);targets=data.get('targets')
+                if not isinstance(targets,list) or not 1<=len(targets)<=projects.MAX_PHOTOS:
+                    raise ValueError('请选择 1–256 张同步照片')
+                if len({t['id'] for t in targets})!=len(targets):raise ValueError('同步列表有重复照片')
+                reference=settings(data.get('source',{}))
+                with LOCK:
+                    if any(t['id'] not in SESSIONS or SESSIONS[t['id']].get('owner')!=owner for t in targets):
+                        raise ValueError('同步照片不属于当前页面或已经关闭')
+                    result=[]
+                    for target in targets:
+                        p=settings(workflow.transfer(settings(target.get('settings',{})),reference,data.get('groups')))
+                        if not SESSIONS[target['id']]['raw']:p['wb']='camera'
+                        result.append(dict(id=target['id'],settings=p))
+                return self.json({'photos':result})
             if route == '/api/projects/prepare':
                 data = json.loads(body); ids = data.get('ids')
                 if not isinstance(ids, list) or not 1 <= len(ids) <= projects.MAX_PHOTOS or len(set(ids)) != len(ids):
@@ -678,6 +698,7 @@ class Handler(BaseHTTPRequestHandler):
                         item = preview | session['meta'] | {'settings': p, 'thumbnail':session.get('thumbnail'),
                                 'previewWidth': preview.get('width'), 'previewHeight': preview.get('height')}
                         item['history'] = projects.history(recipe.get('history'), settings)
+                        item['catalog'] = workflow.catalog(recipe.get('catalog'))
                         if recipe.get('undo'):
                             item['undo'] = {'settings': settings(recipe['undo'].get('settings', {})), 'preset': recipe['undo'].get('preset', 'custom')}
                         photos.append(item)

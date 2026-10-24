@@ -7,6 +7,7 @@ import shutil
 import stat
 import tempfile
 import zipfile
+import workflow
 
 MAX_PHOTOS = 256
 PROJECT_LIMIT = 8 * 1024 ** 3
@@ -65,8 +66,8 @@ def manifest(sources, recipes, selected, normalize):
         photos.append(dict(name=source['name'], file=f'sources/{i}{path.suffix.lower()}',
                            sha256=digest, size=path.stat().st_size, settings=p,
                            preset=str(recipe.get('preset', 'custom'))[:32], history=h, undo=undo(recipe.get('undo'),normalize),
-                           analysis=analysis(recipe.get('analysis'), normalize)))
-    result = dict(app='Z30 Studio', version=1, selected=max(0, min(len(photos)-1, selected)), photos=photos)
+                           analysis=analysis(recipe.get('analysis'), normalize),catalog=workflow.catalog(recipe.get('catalog'))))
+    result = dict(app='Z30 Studio', version=2, selected=max(0, min(len(photos)-1, selected)), photos=photos)
     encoded = json.dumps(result, ensure_ascii=False, allow_nan=False).encode('utf8')
     if len(encoded) > MANIFEST_LIMIT:
         raise ValueError('项目历史过大，请减少历史或照片数量')
@@ -93,7 +94,7 @@ def read_project(path, parent, normalize):
         if sum(x.file_size for x in infos) > PROJECT_LIMIT or archive.getinfo('project.json').file_size > MANIFEST_LIMIT:
             raise ValueError('项目解压大小超出限制')
         document = json.loads(archive.read('project.json'))
-        if document.get('app') != 'Z30 Studio' or document.get('version') != 1:
+        if document.get('app') != 'Z30 Studio' or document.get('version') not in (1,2):
             raise ValueError('不支持此项目版本')
         photos = document.get('photos')
         if not isinstance(photos, list) or not 1 <= len(photos) <= MAX_PHOTOS:
@@ -110,6 +111,7 @@ def read_project(path, parent, normalize):
             photo['history'] = history(photo.get('history'), normalize)
             photo['analysis'] = analysis(photo.get('analysis'), normalize)
             photo['undo'] = undo(photo.get('undo'), normalize)
+            photo['catalog'] = workflow.catalog(photo.get('catalog'))
             # The selected history node must describe the actual saved edit.
             if photo['history'] and photo['history']['states'][photo['history']['index']]['settings'] != photo['settings']:
                 raise ValueError('项目参数与历史位置不一致')

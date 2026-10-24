@@ -97,6 +97,21 @@ class HttpTests(unittest.TestCase):
                 self.post('/api/close',{'id':restored}).close()
                 server.STORES.pop(Path(self.tmp.name)/'durable'/'drafts',None)
 
+    def test_manual_sync_validates_ownership_and_preserves_unspecified_groups(self):
+        self.owner='e'*32;a=self.open_photo();b=self.open_photo()
+        try:
+            body=dict(source={'exposure':.8,'rotation':3},groups=['light'],targets=[
+                dict(id=a,settings={'exposure':0,'rotation':1}),dict(id=b,settings={'exposure':.1,'rotation':2})])
+            with self.post('/api/edits/sync',body) as response:result=json.load(response)['photos']
+            self.assertEqual([p['settings']['exposure'] for p in result],[.8,.8])
+            self.assertEqual([p['settings']['rotation'] for p in result],[1,2])
+            self.owner='f'*32
+            with self.assertRaises(urllib.error.HTTPError) as cm:self.post('/api/edits/sync',body)
+            self.assertEqual(cm.exception.code,400);cm.exception.close()
+        finally:
+            self.owner='e'*32
+            self.post('/api/close',{'id':a}).close();self.post('/api/close',{'id':b}).close()
+
     def test_compatible_backend_uses_actual_http_images_and_quality_guard(self):
         import base64
         import api_backend

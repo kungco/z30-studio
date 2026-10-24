@@ -27,8 +27,9 @@ class DarkroomControls {
   this.$('curveX').oninput=()=>{if(this.$('curveX').value!=='')this.movePoint(Number(this.$('curveX').value)/100,this.points()[this.point][1]);};
   this.$('curveY').oninput=()=>{if(this.$('curveY').value!=='')this.movePoint(this.points()[this.point][0],Number(this.$('curveY').value)/100);};
   this.$('wbMode').onchange=()=>io.change({wb_mode:this.$('wbMode').value});
-  this.$('kelvin').onchange=()=>{const k=Number(this.$('kelvin').value);if(Number.isFinite(k)&&k>=2000&&k<=15000)io.change({kelvin:k,wb_mode:'kelvin'});else io.error('Kelvin 需为 2000–15000');};
-  this.$('wbCalibration').onchange=()=>io.change({wb_calibration:this.$('wbCalibration').value});
+  this.$('kelvin').oninput=()=>{const k=Number(this.$('kelvin').value);if(Number.isFinite(k)&&k>=2000&&k<=15000)io.change({kelvin:k,wb_mode:'kelvin'});};
+  this.$('kelvin').onchange=()=>{const k=Number(this.$('kelvin').value);if(!Number.isFinite(k)||k<2000||k>15000)io.error('Kelvin 需为 2000–15000');};
+  this.$('wbCalibration').oninput=()=>io.change({wb_calibration:this.$('wbCalibration').value});
   this.$('wbPick').onclick=()=>io.sample();this.$('freeCrop').onclick=()=>io.crop();
   this.$('straighten').oninput=()=>io.change({straighten:Number(this.$('straighten').value)});
   this.$('compositionGrid').onchange=()=>io.grid(this.$('compositionGrid').checked);

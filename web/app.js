@@ -1,6 +1,7 @@
 'use strict';
 const $ = id => document.getElementById(id);
 let aiProvider=null;
+var libraryWorkflow=null;
 var draftSaver=null,draftsReady=false,darkroomPanel=null,wbPicking=false,gridVisible=false;
 let clientId;
 try{clientId=sessionStorage.getItem('z30-client');if(!/^[a-f0-9]{32}$/.test(clientId||'')){clientId=crypto.randomUUID().replaceAll('-','');sessionStorage.setItem('z30-client',clientId);}}
@@ -9,7 +10,7 @@ const localFetch=(path,options={})=>fetch(path,{...options,headers:{'X-Z30-Clien
 function savedWorkspace(){try{return JSON.parse(sessionStorage.getItem('z30-workspace')||'{}');}catch{return {};}}
 function persistWorkspace(){
  try{
-  const recipes={};for(const f of files)recipes[f.id]={settings:f.settings,preset:f.preset,undo:f.aiUndo,history:f.history?.snapshot(),
+  const recipes={};for(const f of files)recipes[f.id]={catalog:f.catalog,settings:f.settings,preset:f.preset,undo:f.aiUndo,history:f.history?.snapshot(),
    pending:f.autoPending?{base:f.autoPending.base,requestId:f.autoPending.requestId}:null};
   sessionStorage.setItem('z30-workspace',boundedWorkspace({selected:current?.id,recipes}));
  }catch{/* The server draft remains available if browser storage is disabled. */}
@@ -58,7 +59,7 @@ function setEnabled(){const yes=!!current,locked=exportBusy||importBusy; $('cont
 function syncLabels(){syncHistory();darkroomPanel?.sync(current?.settings||defaults,!current||importBusy||exportBusy);const p=current?current.settings:defaults;sliderSpecs.forEach(([,id,,,,step,suffix])=>{const n=p[id];$(id).value=n;$(id+'Value').textContent=(n>0?'+':'')+(step<1?n.toFixed(step<.01?3:2):n)+suffix;});$('wb').value=p.wb;$('crop').value=p.crop;$('lensProfileName').value=p.lens_profile||'手动 / 未校准';syncMaskUI();document.querySelectorAll('[data-preset]').forEach(b=>b.classList.toggle('selected',b.dataset.preset===(current?.preset||'neutral')));}
 async function api(path,data,binary=false,extra={},options={}){if(['/api/codex/suggest','/api/codex/auto'].includes(path))data={...data,backend_revision:data.backend_revision??aiProvider?.revision};const r=await localFetch(path,{method:'POST',headers:{'Content-Type':binary?'application/octet-stream':'application/json','X-Z30-Request':'1',...extra},body:binary?data:JSON.stringify(data),...options});if(!r.ok){let message;try{message=(await r.json()).error;}catch{message=`处理失败 (${r.status})`;}throw Object.assign(Error(message),{status:r.status,retryable:r.status>=500||r.status===408||r.status===429});}return r;}
 function histogram(hist){const c=$('histogram'),ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#2b2d2f';ctx.lineWidth=1;[.25,.5,.75].forEach(t=>{ctx.beginPath();ctx.moveTo(t*c.width,0);ctx.lineTo(t*c.width,c.height);ctx.stroke();});if(!hist)return;const peak=Math.max(1,...hist.flat());ctx.globalCompositeOperation='screen';['#b65e56','#599173','#5c83ae'].forEach((color,ch)=>{ctx.beginPath();ctx.moveTo(0,c.height);hist[ch].forEach((n,i)=>ctx.lineTo(i*c.width/127,c.height-(Math.log1p(n)/Math.log1p(peak))*c.height*.92));ctx.lineTo(c.width,c.height);ctx.closePath();ctx.fillStyle=color+'90';ctx.fill();});ctx.globalCompositeOperation='source-over';}
-function drawLibrary(){$('fileList').replaceChildren();files.forEach(f=>{const card=document.createElement('div');card.className='filecard'+(current===f?' selected':'');const b=document.createElement('button');b.className='selectfile';b.title=f.name;const img=new Image();img.src=f.thumb;img.alt=f.name;const name=document.createElement('strong');name.textContent=f.name;const sub=document.createElement('small');sub.textContent=`${f.raw?'NEF RAW':'IMAGE'} · ${(f.bytes/1024/1024).toFixed(1)} MB`;b.append(img,name,sub);b.onclick=()=>selectFile(f);const remove=document.createElement('button');remove.className='remove';remove.textContent='×';remove.setAttribute('aria-label','移除 '+f.name);remove.onclick=()=>removeFile(f);card.append(b,remove);$('fileList').append(card);});$('count').textContent=String(files.length).padStart(2,'0');$('libraryHint').hidden=files.length>0;}
+function drawLibrary(){const visible=libraryWorkflow?libraryWorkflow.visible(files):files;$('fileList').replaceChildren();visible.forEach(f=>{const card=document.createElement('div');card.className='filecard'+(current===f?' selected':'');const b=document.createElement('button');b.className='selectfile';b.title=f.name;const img=new Image();img.src=f.thumb;img.alt=f.name;const name=document.createElement('strong');name.textContent=f.name;const sub=document.createElement('small');sub.textContent=`${f.raw?'NEF RAW':'IMAGE'} · ${(f.bytes/1024/1024).toFixed(1)} MB`;b.append(img,name,sub);b.onclick=()=>selectFile(f);const remove=document.createElement('button');remove.className='remove';remove.textContent='×';remove.setAttribute('aria-label','移除 '+f.name);remove.onclick=()=>removeFile(f);card.append(b,remove);libraryWorkflow?.decorate(card,f);$('fileList').append(card);});$('count').textContent=String(files.length).padStart(2,'0');$('libraryHint').hidden=files.length>0;libraryWorkflow?.sync();}
 function selectFile(f){for(const other of files){if(other!==f){other.image=other.thumb;other.before=null;other.histogram=null;}}current=f;revision++;showingBefore=false;$('beforeLabel').hidden=true;$('empty').hidden=!!f;$('imageWrap').hidden=!f;setEnabled();syncLabels();drawLibrary();if(!f){$('filename').textContent='尚未选择照片';$('filetype').textContent='RAW WORKSPACE';$('imageMeta').textContent='为 NEF 照片而设计';$('renderState').textContent='准备就绪';histogram();return;}$('filename').textContent=f.name;$('filetype').textContent=f.raw?'NEF RAW':'IMAGE';$('imageMeta').textContent=`${f.camera} · ${f.width} × ${f.height} · sRGB`;$('preview').src=f.image||f.thumb||'';histogram(f.histogram);$('qualityStatus').textContent=f.quality?.message||'等待画质检查';schedulePreview(0);}
 async function removeFile(f){if(exportBusy||importBusy)return;try{await api('/api/close',{id:f.id});files.splice(files.indexOf(f),1);if(current===f)selectFile(files[0]||null);else drawLibrary();persistWorkspace();}catch(e){toast(e.message);}}
 async function importFiles(list){if(importBusy||exportBusy){toast('请等待当前处理完成');return;}const incoming=Array.from(list);if(!incoming.length)return;importBusy=true;setEnabled();let succeeded=0;const colorWarnings=[];for(const file of incoming){if(files.length>=256){toast('最多同时打开 256 张照片，请先移除照片');break;}if(!/\.(nef|jpg|jpeg|png)$/i.test(file.name)){toast('不支持 '+file.name+'，请选择 NEF、JPG 或 PNG');continue;}if(file.size>150*1024*1024){toast(file.name+' 超过 150 MB');continue;}busy(true,'正在解码 '+file.name+'…');try{const r=await api('/api/open',file,true,{'X-Filename':encodeURIComponent(file.name)});const d=await r.json();colorWarnings.push(...(d.warnings||[]));const f={...d,settings:cloneEdit(defaults),preset:'neutral',thumb:d.thumbnail||d.image};f.history=new EditHistory(f.settings,f.preset);files.push(f);selectFile(f);succeeded++;}catch(e){toast(file.name+'：'+e.message);}}importBusy=false;setEnabled();busy(false);if(succeeded)toast(`已导入 ${succeeded} 张照片，原文件保持不变`+(colorWarnings.length?"；"+[...new Set(colorWarnings)].join("；"):""));if(previewWanted)runPreview();$('fileInput').value='';}
@@ -79,11 +80,11 @@ window.addEventListener('keyup',e=>{if(e.code==='Space')compare(false);});window
 $('zoom').onclick=()=>{if(!current)return;inspector={source:current,settings:cloneEdit(current.settings),cx:.5,cy:.5};$('inspectMap').src=current.image;$('inspectDialog').showModal();loadInspection();};
 let dragDepth=0;document.addEventListener('dragenter',e=>{if(e.dataTransfer.types.includes('Files')){e.preventDefault();dragDepth++;$('dropOverlay').hidden=false;}});document.addEventListener('dragover',e=>e.preventDefault());document.addEventListener('dragleave',()=>{if(--dragDepth<=0){dragDepth=0;$('dropOverlay').hidden=true;}});document.addEventListener('drop',e=>{e.preventDefault();dragDepth=0;$('dropOverlay').hidden=true;importFiles(e.dataTransfer.files);});
 function download(blob,name){const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);}
-$('saveRecipe').onclick=()=>{if(!current)return;download(new Blob([JSON.stringify({app:'Z30 Studio',version:1,source:current.name,settings:current.settings},null,2)],{type:'application/json'}),current.name.replace(/\.[^.]+$/,'')+'-z30.json');toast('参数已下载，可在下次导入照片后载入');};
+$('saveRecipe').onclick=()=>{if(!current)return;download(new Blob([JSON.stringify({app:'Z30 Studio',version:2,source:current.name,settings:current.settings},null,2)],{type:'application/json'}),current.name.replace(/\.[^.]+$/,'')+'-z30.json');toast('参数已下载，可在下次导入照片后载入');};
 $('loadRecipe').onclick=()=>$('recipeInput').click();
 $('recipeInput').onchange=async e=>{
  try{if(!current||!e.target.files[0])return;const source=current,rev=revision;const file=e.target.files[0];if(file.size>100000)throw Error('参数文件过大');
-  const data=JSON.parse(await file.text());if(data.app!=='Z30 Studio'||data.version!==1||!data.settings)throw Error('参数文件无效');
+  const data=JSON.parse(await file.text());if(data.app!=='Z30 Studio'||![1,2].includes(data.version)||!data.settings)throw Error('参数文件无效');
   const validated=(await(await api('/api/settings',{id:source.id,settings:data.settings})).json()).settings;
   if(current!==source||revision!==rev||!files.includes(source))throw Error('照片或参数已改变，未载入旧参数');
   source.settings=validated;
@@ -277,7 +278,7 @@ $('jobsTop').onclick=()=>{$('jobsDialog').showModal();refreshExportJobs();};
 $('jobsClose').onclick=()=>$('jobsDialog').close();
 $('exportConfirm').onclick=async()=>{
  if(!current||exportBusy)return;
- const sources=$('exportScope').value==='all'?[...files]:[current];
+ const sources=$('exportScope').value==='all'?[...files]:$('exportScope').value==='selected'?files.filter(f=>f.multiSelected):[current];if(!sources.length){toast('请先多选需要导出的照片');return;}
  const body={ids:sources.map(f=>f.id),settings:cloneEdit(current.settings),format:$('exportFormat').value,
              quality:Number($('quality').value),protect:$('exportProtect').checked};
  exportBusy=true;setEnabled();$('exportConfirm').disabled=true;
@@ -410,7 +411,7 @@ window.addEventListener('keydown',e=>{
 });
 $('saveProject').onclick=async()=>{
  if(!files.length||importBusy||exportBusy)return;
- recordEdit();const recipes={};for(const f of files)recipes[f.id]={settings:f.settings,preset:f.preset,undo:f.aiUndo||null,history:f.history?.snapshot(),analysis:f.autoResult?{base:f.autoResult.base,result:f.autoResult.result}:null};
+ recordEdit();const recipes={};for(const f of files)recipes[f.id]={catalog:f.catalog,settings:f.settings,preset:f.preset,undo:f.aiUndo||null,history:f.history?.snapshot(),analysis:f.autoResult?{base:f.autoResult.base,result:f.autoResult.result}:null};
  try{const data=await(await api('/api/projects/prepare',{ids:files.map(f=>f.id),recipes,selected:files.indexOf(current)})).json();
   const link=document.createElement('a');link.href=data.url;link.download='Z30-Project.z30proj';document.body.append(link);link.click();link.remove();
   toast('项目含原片副本，请保管本机下载文件；下载完成前勿移除照片');
@@ -552,7 +553,7 @@ const modelSettings=new ModelSettings({read:()=>localFetch('/api/ai/config'),pos
 
 // Durable autosave is independent of sessionStorage and never submits AI jobs.
 function draftDocument(){
- const recipes={};for(const f of files)recipes[f.id]={settings:cloneEdit(f.settings),preset:f.preset,
+ const recipes={};for(const f of files)recipes[f.id]={catalog:f.catalog,settings:cloneEdit(f.settings),preset:f.preset,
   history:f.history?.snapshot(),undo:f.aiUndo,analysis:f.autoResult?{base:f.autoResult.base,result:f.autoResult.result}:null};
  return {ids:files.map(f=>f.id),recipes,selected:Math.max(0,files.indexOf(current))};
 }
@@ -645,3 +646,14 @@ $('cropCanvas').onpointermove=e=>{if(!cropDrag||!cropContext)return;const [x,y]=
 $('cropCanvas').onpointerup=$('cropCanvas').onpointercancel=()=>{cropDrag=null;};
 $('cropClose').onclick=()=>{$('cropDialog').close();cropContext=null;};
 $('cropApply').onclick=()=>{if(!cropContext)return;const {source,revision:rev,rect}=cropContext;if(current!==source||revision!==rev){toast('编辑已改变，请重新绘制裁剪');return;}if(Math.min(rect[2],rect[3])<.02){toast('裁剪框过小，请重新绘制');return;}source.settings={...source.settings,crop:'free',crop_rect:rect};source.preset='custom';$('cropDialog').close();cropContext=null;syncLabels();schedulePreview(0);};
+
+libraryWorkflow=new LibraryWorkflow({photos:()=>files,current:()=>current,redraw:drawLibrary,persist:persistWorkspace,error:toast,
+ validate:async data=>(await api('/api/edits/sync',data)).json(),record:recordEdit,
+ applied:()=>{persistWorkspace();syncLabels();drawLibrary();schedulePreview(0);},compare:comparePhotos});
+drawLibrary();
+let comparisonRevision=0;
+async function comparePhotos(selected){
+ if(selected.length!==2)return;const rev=++comparisonRevision;$('compareDialog').showModal();$('compareStatus').textContent='正在生成两张当前显影…';$('compareImages').replaceChildren();
+ try{for(const f of selected){const signature=JSON.stringify(f.settings);const data=await(await api('/api/preview',{id:f.id,settings:f.settings})).json();if(rev!==comparisonRevision||!$('compareDialog').open)return;if(!files.includes(f)||JSON.stringify(f.settings)!==signature)throw Error('比较期间照片已改变，请重新打开');const figure=document.createElement('figure'),img=new Image(),caption=document.createElement('figcaption');img.src=data.image;img.alt=f.name;caption.textContent=f.name;figure.append(img,caption);$('compareImages').append(figure);} $('compareStatus').textContent='显示各自当前参数；原片与编辑不会改变。';}catch(e){$('compareStatus').textContent=e.message;}
+}
+$('compareClose').onclick=()=>{$('compareDialog').close();comparisonRevision++;};
