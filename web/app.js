@@ -33,7 +33,7 @@ function toast(message){$('toast').textContent=message;$('toast').hidden=false;c
 function busy(show,message='正在更新预览…'){$('busy').hidden=!show;$('busyText').textContent=message;}
 function setEnabled(){const yes=!!current,locked=exportBusy||importBusy; $('controls').disabled=!yes||locked;$('wb').disabled=!yes||!current.raw||locked; ['compare','rotate','zoom','reset','saveRecipe','loadRecipe'].forEach(id=>$(id).disabled=!yes||locked);$('exportTop').disabled=!yes||locked;document.querySelectorAll('[data-preset]').forEach(b=>b.disabled=!yes||locked);syncAssistantControls();}
 function syncLabels(){const p=current?current.settings:defaults;sliderSpecs.forEach(([,id,,,,step,suffix])=>{const n=p[id];$(id).value=n;$(id+'Value').textContent=(n>0?'+':'')+(step<1?n.toFixed(2):n)+suffix;});$('wb').value=p.wb;$('crop').value=p.crop;document.querySelectorAll('[data-preset]').forEach(b=>b.classList.toggle('selected',b.dataset.preset===(current?.preset||'neutral')));}
-async function api(path,data,binary=false,extra={},options={}){const r=await fetch(path,{method:'POST',headers:{'Content-Type':binary?'application/octet-stream':'application/json','X-Z30-Request':'1',...extra},body:binary?data:JSON.stringify(data),...options});if(!r.ok){let message;try{message=(await r.json()).error;}catch{message=`处理失败 (${r.status})`;}throw Error(message);}return r;}
+async function api(path,data,binary=false,extra={},options={}){const r=await fetch(path,{method:'POST',headers:{'Content-Type':binary?'application/octet-stream':'application/json','X-Z30-Request':'1',...extra},body:binary?data:JSON.stringify(data),...options});if(!r.ok){let message;try{message=(await r.json()).error;}catch{message=`处理失败 (${r.status})`;}throw Object.assign(Error(message),{status:r.status,retryable:r.status>=500||r.status===408||r.status===429});}return r;}
 function histogram(hist){const c=$('histogram'),ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#2b2d2f';ctx.lineWidth=1;[.25,.5,.75].forEach(t=>{ctx.beginPath();ctx.moveTo(t*c.width,0);ctx.lineTo(t*c.width,c.height);ctx.stroke();});if(!hist)return;const peak=Math.max(1,...hist.flat());ctx.globalCompositeOperation='screen';['#b65e56','#599173','#5c83ae'].forEach((color,ch)=>{ctx.beginPath();ctx.moveTo(0,c.height);hist[ch].forEach((n,i)=>ctx.lineTo(i*c.width/127,c.height-(Math.log1p(n)/Math.log1p(peak))*c.height*.92));ctx.lineTo(c.width,c.height);ctx.closePath();ctx.fillStyle=color+'90';ctx.fill();});ctx.globalCompositeOperation='source-over';}
 function drawLibrary(){$('fileList').replaceChildren();files.forEach(f=>{const card=document.createElement('div');card.className='filecard'+(current===f?' selected':'');const b=document.createElement('button');b.className='selectfile';b.title=f.name;const img=new Image();img.src=f.thumb;img.alt=f.name;const name=document.createElement('strong');name.textContent=f.name;const sub=document.createElement('small');sub.textContent=`${f.raw?'NEF RAW':'IMAGE'} · ${(f.bytes/1024/1024).toFixed(1)} MB`;b.append(img,name,sub);b.onclick=()=>selectFile(f);const remove=document.createElement('button');remove.className='remove';remove.textContent='×';remove.setAttribute('aria-label','移除 '+f.name);remove.onclick=()=>removeFile(f);card.append(b,remove);$('fileList').append(card);});$('count').textContent=String(files.length).padStart(2,'0');$('libraryHint').hidden=files.length>0;}
 function selectFile(f){current=f;revision++;showingBefore=false;$('beforeLabel').hidden=true;$('empty').hidden=!!f;$('imageWrap').hidden=!f;setEnabled();syncLabels();drawLibrary();if(!f){$('filename').textContent='尚未选择照片';$('filetype').textContent='RAW WORKSPACE';$('imageMeta').textContent='为 NEF 照片而设计';$('renderState').textContent='准备就绪';histogram();return;}$('filename').textContent=f.name;$('filetype').textContent=f.raw?'NEF RAW':'IMAGE';$('imageMeta').textContent=`${f.camera} · ${f.width} × ${f.height} · sRGB`;$('preview').src=f.image;histogram(f.histogram);$('qualityStatus').textContent=f.quality?.message||'等待画质检查';schedulePreview(0);}
@@ -255,12 +255,16 @@ const autoPost=(path,data)=>api(path,data,false,{}, {signal:AbortSignal.timeout(
 autoGrader=new AutoGrader({
  submit:async context=>{
   assistant.trialRevision++;assistant.trialWanted=false;clearTimeout(assistant.trialTimer);
-  const data=await(await autoPost('/api/codex/auto',{id:context.source.id,settings:context.base})).json();
+  const data=await(await autoPost('/api/codex/auto',{id:context.source.id,settings:context.base,request_id:context.requestId})).json();
   context.currentImage=data.current_image;return data;
+ },
+ recover:async context=>{
+  const response=await fetch('/api/codex/requests/'+encodeURIComponent(context.requestId)+'?source='+encodeURIComponent(context.source.id),{signal:AbortSignal.timeout(15000)});
+  const data=await response.json();if(!response.ok)throw Object.assign(Error(data.error||'无法恢复分析任务'),{status:response.status,retryable:response.status>=500});return data;
  },
  poll:async job=>{
   const response=await fetch('/api/codex/jobs/'+encodeURIComponent(job),{signal:AbortSignal.timeout(15000)});
-  const data=await response.json();if(!response.ok)throw Error(data.error||'无法读取自动调色任务');return data;
+  const data=await response.json();if(!response.ok)throw Object.assign(Error(data.error||'无法读取自动调色任务'),{status:response.status,retryable:response.status>=500});return data;
  },
  cancel:(context,job)=>autoPost('/api/codex/cancel',{id:context.source.id,job}),
  preview:async(context,settings)=>{
@@ -281,21 +285,24 @@ autoGrader=new AutoGrader({
   syncLabels();
  },
  onState:state=>{
-  const labels={preparing:'正在准备预览…',analyzing:'GPT 正在分析画面与调色…',checking:'正在检查通道、层次和色彩…',rendering:'正在验证本地调色预览…',cancelling:'正在取消；不会自动应用结果。'};
+  const labels={preparing:'正在准备预览…',analyzing:'GPT 正在分析画面与调色…',checking:'正在检查通道、层次和色彩…',rendering:'正在验证本地调色预览…',cancelling:'正在取消；不会自动应用结果。',reconnecting:'连接暂时中断，正在取回原分析任务，不会重新调用模型…'};
   const context=state.context||autoContext;
   if(state.result&&files.includes(context.source))context.source.autoResult={base:context.base,result:state.result,currentImage:context.currentImage};
+  if(['done','stale','error','cancelled'].includes(state.state)&&context){
+   if(state.pending)context.source.autoPending=context;else delete context.source.autoPending;
+  }
   let message=labels[state.state]||state.message;
   if(state.state==='done')message='已自动应用。'+state.result.summary+' '+state.result.quality.message;
   if(state.state==='stale')message='照片或参数已改变，未自动应用。可回到原照片查看分析。';
   $('autoStatus').textContent=(context?context.source.name+' · ':'')+(message||'自动调色未完成');
-  $('autoGrade').textContent=autoGrader?.busy?'正在自动调色…':'一键 GPT 调色';
+  $('autoGrade').textContent=autoGrader?.busy?'正在自动调色…':current?.autoPending?'重新连接分析任务':'一键 GPT 调色';
   syncAssistantControls();
   if(['done','stale','error','cancelled'].includes(state.state))toast(message);
  }
 });
 $('autoGrade').onclick=()=>{
  if(!current||autoGrader.busy||assistant.running||importBusy||exportBusy)return;
- autoContext={source:current,base:{...current.settings},revision};
+ autoContext=current.autoPending?{...current.autoPending,recoverOnly:true}:{source:current,base:{...current.settings},revision,requestId:crypto.randomUUID().replaceAll('-','')};
  autoGrader.start(autoContext).catch(e=>toast(e.message));
 };
 $('autoCancel').onclick=()=>autoGrader.cancel();

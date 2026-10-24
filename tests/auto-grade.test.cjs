@@ -88,3 +88,28 @@ test('failed cancellation is reported without permitting a late application',asy
  const outcome=await work;assert.equal(outcome.state,'cancelled');assert.match(outcome.message,/未能确认/);
  assert.equal(s.applied.length,0);
 });
+
+test('lost submission response recovers the original job without a second submit',async()=>{
+ let submitted=0,recovered=0;
+ const s=setup({submit:async()=>{submitted++;throw new TypeError('lost response');},recover:async()=>{recovered++;return {job:'original',current_image:'recovered-image'};}});
+ assert.equal((await s.grader.start(s.context)).state,'done');
+ assert.equal(submitted,1);assert.equal(recovered,1);assert.equal(s.context.currentImage,'recovered-image');
+});
+test('transient polling retries reads and keeps the same analysis',async()=>{
+ let polls=0;const s=setup({poll:async()=>{if(++polls<3)throw new TypeError('offline');return s.job;}});
+ assert.equal((await s.grader.start(s.context)).state,'done');
+ assert.equal(polls,3);assert.equal(s.submissions(),1);
+});
+test('abandoned polling requests remote cancellation after bounded read retries',async()=>{
+ let polls=0;const s=setup({poll:async()=>{polls++;throw new TypeError('offline');}});
+ assert.equal((await s.grader.start(s.context)).state,'error');
+ assert.equal(polls,3);assert.equal(s.cancelled.length,1);assert.equal(s.applied.length,0);
+});
+test('uncertain cancellation remains recoverable and recovery never submits a model job',async()=>{
+ const s=setup({poll:async()=>{throw new TypeError('offline');},cancel:async()=>{throw Error('offline');}});
+ const outcome=await s.grader.start(s.context);assert.equal(outcome.pending,true);
+ let recovered=0;const resumed=setup({recover:async()=>{recovered++;return {job:'old-job'};}});
+ resumed.context.recoverOnly=true;
+ assert.equal((await resumed.grader.start(resumed.context)).state,'done');
+ assert.equal(recovered,1);assert.equal(resumed.submissions(),0);
+});

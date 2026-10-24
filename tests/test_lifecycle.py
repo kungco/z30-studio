@@ -14,6 +14,20 @@ def advice():
 
 
 class AdvisorLifecycleTests(unittest.TestCase):
+    def test_request_identity_returns_same_job_and_rejects_different_parameters(self):
+        advisor = ai.Advisor()
+        with patch.object(ai, 'codex_command', return_value=['codex']), patch.object(ai.threading, 'Thread') as worker:
+            key = advisor.submit('photo', b'a', b'b', {'exposure': 0}, 'goal', True, request_id='a' * 32)
+            self.assertEqual(advisor.submit('photo', b'a', b'b', {'exposure': 0}, 'goal', True, request_id='a' * 32), key)
+            self.assertEqual(advisor.find_request('photo', 'a' * 32), key)
+            with self.assertRaises(ValueError):
+                advisor.submit('photo', b'a', b'b', {'exposure': 1}, 'goal', True, request_id='a' * 32)
+            with self.assertRaises(KeyError):
+                advisor.find_request('other-photo', 'a' * 32)
+            advisor.cancel(key)
+            self.assertEqual(advisor.submit('photo', b'a', b'b', {'exposure': 0}, 'goal', True, request_id='a' * 32), key)
+            worker.assert_called_once()
+
     def test_cancelled_worker_must_finish_before_another_quota_spending_job(self):
         advisor = ai.Advisor()
         advisor.jobs['old'] = dict(state='cancelled', source_id='photo')

@@ -15,6 +15,17 @@ class AutoGrader {
  }
  get busy(){return this.active!==null;}
  emit(state,extra={}){this.io.onState({state,...extra});}
+ async readRetry(operation,run,allowCancelled=false){
+  for(let attempt=0;;attempt++){
+   if(run.cancelled&&!allowCancelled)throw Error('已取消');
+   try{return await operation();}
+   catch(error){
+    const transient=error.retryable===true||['TypeError','TimeoutError','AbortError'].includes(error.name);
+    if(!transient||attempt>=2)throw error;
+    this.emit('reconnecting');await this.sleep(500*(attempt+1));
+   }
+  }
+ }
  async stopRemote(run){
   if(run.job&&!run.cancelPromise){
    run.cancelPromise=Promise.resolve().then(()=>this.io.cancel(run.context,run.job)).catch(()=>{
@@ -29,11 +40,20 @@ class AutoGrader {
  }
  async start(context){
   if(this.busy)throw Error('自动调色正在进行');
-  const run={context,job:null,cancelled:false};this.active=run;
+  const run={context,job:null,cancelled:false,uncertain:!!context.recoverOnly};this.active=run;
   let outcome;
   this.emit('preparing');
   try{
-   const response=await this.io.submit(context);run.job=response.job;
+   let response;
+   if(context.recoverOnly)response=await this.readRetry(()=>this.io.recover(context),run,true);
+   else try{response=await this.io.submit(context);}
+   catch(error){
+    if(!this.io.recover||!(error.retryable||['TypeError','TimeoutError','AbortError'].includes(error.name)))throw error;
+    run.uncertain=true;this.emit('reconnecting');
+    response=await this.readRetry(()=>this.io.recover(context),run,true);
+   }
+   run.job=response.job;run.uncertain=false;
+   if(response.current_image)context.currentImage=response.current_image;
    const start=this.now();let job;
    while(!run.cancelled){
     if(this.now()-start>(this.io.timeoutMs??210000)){
@@ -42,13 +62,13 @@ class AutoGrader {
     }
     this.emit('analyzing');await this.sleep(1100);
     if(run.cancelled)break;
-    job=await this.io.poll(run.job);
-    if(job.state==='done')break;
-    if(job.state==='error'||job.state==='cancelled')throw Error(job.error||'分析已取消');
+    job=await this.readRetry(()=>this.io.poll(run.job),run);
+    if(job.state==='done'){run.terminal=true;break;}
+    if(job.state==='error'||job.state==='cancelled'){run.terminal=true;throw Error(job.error||'分析已取消');}
     if(job.phase==='checking')this.emit('checking');
    }
    if(run.cancelled){
-    await this.stopRemote(run);outcome={state:'cancelled',message:run.cancelError||'已取消，当前调色参数未改变。'};
+    await this.stopRemote(run);outcome={state:'cancelled',context,pending:!!run.cancelError,message:run.cancelError||'已取消，当前调色参数未改变。'};
    }else{
     if(job.source_id!==context.source.id)throw Error('分析结果与照片不匹配，未应用。');
     const result=job.result;
@@ -64,7 +84,7 @@ class AutoGrader {
      if(!preview?.image||!preview.before||!preview.quality||!preview.histogram||!(preview.width>0&&preview.height>0))
       throw Error('本地调色预览无效，未应用。');
      if(run.cancelled){
-      await this.stopRemote(run);outcome={state:'cancelled',message:run.cancelError||'已取消，当前调色参数未改变。'};
+      await this.stopRemote(run);outcome={state:'cancelled',context,pending:!!run.cancelError,message:run.cancelError||'已取消，当前调色参数未改变。'};
      }else if(!this.io.isCurrent(context))outcome={state:'stale',context,result};
      else{
       // isCurrent and apply must share this synchronous turn: no late overwrite.
@@ -72,7 +92,12 @@ class AutoGrader {
      }
     }
    }
-  }catch(error){outcome={state:run.cancelled?'cancelled':'error',message:run.cancelError||error.message};}
+  }catch(error){
+   if(error.status===404||error.status===410)run.uncertain=false;
+   if(run.job&&!run.terminal)await this.stopRemote(run);
+   outcome={state:run.cancelled?'cancelled':'error',context,
+    pending:!!(run.cancelError||run.uncertain),message:run.cancelError||error.message};
+  }
   finally{this.active=null;this.io.onState(outcome||{state:'error',message:'自动调色未完成'});}
   return outcome;
  }

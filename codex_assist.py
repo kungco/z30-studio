@@ -1,5 +1,7 @@
 """Restricted, structured image advice through the official local Codex CLI."""
 import json
+import hashlib
+import re
 import math
 import os
 from pathlib import Path
@@ -138,24 +140,46 @@ class Advisor:
         self.stopped = False
         self.result_filter = result_filter
 
-    def submit(self, source_id, before, current_image, current_settings, goal, is_raw, mode='suggest'):
+    def find_request(self, source_id, request_id):
+        if not isinstance(request_id, str) or not re.fullmatch('[a-f0-9]{32}', request_id):
+            raise ValueError('无效的分析请求编号')
+        with self.lock:
+            for key, job in self.jobs.items():
+                if job.get('request_id') == request_id and job.get('source_id') == source_id:
+                    return key
+        raise KeyError('未找到该分析请求；不会自动重新发起模型分析')
+
+    def submit(self, source_id, before, current_image, current_settings, goal, is_raw, mode='suggest', request_id=None):
         if mode not in ('suggest', 'auto'):
             raise ValueError('无效的辅助模式')
         if not isinstance(goal, str) or not goal.strip() or len(goal) > 1200:
             raise ValueError('请输入 1 到 1200 字的调色目标')
-        cmd = codex_command()
-        if not cmd:
-            raise ValueError('未找到 Codex CLI，请先安装并运行 codex login')
+        fingerprint = hashlib.sha256(json.dumps([current_settings, goal.strip(), is_raw, mode], sort_keys=True).encode()).hexdigest()
+        if request_id is not None and (not isinstance(request_id, str) or not re.fullmatch('[a-f0-9]{32}', request_id)):
+            raise ValueError('无效的分析请求编号')
         with self.lock:
+            if request_id:
+                try:
+                    existing = self.find_request(source_id, request_id)
+                except KeyError:
+                    pass
+                else:
+                    if self.jobs[existing]['fingerprint'] != fingerprint:
+                        raise ValueError('同一请求编号不能用于不同调色参数')
+                    return existing
+            cmd = codex_command()
+            if not cmd:
+                raise ValueError('未找到 Codex CLI，请先安装并运行 codex login')
             if self.stopped:
                 raise ValueError('Codex 辅助服务已停止')
             if self.workers or any(j['state'] == 'running' for j in self.jobs.values()):
                 raise ValueError('Codex 正在分析或结束上一次任务，请稍后再试')
-            if len(self.jobs) >= 16:
-                self.jobs.pop(next(iter(self.jobs)))
+            if len(self.jobs) >= 256:
+                raise ValueError('本次运行分析记录已达上限，请保存参数后重启软件')
             key = secrets.token_hex(16)
             self.jobs[key] = {'state': 'running', 'source_id': source_id, 'started': time.time(),
-                              'mode': mode, 'phase': 'analyzing'}
+                              'mode': mode, 'phase': 'analyzing', 'request_id': request_id,
+                              'fingerprint': fingerprint, 'base_settings': dict(current_settings)}
         worker = threading.Thread(target=self._run,
                                   args=(key, cmd, before, current_image, dict(current_settings), goal.strip(), is_raw),
                                   daemon=True)

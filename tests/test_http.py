@@ -113,8 +113,13 @@ class HttpTests(unittest.TestCase):
             return Mock(returncode=0)
         try:
             with patch.object(codex_assist, 'codex_command', return_value=['codex']), patch.object(codex_assist.subprocess, 'Popen', side_effect=launch) as popen:
-                with self.post('/api/codex/auto', dict(id=key, settings=dict(rotation=1, crop='1:1'))) as response:
+                body = dict(id=key, settings=dict(rotation=1, crop='1:1'), request_id='a' * 32)
+                with self.post('/api/codex/auto', body) as response:
                     self.assertEqual(response.status, 202); start = json.load(response)
+                with self.post('/api/codex/auto', body) as response:
+                    self.assertEqual(json.load(response)['job'], start['job'])
+                with urllib.request.urlopen(self.base + '/api/codex/requests/' + 'a' * 32 + '?source=' + key) as response:
+                    self.assertEqual(json.load(response)['job'], start['job'])
                 deadline = time.monotonic() + 3
                 while time.monotonic() < deadline:
                     with urllib.request.urlopen(self.base + '/api/codex/jobs/' + start['job']) as response:

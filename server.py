@@ -301,6 +301,20 @@ class Handler(BaseHTTPRequestHandler):
                                   libraw='.'.join(map(str, rawpy.libraw_version)), cache=CACHE.stats()))
         if route == '/api/codex/status':
             return self.json(codex_assist.status())
+        if route.startswith('/api/codex/requests/'):
+            try:
+                source_id = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('source', [''])[0]
+                with LOCK:
+                    if source_id not in SESSIONS:
+                        return self.json({'error': '照片会话已关闭'}, 410)
+                    key = ADVISOR.find_request(source_id, route.rsplit('/', 1)[-1])
+                    job = ADVISOR.get(key)
+                    current = preview_result(SESSIONS[source_id], job['base_settings'])['image']
+                return self.json({'job': key, 'current_image': current})
+            except KeyError as exc:
+                return self.json({'error': str(exc)}, 404)
+            except ValueError as exc:
+                return self.json({'error': str(exc)}, 400)
         if route == '/api/exports' or route.startswith('/api/exports/'):
             try:
                 queue = get_exports()
@@ -422,7 +436,7 @@ class Handler(BaseHTTPRequestHandler):
                     before = image_bytes(develop(decode(s, 'camera', True), base), quality=88)
                     current = image_bytes(develop(decode(s, p['wb'], True), p), quality=88)
                     job = ADVISOR.submit(key, before, current, p, goal, s['raw'],
-                                         mode='auto' if automatic else 'suggest')
+                                         mode='auto' if automatic else 'suggest', request_id=data.get('request_id'))
                     return self.json({'job': job,
                                       'current_image': 'data:image/jpeg;base64,' + base64.b64encode(current).decode()}, 202)
                 if route == '/api/codex/preview':
