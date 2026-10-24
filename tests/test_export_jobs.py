@@ -1,4 +1,5 @@
 import hashlib
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -7,7 +8,7 @@ import time
 import unittest
 import zipfile
 
-from export_jobs import ExportQueue
+from export_jobs import ExportQueue, write_zip
 
 
 class ExportQueueTests(unittest.TestCase):
@@ -46,7 +47,10 @@ class ExportQueueTests(unittest.TestCase):
         key = q.submit([self.source(), self.source()], {'exposure': .5}, 'PNG', 95, False)
         self.assertEqual(self.wait(q, key)['state'], 'done')
         self.assertEqual(self.input.read_bytes(), before)
-        with zipfile.ZipFile(q.download(key)) as archive:
+        buffer = io.BytesIO()
+        with q.downloads(key) as (entries, report):
+            write_zip(buffer, entries, report)
+        with zipfile.ZipFile(buffer) as archive:
             self.assertEqual(set(archive.namelist()), {'01-same-name-Z30.png', '02-same-name-Z30.png', 'export-report.json'})
         q.delete(key)
         self.assertFalse((q.root / key).exists())
@@ -69,6 +73,36 @@ class ExportQueueTests(unittest.TestCase):
         self.assertEqual(self.wait(recovered, key)['state'], 'done')
         self.assertEqual(calls, ['input-1.png'])
         self.assertEqual((q.root / key / 'output-0.png').stat().st_mtime_ns, first)
+
+    def test_low_disk_budget_keeps_all_outputs_downloadable_without_stored_zip(self):
+        q = self.queue(lambda path, raw, p, *args: (b'x' * 4096, p, None), max_bytes=12000)
+        key = q.submit([self.source(), self.source()], {}, 'PNG', 95, False)
+        self.assertEqual(self.wait(q, key)['state'], 'done')
+        self.assertFalse((q.root / key / 'results.zip').exists())
+        before = q.disk_bytes()
+        target = io.BytesIO()
+        with q.downloads(key) as (entries, report):
+            with self.assertRaises(ValueError):
+                q.delete(key)
+            write_zip(target, entries, report)
+        with zipfile.ZipFile(target) as archive:
+            self.assertEqual(archive.read('01-same-name-Z30.png'), b'x' * 4096)
+            self.assertEqual(archive.read('02-same-name-Z30.png'), b'x' * 4096)
+        self.assertEqual(q.disk_bytes(), before)
+
+    def test_completed_files_survive_job_error_and_download_disconnect(self):
+        q = self.queue(lambda path, raw, p, *args: (b'done', p, None))
+        key = q.submit([self.source()], {}, 'PNG', 95, False); self.wait(q, key)
+        q.jobs[key]['state'] = 'error'  # Legacy packaging failure must not hide completed files.
+        with self.assertRaises(BrokenPipeError):
+            with q.downloads(key, 0) as (entries, report):
+                self.assertEqual(entries[0][0].read_bytes(), b'done')
+                raise BrokenPipeError()
+        self.assertFalse(q.readers)
+        with self.assertRaises(ValueError):
+            with q.downloads(key, -1):
+                pass
+        q.delete(key)
 
     def test_inflight_manifest_is_interrupted_on_restart(self):
         q = self.queue(lambda path, raw, p, *args: (b'data', p, None))

@@ -16,7 +16,7 @@ import codex_assist
 from processing import render_array
 from cache import ByteLRU
 import quality as quality_checks
-from export_jobs import ExportQueue, FORMATS
+from export_jobs import ExportQueue, FORMATS, write_zip
 import shutil
 from imaging import raw_crop, raw_pixels, raster_linear, resize_linear, srgb_to_linear
 
@@ -270,6 +270,17 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             shutil.copyfileobj(source, self.wfile, length=1024 * 1024)
 
+    def stream_zip(self, entries, report, filename):
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/zip')
+        self.send_header('Content-Disposition', "attachment; filename*=UTF-8''" + urllib.parse.quote(filename))
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('Connection', 'close')
+        self.close_connection = True
+        self.end_headers()
+        write_zip(self.wfile, entries, report)
+
     def local_request(self):
         allowed = {f'127.0.0.1:{self.server.server_port}', f'localhost:{self.server.server_port}'}
         if self.headers.get('Host') not in allowed:
@@ -299,19 +310,18 @@ class Handler(BaseHTTPRequestHandler):
                 key = parts[3]
                 job = queue.get(key)
                 if len(parts) == 5 and parts[4] == 'download':
-                    with queue.lock:
-                        return self.stream(queue.download(key), 'Z30-export-' + key[:8] + '.zip', 'application/zip')
-                if len(parts) == 5 and parts[4] == 'file':
-                    if job['state'] != 'done' or len(job['items']) != 1:
-                        raise ValueError('单张导出尚未完成')
-                    item = job['items'][0]
-                    path = queue._folder(key) / item['output']
-                    name = Path(item['name']).stem + '-Z30.' + FORMATS[job['format']]
-                    with queue.lock:
+                    with queue.downloads(key) as (entries, report):
+                        return self.stream_zip(entries, report, 'Z30-export-' + key[:8] + '.zip')
+                if (len(parts) == 5 and parts[4] == 'file') or (len(parts) == 6 and parts[4] == 'files'):
+                    index = int(parts[5]) if len(parts) == 6 else 0
+                    with queue.downloads(key, index) as (entries, report):
+                        path, name = entries[0]
                         return self.stream(path, name, {'JPEG': 'image/jpeg', 'PNG': 'image/png', 'TIFF16': 'image/tiff'}[job['format']])
                 if len(parts) != 4:
                     raise ValueError('导出接口不存在')
                 return self.json(job)
+            except (BrokenPipeError, ConnectionResetError):
+                return
             except KeyError:
                 return self.json({'error': '导出任务不存在'}, 404)
             except ValueError as exc:

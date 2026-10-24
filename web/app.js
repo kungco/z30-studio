@@ -216,9 +216,13 @@ async function refreshExportJobs(){
    const list=document.createElement('ul');
    for(const item of job.items){const li=document.createElement('li');li.textContent=item.name+' · '+(item.state==='done'?'完成':item.state==='running'?'正在处理':item.state==='error'?'失败：'+item.error:'等待处理')+(item.quality?.strength<1?' · 自动保护 '+Math.round(item.quality.strength*100)+'%':'');list.append(li);}
    const actions=document.createElement('div');actions.className='job-actions';
-   if(job.state==='done'||job.state==='partial'){
-    const link=document.createElement('a');const single=job.state==='done'&&job.items.length===1;
+   if(count){
+    const link=document.createElement('a');const single=job.items.length===1;
     link.href='/api/exports/'+encodeURIComponent(job.id)+(single?'/file':'/download');link.textContent=single?'下载照片':'下载已完成结果 ZIP';link.setAttribute('download','');actions.append(link);
+    if(!single)for(const item of job.items.filter(x=>x.state==='done')){
+     const file=document.createElement('a');file.href='/api/exports/'+encodeURIComponent(job.id)+'/files/'+item.index;
+     file.textContent='单张下载：'+item.name;file.setAttribute('download','');actions.append(file);
+    }
    }
    if(['partial','error','cancelled','interrupted'].includes(job.state)&&!job.worker_active){const retry=document.createElement('button');retry.textContent='重试未完成项';retry.onclick=()=>jobAction('retry',job.id);actions.append(retry);}
    if(job.state==='running'||job.state==='queued'){const cancel=document.createElement('button');cancel.textContent='取消任务';cancel.onclick=()=>jobAction('cancel',job.id);actions.append(cancel);}

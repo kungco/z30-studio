@@ -1,5 +1,6 @@
 """One-worker durable local batch exports with immutable input snapshots."""
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 import copy
 import hashlib
 import json
@@ -38,6 +39,7 @@ class ExportQueue:
         self.max_jobs, self.max_bytes = max_jobs, max_bytes
         self.lock = threading.RLock()
         self.jobs = {}
+        self.readers = {}
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix='z30-export')
         self.stopped = False
         for path in self.root.glob('*/manifest.json'):
@@ -135,7 +137,7 @@ class ExportQueue:
     def retry(self, key):
         with self.lock:
             job = self.jobs[key]
-            if self.stopped or job['state'] in ('running', 'queued', 'done') or job.get('worker_active'):
+            if self.stopped or job['state'] in ('running', 'queued', 'done') or job.get('worker_active') or self.readers.get(key):
                 raise ValueError('此任务当前不能重试')
             for item in job['items']:
                 if item['state'] != 'done':
@@ -156,7 +158,7 @@ class ExportQueue:
     def delete(self, key):
         with self.lock:
             job = self.jobs[key]
-            if job['state'] in ('running', 'queued') or job.get('worker_active'):
+            if job['state'] in ('running', 'queued') or job.get('worker_active') or self.readers.get(key):
                 raise ValueError('任务仍在处理，请取消后等待当前照片处理结束再删除')
             folder = self._folder(key)
             # Resolve and verify inside the named root before recursive deletion.
@@ -165,15 +167,31 @@ class ExportQueue:
             shutil.rmtree(folder)
             del self.jobs[key]
 
-    def download(self, key):
+    @contextmanager
+    def downloads(self, key, index=None):
+        """Pin completed outputs while streaming without holding the queue lock."""
         with self.lock:
-            job = self.jobs[key]
-            if job['state'] not in ('done', 'partial'):
-                raise ValueError('导出尚未完成')
-            path = self._folder(key) / 'results.zip'
-            if not path.is_file():
-                raise ValueError('结果包不存在，请重试任务')
-            return path
+            job = copy.deepcopy(self.jobs[key])
+            items = [x for x in job['items'] if x['state'] == 'done' and (index is None or x['index'] == index)]
+            if not items:
+                raise ValueError('尚无已完成的导出文件')
+            folder = self._folder(key)
+            entries = []
+            for item in items:
+                path = folder / f"output-{item['index']}.{FORMATS[job['format']]}"
+                if not path.is_file():
+                    raise ValueError('导出文件已丢失，请重新导出')
+                stem = Path(item['name']).stem or 'photo'
+                entries.append((path, f"{item['index'] + 1:02d}-{stem}-Z30.{FORMATS[job['format']]}"))
+            report = dict(settings=job['settings'], items=job['items'])
+            self.readers[key] = self.readers.get(key, 0) + 1
+        try:
+            yield entries, report
+        finally:
+            with self.lock:
+                self.readers[key] -= 1
+                if not self.readers[key]:
+                    del self.readers[key]
 
     def _run(self, key):
         with self.lock:
@@ -222,19 +240,6 @@ class ExportQueue:
                 if job['state'] != 'running' or self.stopped:
                     return
             completed = [x for x in job['items'] if x['state'] == 'done']
-            if completed:
-                if self.disk_bytes() + sum((folder / x['output']).stat().st_size for x in completed) > self.max_bytes:
-                    raise ValueError('打包空间不足，请删除旧任务后重试')
-                # ZIP_STORED avoids recompressing JPEG/PNG/Deflate-TIFF payloads.
-                with zipfile.ZipFile(folder / 'results.zip.part', 'w', zipfile.ZIP_STORED) as archive:
-                    for item in completed:
-                        stem = Path(item['name']).stem or 'photo'
-                        archive.write(folder / item['output'], f"{item['index'] + 1:02d}-{stem}-Z30.{FORMATS[job['format']]}")
-                    archive.writestr('export-report.json', json.dumps(dict(settings=job['settings'], items=job['items']), ensure_ascii=False))
-                with self.lock:
-                    if job['state'] != 'running' or self.stopped:
-                        return
-                    os.replace(folder / 'results.zip.part', folder / 'results.zip')
             with self.lock:
                 if job['state'] == 'running':
                     job['state'] = ('done' if len(completed) == len(job['items']) else 'partial' if completed else 'error')
@@ -269,3 +274,11 @@ class ExportQueue:
                 import fcntl
                 fcntl.flock(self.owner_file.fileno(), fcntl.LOCK_UN)
             self.owner_file.close()
+
+
+def write_zip(target, entries, report):
+    """ZIP_STORED streams to unseekable HTTP writers without a second disk copy."""
+    with zipfile.ZipFile(target, 'w', zipfile.ZIP_STORED, allowZip64=True) as archive:
+        for path, name in entries:
+            archive.write(path, name)
+        archive.writestr('export-report.json', json.dumps(report, ensure_ascii=False))

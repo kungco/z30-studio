@@ -86,11 +86,15 @@ class HttpTests(unittest.TestCase):
             time.sleep(.02)
         self.assertEqual(state['state'], 'done')
         with urllib.request.urlopen(self.base + '/api/exports/' + job + '/download') as response:
+            self.assertEqual(response.headers['Connection'], 'close')
             with zipfile.ZipFile(io.BytesIO(response.read())) as archive:
                 self.assertEqual(len([n for n in archive.namelist() if n.endswith('.png')]), 2)
                 for name in archive.namelist():
                     if name.endswith('.png'):
                         self.assertEqual(Image.open(io.BytesIO(archive.read(name))).size, (12, 8))
+        for index in (0, 1):
+            with urllib.request.urlopen(self.base + '/api/exports/' + job + '/files/' + str(index)) as response:
+                self.assertEqual(Image.open(io.BytesIO(response.read())).size, (12, 8))
         self.assertFalse(any(cache_key[0] in keys for cache_key in server.CACHE.items))
 
     def test_missing_photo_batch_is_rejected_without_creating_job(self):
