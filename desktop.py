@@ -134,6 +134,9 @@ def main(argv=None):
     started = time.monotonic()
     instance = directory / 'instance.json'
     watchdog = None
+    service_done=threading.Event()
+    observer_done=threading.Event()
+    shutdown_guard=threading.Lock()
 
     def phase(name):
         if watchdog:
@@ -144,17 +147,14 @@ def main(argv=None):
 
     def begin_shutdown(reason):
         nonlocal trace_file, shutdown_started
-        if shutdown_started is not None:
-            return
-        shutdown_started = time.monotonic()
+        with shutdown_guard:
+            if shutdown_started is not None:return
+            shutdown_started=time.monotonic()
+        # Arm native traceback timing before phase/log I/O can block.
+        if trace_file:faulthandler.dump_traceback_later(min(2.,args.shutdown_phase_timeout/2),repeat=True,file=trace_file)
         shutdown_watchdog.signal(watchdog)
         phase('shutdown requested: ' + reason)
         logging.info('Shutdown requested (%s), uptime %.1fs', reason, shutdown_started - started)
-        try:
-            trace_file = (directory/'logs'/'shutdown-stacks.log').open('w', encoding='utf8')
-            faulthandler.dump_traceback_later(10, repeat=True, file=trace_file)
-        except OSError:
-            logging.exception('Could not open shutdown diagnostics')
     try:
         directory.mkdir(parents=True, exist_ok=True)
         try:
@@ -168,6 +168,8 @@ def main(argv=None):
         if args.ready_file and (args.ready_file.suffix.lower() != '.json' or args.ready_file.exists()):
             raise ValueError('诊断状态需要新的 .json 文件，不覆盖已有文件')
         log = configure_logs(directory / 'logs')
+        trace_file=(directory/'logs'/f'shutdown-stacks-{os.getpid()}.log').open('w',encoding='utf8')
+        faulthandler.enable(file=trace_file,all_threads=True)
         if not 0 < args.shutdown_phase_timeout <= args.shutdown_grace <= 120:
             raise ValueError('关停超时需要满足 0 < 阶段超时 ≤ 总超时 ≤ 120 秒')
         watchdog = shutdown_watchdog.launch(directory/'logs', args.stop_file, args.shutdown_grace, args.shutdown_phase_timeout)
@@ -179,8 +181,15 @@ def main(argv=None):
                 server.serve(http, phase)
             except Exception:
                 logging.exception('Local service failed')
+            finally:service_done.set()
         worker = threading.Thread(target=run, name='z30-service')
         worker.start()
+        if args.stop_file:
+            def observe_stop():
+                while not observer_done.wait(.1):
+                    if args.stop_file.exists():
+                        begin_shutdown('stop file');http.shutdown();return
+            threading.Thread(target=observe_stop,name='z30-stop-observer',daemon=True).start()
         window = None if args.headless else LauncherWindow(url, http, worker, log, begin_shutdown)
         # Native imaging/Tk libraries have loaded before restoring child DLL lookup.
         prepare_external_programs()
@@ -200,8 +209,7 @@ def main(argv=None):
                 window.root.after(200, check_stop)
             window.root.mainloop()
         else:
-            while worker.is_alive():
-                worker.join(.2)
+            while not service_done.wait(.2):
                 if args.stop_file and args.stop_file.exists():
                     begin_shutdown('stop file')
                     http.shutdown()
@@ -213,6 +221,7 @@ def main(argv=None):
             messagebox.showerror('Z30 Studio 启动失败', str(exc) + '\n请查看本机数据目录中的 logs/launcher.log。')
         return 1
     finally:
+        observer_done.set()
         if watchdog:
             begin_shutdown('launcher cleanup')
         if worker and worker.is_alive():
@@ -228,6 +237,7 @@ def main(argv=None):
             lock.close()
         if trace_file:
             faulthandler.cancel_dump_traceback_later()
+            faulthandler.disable()
             trace_file.close()
         if shutdown_started is not None:
             logging.info('Shutdown finished in %.2fs', time.monotonic() - shutdown_started)

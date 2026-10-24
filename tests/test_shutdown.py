@@ -13,6 +13,38 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @unittest.skipUnless(os.name == 'nt', 'Windows launcher process')
 class LauncherShutdownTests(unittest.TestCase):
+    def test_unread_inherited_stdout_cannot_stall_requests_or_shutdown(self):
+        import socket
+        from shutdown_watchdog import wait_for_exit
+        with tempfile.TemporaryDirectory(prefix='z30-undrained-pipe-') as folder:
+            root=Path(folder);ready=root/'ready.json';stop=root/'stop.signal'
+            process=subprocess.Popen([sys.executable,str(ROOT/'desktop.py'),'--headless','--no-browser','--port','0',
+                '--ready-file',str(ready),'--stop-file',str(stop)],cwd=root,env=os.environ|{'Z30_DATA_DIR':str(root/'data')},
+                stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
+            supervisor=None;sock=None
+            try:
+                deadline=time.monotonic()+30
+                while not ready.exists():
+                    self.assertIsNone(process.poll())
+                    if time.monotonic()>deadline:self.fail('launcher not ready')
+                    time.sleep(.05)
+                status=json.loads(ready.read_text(encoding='utf8'));supervisor=status['watchdog_pid'];port=int(status['url'].rsplit(':',1)[1])
+                sock=socket.create_connection(('127.0.0.1',port),5);sock.settimeout(5)
+                request=f'GET /api/health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n'.encode();sock.sendall(request*1500)
+                data=b''
+                while data.count(b'HTTP/1.1 200')<1500:
+                    chunk=sock.recv(65536)
+                    self.assertTrue(chunk,'connection closed before all health responses');data+=chunk
+                # Deliberately never read the child's stdout pipe. Old per-request
+                # print(flush=True) blocked and finalization required watchdog kill.
+                stop.write_text('stop');started=time.monotonic();self.assertEqual(process.wait(10),0)
+                self.assertLess(time.monotonic()-started,6)
+                self.assertNotIn('deadline exceeded',(root/'data/logs/shutdown-watchdog.log').read_text(encoding='utf8') if (root/'data/logs/shutdown-watchdog.log').exists() else '')
+            finally:
+                if sock:sock.close()
+                if process.poll() is None:process.kill();process.wait()
+                process.stdout.close();wait_for_exit(supervisor)
+
     def test_independent_watchdog_observes_stop_even_without_parent_shutdown_log(self):
         from shutdown_watchdog import wait_for_exit
         with tempfile.TemporaryDirectory(prefix='z30-independent-watchdog-') as folder:

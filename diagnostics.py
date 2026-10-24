@@ -11,6 +11,7 @@ def bundle(directory, version):
     logs = Path(directory) / 'logs'
     # Do not include arbitrary files, credentials, drafts, project paths or EXIF.
     allowed = ['launcher.log', 'launcher.log.1', 'shutdown-stacks.log', 'shutdown-watchdog.log']
+    allowed += [p.name for p in sorted(logs.glob('shutdown-stacks-*.log'),key=lambda p:p.stat().st_mtime)[-4:]]
     allowed += [p.name for p in sorted(logs.glob('shutdown-*.json'), key=lambda p: p.stat().st_mtime)[-8:]]
     with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as archive:
         archive.writestr('summary.json', json.dumps(dict(app='Z30 Studio', version=version,

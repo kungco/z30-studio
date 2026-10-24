@@ -488,7 +488,7 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
 
     def log_message(self, fmt, *args):
-        print(fmt % args, flush=True)
+        logging.info(fmt, *args)
 
     def send(self, body, mime='application/json; charset=utf-8', status=200, headers=None):
         self.send_response(status)
