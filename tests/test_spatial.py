@@ -52,7 +52,7 @@ class SpatialTests(unittest.TestCase):
         np.testing.assert_array_equal(x,original)
 
     def test_invalid_masks_and_unbounded_strokes_are_rejected(self):
-        for m in ([dict(type='command')],[dict(type='radial',exposure=float('nan'))],[dict(type='brush',points=[[.5,.5]]*513)]):
+        for m in ([dict(type='command')],[dict(type='radial',exposure=float('nan'))],[dict(type='brush',points=[[.5,.5]]*8193)]):
             with self.assertRaises(ValueError):server.settings({'masks':m})
 
     def test_high_depth_spatial_pipeline_keeps_more_than_256_levels(self):

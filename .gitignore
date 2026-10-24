@@ -38,3 +38,7 @@ work/
 build/
 dist/
 *.exe
+
+# Downloaded local inference weights
+*.onnx
+models/

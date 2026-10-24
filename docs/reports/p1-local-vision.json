@@ -1,0 +1,25 @@
+{
+  "Z30-14bit": {
+    "coverage": 0.3009033203125,
+    "kind": "subject",
+    "model": "SegFormer B0 / ADE20K",
+    "local_only": true,
+    "limitation": "主体选择为最大场景对象连通区域；人像为人物区域，不是面部或头发精细分割。请检查边缘和误选。"
+  },
+  "person": {
+    "coverage": 0.1827392578125,
+    "kind": "person",
+    "model": "SegFormer B0 / ADE20K",
+    "local_only": true,
+    "limitation": "主体选择为最大场景对象连通区域；人像为人物区域，不是面部或头发精细分割。请检查边缘和误选。",
+    "fixture_source": "https://raw.githubusercontent.com/opencv/opencv/master/samples/data/messi5.jpg"
+  },
+  "sky": {
+    "coverage": 0.38702392578125,
+    "kind": "sky",
+    "model": "SegFormer B0 / ADE20K",
+    "local_only": true,
+    "limitation": "主体选择为最大场景对象连通区域；人像为人物区域，不是面部或头发精细分割。请检查边缘和误选。",
+    "fixture_source": "https://huggingface.co/datasets/hf-internal-testing/fixtures_ade20k/resolve/main/ADE_val_00000001.jpg"
+  }
+}

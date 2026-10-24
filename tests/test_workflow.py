@@ -33,4 +33,3 @@ class WorkflowTests(unittest.TestCase):
             document['version']=1;document['photos'][0].pop('catalog');projects.write_project(path,sources,document)
             with projects.read_project(path,root,server.settings) as restored:
                 self.assertEqual(restored['photos'][0]['catalog']['rating'],0)
-

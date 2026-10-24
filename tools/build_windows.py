@@ -13,7 +13,7 @@ import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGES = ('rawpy', 'numpy', 'Pillow', 'tifffile', 'pyinstaller')
+PACKAGES = ('rawpy', 'numpy', 'Pillow', 'tifffile', 'onnxruntime', 'flatbuffers', 'protobuf', 'pyinstaller')
 
 
 def main():

@@ -1,0 +1,26 @@
+'use strict';
+class LocalTools {
+ constructor(io){this.io=io;this.model=null;this.busy=false;this.activeRepair=-1;this.tool=null;this.$=id=>document.getElementById(id);
+  this.$('localToolsMount').innerHTML=`<details class="advanced-panel"><summary>本地 AI 蒙版 · 主体 / 天空 / 人像</summary><p id="localModelStatus" class="controlnote">正在检查本地模型…</p><button id="installLocalModel">下载分割模型（约 15 MB）</button><p class="controlnote">仅下载模型文件，不上传照片，不使用云端额度。模型为 SegFormer B0 / ADE20K，按原模型许可使用；主体取最大场景对象区域。请检查误选与边缘。<a href="https://github.com/NVlabs/SegFormer/blob/master/LICENSE" target="_blank" rel="noopener noreferrer">模型许可</a></p><div class="mask-tools"><button data-semantic="subject">AI 主体蒙版</button><button data-semantic="sky">AI 天空蒙版</button><button data-semantic="person">AI 人像蒙版</button></div><button id="skinGenerate">生成人像肤色柔化区域</button><label>人像肤色柔化<input id="skinSmooth" type="range" min="0" max="100" step="1" value="0"><output id="skinSmoothValue">0</output></label><button id="skinClear">移除肤色柔化</button><p class="controlnote">人物 AI 区域结合宽泛暖色选择，再用传统边缘保留滤波柔化；不是面部精细解析，可能影响暖色衣物。请保留纹理。</p></details><details class="advanced-panel"><summary>污点修复 · 克隆</summary><button id="healStart">污点修复：点击目标，自动取样</button><button id="cloneStart">克隆：先点取样，再点目标</button><button id="retouchFinish">完成点选</button><label>修复半径<input id="repairRadius" type="range" min=".002" max=".1" step=".001" value=".015"></label><label>修复强度<input id="repairOpacity" type="range" min="0" max="1" step=".05" value="1"></label><select id="repairList" aria-label="修复点列表"></select><button id="repairDelete">删除所选修复点</button><label><input id="repairMarkers" type="checkbox" checked> 显示修复点与取样位置</label><p id="retouchStatus" class="controlnote">非生成式浮点修复，可撤销；原片不变。取样基于修复前画面。</p></details>`;
+  this.$('installLocalModel').onclick=()=>this.install();
+  this.$('localToolsMount').querySelectorAll('[data-semantic]').forEach(b=>b.onclick=()=>this.segment(b.dataset.semantic,false));
+  this.$('skinGenerate').onclick=()=>this.segment('person',true);
+  this.$('skinSmooth').oninput=()=>{io.change({skin_smooth:Number(this.$('skinSmooth').value)});};
+  this.$('skinClear').onclick=()=>io.change({skin_smooth:0,skin_mask:''});
+  this.$('healStart').onclick=()=>this.setTool('heal');this.$('cloneStart').onclick=()=>this.setTool('clone');this.$('retouchFinish').onclick=()=>this.setTool(null);
+  this.$('repairMarkers').onchange=()=>io.markers();
+  this.$('repairList').onchange=()=>{this.activeRepair=Number(this.$('repairList').value);this.sync();io.markers();};
+  this.$('repairDelete').onclick=()=>{const f=io.current();if(!f)return;const edits=structuredClone(f.settings.repairs||[]);edits.splice(this.activeRepair,1);this.activeRepair--;io.change({repairs:edits});};
+  for(const [id,key] of [['repairRadius','radius'],['repairOpacity','opacity']])this.$(id).oninput=()=>{const f=io.current();if(!f||this.tool)return;const edits=structuredClone(f.settings.repairs||[]);if(edits[this.activeRepair]){edits[this.activeRepair][key]=Number(this.$(id).value);io.change({repairs:edits});}};
+ }
+ async status(){try{this.model=await this.io.status();this.$('localModelStatus').textContent=(this.model.installed?'模型已在本机 · ':'尚未安装 · ')+this.model.model+(this.model.state==='downloading'?' · '+Math.round(this.model.progress*100)+'%':'');this.sync();}catch(e){this.$('localModelStatus').textContent=e.message;}}
+ async install(){if(this.busy)return;this.busy=true;this.sync();const poll=setInterval(()=>this.status(),1500);try{await this.io.install();await this.status();this.io.error('本地模型已安装；照片不会上传');}catch(e){this.io.error(e.message);}finally{clearInterval(poll);this.busy=false;this.sync();}}
+ async segment(kind,skin){if(this.busy||!this.io.current())return;this.busy=true;this.sync();try{await this.io.segment(kind,skin);}catch(e){this.io.error(e.message);}finally{this.busy=false;this.sync();}}
+ setTool(tool){if(!this.io.current())return;this.tool=tool;this.activeRepair=-1;this.io.tool(tool);this.$('retouchStatus').textContent=tool==='heal'?'点击污点目标；系统选择邻近取样点，可在历史中撤销。':tool==='clone'?'先点击取样点，再点击目标；每个修复保存独立取样位置。':'点选已结束。';this.sync();}
+ sync(){const f=this.io.current(),locked=!f||this.io.locked()||this.busy,p=f?.settings||{};this.$('localToolsMount').querySelectorAll('button,input,select').forEach(e=>e.disabled=locked);
+  this.$('installLocalModel').disabled=this.busy;this.$('localToolsMount').querySelectorAll('[data-semantic]').forEach(e=>e.disabled=locked||!this.model?.installed);this.$('skinGenerate').disabled=locked||!this.model?.installed;this.$('skinSmooth').disabled=locked||!p.skin_mask;this.$('skinSmooth').value=p.skin_smooth||0;this.$('skinSmoothValue').textContent=p.skin_smooth||0;
+  const repairs=p.repairs||[];this.activeRepair=repairs.length?Math.max(0,Math.min(this.activeRepair<0?repairs.length-1:this.activeRepair,repairs.length-1)):-1;
+  this.$('repairList').replaceChildren(...repairs.map((r,i)=>{const o=document.createElement('option');o.value=i;o.textContent=`${i+1}. ${r.mode==='heal'?'污点修复':'克隆'}`;o.selected=i===this.activeRepair;return o;}));this.$('repairDelete').disabled=locked||!repairs.length;
+  if(!this.tool&&repairs[this.activeRepair]){this.$('repairRadius').value=repairs[this.activeRepair].radius;this.$('repairOpacity').value=repairs[this.activeRepair].opacity;}
+ }
+}

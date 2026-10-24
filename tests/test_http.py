@@ -112,6 +112,27 @@ class HttpTests(unittest.TestCase):
             self.owner='e'*32
             self.post('/api/close',{'id':a}).close();self.post('/api/close',{'id':b}).close()
 
+    def test_local_semantic_mask_overlay_and_repair_endpoints(self):
+        import local_vision
+        import numpy as np
+        self.owner='9'*32;key=self.open_photo()
+        vision=Mock();vision.segment.return_value=dict(bitmap=local_vision.bitmap(np.ones((32,32),np.float32)),
+            kind='subject',coverage=1.,local_only=True,limitation='test model contract')
+        try:
+            with patch.object(server,'get_vision',return_value=vision):
+                with self.post('/api/masks/semantic',dict(id=key,settings={},kind='subject')) as response:
+                    result=json.load(response)
+            self.assertTrue(result['local_only']);self.assertEqual(result['mask']['type'],'semantic')
+            self.assertEqual(result['mask']['exposure'],0)
+            with self.post('/api/masks/preview',dict(id=key,settings={'masks':[result['mask']]},index=0)) as response:
+                overlay=json.load(response)['image']
+            import base64
+            self.assertEqual(Image.open(io.BytesIO(base64.b64decode(overlay.split(',')[1]))).mode,'RGBA')
+            with self.post('/api/repairs/place',dict(id=key,settings={},auto_source=True,repair=dict(mode='heal',x=.5,y=.5,radius=.02))) as response:
+                repair=json.load(response)['repair']
+            self.assertTrue(0<=repair['sx']<=1);self.assertTrue(0<=repair['sy']<=1)
+        finally:self.post('/api/close',{'id':key}).close()
+
     def test_compatible_backend_uses_actual_http_images_and_quality_guard(self):
         import base64
         import api_backend

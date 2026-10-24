@@ -30,6 +30,7 @@ import diagnostics
 import drafts
 import darkroom
 import workflow
+import local_vision
 from app_runtime import APP_VERSION, resource_root, data_root
 from imaging import raw_crop, raw_pixels, raster_linear, resize_linear, srgb_to_linear
 
@@ -54,6 +55,7 @@ EXPORTS = None
 EXPORTS_LOCK = threading.RLock()
 STORES_LOCK = threading.RLock()
 STORES = {}
+VISIONS = {}
 DEFAULTS = dict(exposure=0, contrast=0, highlights=0, shadows=0,
                 temperature=0, tint=0, saturation=0, vibrance=0,
                 sharpen=0, rotation=0, crop='original', wb='camera') | spatial.DEFAULTS | darkroom.DEFAULTS | {'lens_profile':'手动 / 未校准'}
@@ -77,6 +79,10 @@ def settings(data):
     if p['wb'] not in ('camera', 'auto', 'daylight'):
         raise ValueError('无效白平衡')
     p['masks'] = spatial.masks(data.get('masks', []))
+    p['repairs'] = spatial.repairs(data.get('repairs', []))
+    p['skin_mask'] = data.get('skin_mask','')
+    if not isinstance(p['skin_mask'],str):raise ValueError('人像区域格式无效')
+    if p['skin_mask']:spatial.bitmap_field(p['skin_mask'])
     p['lens_profile'] = str(data.get('lens_profile', '手动 / 未校准'))[:100]
     p.update(darkroom.normalize(data))
     return p
@@ -147,7 +153,7 @@ def geometry(arr, p):
 
 
 def develop(arr, p):
-    return Image.fromarray(render_array(geometry(spatial.prepare(arr, p), p), p, bits=8))
+    return Image.fromarray(render_array(spatial.retouch(geometry(spatial.prepare(arr, p), p),p), p, bits=8))
 
 
 def image_bytes(im, fmt='JPEG', quality=93):
@@ -163,7 +169,7 @@ def export_bytes(session, p, fmt='JPEG', quality=95):
     arr = decode(session, source_wb(session,p), False)
     if fmt == 'TIFF16':
         import tifffile
-        pixels = render_array(geometry(spatial.prepare(arr, p), p), p, bits=16)
+        pixels = render_array(spatial.retouch(geometry(spatial.prepare(arr, p), p),p), p, bits=16)
         out = io.BytesIO()
         tifffile.imwrite(out, pixels, photometric='rgb', iccprofile=ICC,
                          metadata=None, compression='deflate', maxworkers=1)
@@ -199,6 +205,13 @@ def get_drafts():
         if root not in STORES:
             STORES[root] = drafts.DraftStore(root)
         return STORES[root]
+
+
+def get_vision():
+    root=Path(os.environ.get('Z30_LOCAL_MODEL_DIR',data_root()/'models')).resolve()
+    with STORES_LOCK:
+        if root not in VISIONS:VISIONS[root]=local_vision.LocalVision(root)
+        return VISIONS[root]
 
 
 def recipe(data):
@@ -484,6 +497,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if route == '/api/ai/config':
             return self.json(AI_SETTINGS.public())
+        if route == '/api/local-models':
+            return self.json(get_vision().status())
         if route == '/api/codex/status':
             config=AI_SETTINGS.public()
             if config['provider']=='codex':return self.json(codex_assist.status() | {'provider':'codex'})
@@ -541,6 +556,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({'error': '建议任务不存在，请重新生成'}, 404)
         files = {'/': ('index.html', 'text/html; charset=utf-8'),
                  '/app.js': ('app.js', 'application/javascript; charset=utf-8'),
+                 '/local-tools.js': ('local-tools.js','application/javascript; charset=utf-8'),
                  '/library-workflow.js': ('library-workflow.js','application/javascript; charset=utf-8'),
                  '/darkroom-controls.js': ('darkroom-controls.js', 'application/javascript; charset=utf-8'),
                  '/draft-save.js': ('draft-save.js', 'application/javascript; charset=utf-8'),
@@ -631,6 +647,8 @@ class Handler(BaseHTTPRequestHandler):
                         get_drafts().delete(data['draft_id'], protected)
                     return self.json({'ok': True})
                 raise ValueError('草稿接口不存在')
+            if route == '/api/local-models/install':
+                return self.json(get_vision().install())
             if route in ('/api/ai/config','/api/ai/test'):
                 data=json.loads(body)
                 if route=='/api/ai/test':
@@ -755,6 +773,25 @@ class Handler(BaseHTTPRequestHandler):
                     release_photo(key)
                     return self.json({'ok': True})
                 p = settings(data.get('settings', {}))
+                if route == '/api/repairs/place':
+                    edit=dict(data.get('repair',{}));edit=spatial.repairs([edit])[0]
+                    if data.get('auto_source',False):
+                        arr=geometry(spatial.prepare(decode(s,source_wb(s,p),True),p),p)
+                        edit['sx'],edit['sy']=spatial.choose_donor(arr,edit['x'],edit['y'],edit['radius'])
+                    return self.json({'repair':edit})
+                if route == '/api/masks/semantic':
+                    im=develop(decode(s,source_wb(s,p),True),p)
+                    result=get_vision().segment(im,data.get('kind','subject'))
+                    mask=spatial.masks([dict(type='semantic',bitmap=result.pop('bitmap'),label={'subject':'主体','person':'人像','sky':'天空'}[result['kind']],exposure=0)])[0]
+                    return self.json(result|{'mask':mask})
+                if route == '/api/masks/preview':
+                    index=int(data.get('index',0))
+                    if not 0<=index<len(p['masks']):raise ValueError('请选择蒙版')
+                    arr=geometry(spatial.prepare(decode(s,source_wb(s,p),True),p),p);h,w=arr.shape[:2]
+                    field=spatial.mask_field(p['masks'][index],w,h,0,h,arr)
+                    rgba=np.zeros((h,w,4),np.uint8);rgba[...,:3]=[237,203,104];rgba[...,3]=np.rint(field*150).astype(np.uint8)
+                    out=io.BytesIO();Image.fromarray(rgba).save(out,'PNG')
+                    return self.json({'image':'data:image/png;base64,'+base64.b64encode(out.getvalue()).decode()})
                 if route == '/api/wb/sample':
                     x,y=float(data.get('x',.5)),float(data.get('y',.5))
                     if not math.isfinite(x) or not math.isfinite(y) or not 0<=x<=1 or not 0<=y<=1:
