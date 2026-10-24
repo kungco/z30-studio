@@ -68,11 +68,13 @@ class HttpTests(unittest.TestCase):
         self.owner = 'b' * 32
         keys = [self.open_photo() for _ in range(8)]
         try:
-            with self.post('/api/sessions/restore', {'recipes': {keys[0]: {'settings': {'exposure': .4}, 'undo': {'settings': {'exposure': 0}}}}}) as response:
+            with self.post('/api/sessions/restore', {'recipes': {keys[0]: {'settings': {'exposure': .4, 'rotation': 1, 'crop': '1:1'}, 'undo': {'settings': {'exposure': 0}}}}}) as response:
                 data = json.load(response)
             self.assertEqual({p['id'] for p in data['photos']}, set(keys))
             photo = next(p for p in data['photos'] if p['id'] == keys[0])
             self.assertEqual(photo['settings']['exposure'], .4)
+            self.assertEqual((photo['width'], photo['height']), (12, 8))
+            self.assertEqual((photo['previewWidth'], photo['previewHeight']), (8, 8))
             self.assertEqual(photo['undo']['settings']['exposure'], 0)
             self.post('/api/close', {'id': keys.pop()}).close()
             keys.append(self.open_photo())

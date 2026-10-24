@@ -419,7 +419,8 @@ class Handler(BaseHTTPRequestHandler):
                         p = settings(recipe.get('settings', {}))
                         if not session['raw']:
                             p['wb'] = 'camera'
-                        item = session['meta'] | preview_result(session, p, True) | {'settings': p}
+                        preview = preview_result(session, p, True)
+                        item = preview | session['meta'] | {'settings': p, 'previewWidth': preview['width'], 'previewHeight': preview['height']}
                         if recipe.get('undo'):
                             item['undo'] = {'settings': settings(recipe['undo'].get('settings', {})), 'preset': recipe['undo'].get('preset', 'custom')}
                         photos.append(item)

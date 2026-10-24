@@ -159,7 +159,7 @@ class ExportQueue:
         with self.lock:
             job = self.jobs[key]
             if job['state'] in ('running', 'queued') or job.get('worker_active') or self.readers.get(key):
-                raise ValueError('任务仍在处理，请取消后等待当前照片处理结束再删除')
+                raise ValueError('任务正在处理或下载，请等待当前操作结束后再删除')
             folder = self._folder(key)
             # Resolve and verify inside the named root before recursive deletion.
             if folder.parent != self.root:
