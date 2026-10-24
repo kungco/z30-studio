@@ -118,5 +118,5 @@
   "early_timeout_cause": "Not identified; not reproduced in three consecutive current-build full cycles",
   "clean_virtual_machine_tested": false,
   "real_deepseek_inference_tested": false,
-  "further_shutdown_investigation": "Deferred at explicit user request"
+  "further_shutdown_investigation": "Open for continued investigation; user revoked the earlier deferral"
 }
