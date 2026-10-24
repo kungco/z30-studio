@@ -14,16 +14,32 @@ def pixels(image):
 
 
 def measure(image):
+    # Count exact rendered pixel limits before any averaging. Work in strips so
+    # this does not create full-size float RGB/mask copies.
+    full = np.asarray(image.convert('RGB') if image.mode != 'RGB' else image)
+    counts = np.zeros(7, dtype=np.int64)
+    regions = []
+    for top in range(0, image.height, 128):
+        a = full[top:top + 128]
+        high, low = a.max(axis=2), a.min(axis=2)
+        counts[:3] += np.count_nonzero(a == 255, axis=(0, 1))
+        counts[3] += np.count_nonzero(high == 255)
+        counts[4] += np.count_nonzero(low == 255)
+        counts[5] += np.count_nonzero(high == 0)
+        counts[6] += np.count_nonzero(a @ LUMA >= .97 * 255)
+    for row in np.array_split(full, min(4, image.height), axis=0):
+        for tile in np.array_split(row, min(4, image.width), axis=1):
+            regions.append(float(np.mean(tile.max(axis=2) == 255)))
+    fractions = counts / (image.width * image.height)
     rgb = pixels(image)
     y = rgb @ LUMA
     lab = rgb_to_oklab(srgb_to_linear(rgb))
     chroma = np.sqrt(lab[..., 1] ** 2 + lab[..., 2] ** 2)
     q05, q95 = np.quantile(y, [.05, .95])
     lap = (-4 * y[1:-1, 1:-1] + y[:-2, 1:-1] + y[2:, 1:-1] + y[1:-1, :-2] + y[1:-1, 2:])
-    result = dict(channel_clip=float(np.mean(rgb.max(axis=2) >= 254.5 / 255)),
-                  white_pixels=float(np.mean(rgb.min(axis=2) >= 254.5 / 255)),
-                  black_pixels=float(np.mean(rgb.max(axis=2) <= .5 / 255)),
-                  highlights=float(np.mean(y >= .97)), tone_span=float(q95 - q05),
+    result = dict(channel_clip=float(fractions[3]), channel_clip_rgb=fractions[:3].tolist(),
+                  region_clip=regions, white_pixels=float(fractions[4]),
+                  black_pixels=float(fractions[5]), highlights=float(fractions[6]), tone_span=float(q95 - q05),
                   chroma95=float(np.quantile(chroma, .95)),
                   detail_proxy=float(np.mean(lap ** 2)) if lap.size else 0,
                   noise_texture_proxy=float(np.median(abs(lap)) / 6) if lap.size else 0)
@@ -65,6 +81,9 @@ def blend(base, proposed, strength):
 
 
 def guard(linear, base, proposed, render):
+    native = linear
+    native_reference = render(native, base)
+    native_before = measure(native_reference)
     scale = min(1, 512 / max(linear.shape[:2]))
     if scale < 1:
         linear = resize_linear(linear, (max(1, round(linear.shape[1] * scale)), max(1, round(linear.shape[0] * scale))))
@@ -76,9 +95,14 @@ def guard(linear, base, proposed, render):
         candidate = render(linear, p)
         after = measure(candidate)
         reasons = degradation(before, after, reference, candidate)
+        if not reasons:
+            native_candidate = native_reference if all(p[k] == base[k] for k in RANGES) else render(native, p)
+            native_after = native_before if native_candidate is native_reference else measure(native_candidate)
+            reasons = degradation(native_before, native_after, native_reference, native_candidate)
         if strength == 1:
             initial_reasons = reasons
         if not reasons or strength == 0:
-            return p, dict(strength=strength, reasons=initial_reasons, before=before, after=after,
+            return p, dict(strength=strength, reasons=initial_reasons, before=native_before, after=native_after,
+                           native_preview_checked=True,
                            message=('画质保护将建议降至 ' + str(round(strength * 100)) + '%：' + '；'.join(initial_reasons))
                            if strength < 1 else '画质检查通过；仍需按实际画面判断效果')

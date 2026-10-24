@@ -43,6 +43,29 @@ class CacheTests(unittest.TestCase):
 
 
 class QualityTests(unittest.TestCase):
+    def test_clipping_counts_survive_high_frequency_spatial_averaging(self):
+        a = (np.indices((1536, 1536)).sum(axis=0) % 2 * 255).astype(np.uint8)
+        image = Image.fromarray(np.repeat(a[..., None], 3, axis=2))
+        result = quality.measure(image)
+        self.assertEqual(result['channel_clip'], .5)
+        self.assertEqual(result['channel_clip_rgb'], [.5, .5, .5])
+        self.assertEqual(result['white_pixels'], .5)
+        self.assertTrue(all(x == .5 for x in result['region_clip']))
+        # The old resized calculation really loses those pixels.
+        self.assertEqual(float((quality.pixels(image).max(axis=2) == 1).mean()), 0)
+
+    def test_guard_rechecks_native_preview_before_accepting_coarse_pass(self):
+        a = np.repeat((np.indices((768, 768)).sum(axis=0) % 2)[..., None], 3, axis=2).astype(np.float32) * .4
+        original = a.copy()
+        def render(x, p):
+            return Image.fromarray(np.rint(np.clip(x * 2 ** p['exposure'], 0, 1) * 255).astype(np.uint8))
+        applied, report = quality.guard(a, server.DEFAULTS, server.DEFAULTS | dict(exposure=2), render)
+        self.assertGreater(report['strength'], 0)
+        self.assertLess(report['strength'], 1)
+        self.assertTrue(report['native_preview_checked'])
+        self.assertEqual(report['after']['channel_clip'], 0)
+        self.assertEqual(applied['exposure'], 1)
+        np.testing.assert_array_equal(a, original)
     def test_advice_filter_checks_active_source_and_reduces_bad_suggestion(self):
         arr = np.repeat(np.linspace(.01, .8, 256, dtype=np.float32)[None, :, None], 3, axis=2)
         key = 'test-quality-advice'
