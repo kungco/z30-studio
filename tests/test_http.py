@@ -25,6 +25,7 @@ class QuietHandler(server.Handler):
 
 class HttpTests(unittest.TestCase):
     def setUp(self):
+        self.owner = None
         self.advisor = server.ADVISOR
         server.ADVISOR = codex_assist.Advisor(server.filter_advice)
         self.exports = server.EXPORTS
@@ -43,8 +44,11 @@ class HttpTests(unittest.TestCase):
 
     def post(self, route, data, binary=False):
         body = data if binary else json.dumps(data).encode()
+        headers = {'X-Z30-Request': '1', 'X-Filename': 'test.png'}
+        if self.owner:
+            headers['X-Z30-Client'] = self.owner
         return urllib.request.urlopen(urllib.request.Request(self.base + route, data=body,
-            headers={'X-Z30-Request': '1', 'X-Filename': 'test.png'}), timeout=20)
+            headers=headers), timeout=20)
 
     def open_photo(self):
         b = io.BytesIO(); Image.new('RGB', (12, 8), (150, 100, 80)).save(b, 'PNG', icc_profile=server.ICC)
@@ -59,6 +63,40 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(str(image.dtype), 'uint16')
         self.assertEqual(image.shape, (12, 8, 3))
         self.post('/api/close', {'id': key}).close()
+
+    def test_refresh_restores_eight_photos_and_parameters_instead_of_leaking_slots(self):
+        self.owner = 'b' * 32
+        keys = [self.open_photo() for _ in range(8)]
+        try:
+            with self.post('/api/sessions/restore', {'recipes': {keys[0]: {'settings': {'exposure': .4}, 'undo': {'settings': {'exposure': 0}}}}}) as response:
+                data = json.load(response)
+            self.assertEqual({p['id'] for p in data['photos']}, set(keys))
+            photo = next(p for p in data['photos'] if p['id'] == keys[0])
+            self.assertEqual(photo['settings']['exposure'], .4)
+            self.assertEqual(photo['undo']['settings']['exposure'], 0)
+            self.post('/api/close', {'id': keys.pop()}).close()
+            keys.append(self.open_photo())
+        finally:
+            for key in keys: self.post('/api/close', {'id': key}).close()
+
+    def test_expiry_reclaims_source_cache_and_jobs_but_heartbeat_keeps_active_tab(self):
+        self.owner = 'b' * 32; old = self.open_photo()
+        self.owner = 'c' * 32; live = self.open_photo()
+        server.SESSIONS[old]['last_seen'] = time.monotonic() - server.SESSION_TTL - 1
+        server.ADVISOR.jobs['expired'] = dict(state='done', source_id=old, result={})
+        path = server.SESSIONS[old]['path']
+        with self.post('/api/sessions/heartbeat', {}) as response:
+            self.assertEqual(json.load(response)['ids'], [live])
+        self.assertNotIn(old, server.SESSIONS); self.assertFalse(path.exists())
+        self.assertEqual(server.ADVISOR.get('expired')['state'], 'cancelled')
+        self.assertFalse(any(k[0] == old for k in server.CACHE.items))
+        self.owner = 'b' * 32
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            self.post('/api/close', {'id': live})
+        self.assertEqual(cm.exception.code, 404); cm.exception.close()
+        with self.post('/api/sessions/restore', {}) as response:
+            self.assertFalse(json.load(response)['photos'])
+        self.owner = 'c' * 32; self.post('/api/close', {'id': live}).close()
 
     def test_closed_photo_job_cannot_be_retrieved_as_success(self):
         key = self.open_photo()

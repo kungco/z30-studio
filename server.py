@@ -9,6 +9,7 @@ from pathlib import Path
 import secrets
 import tempfile
 import threading
+import time
 import urllib.parse
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -29,6 +30,7 @@ ROOT = Path(__file__).resolve().parent
 TEMP = tempfile.TemporaryDirectory(prefix='z30-studio-')
 SESSIONS = {}
 LOCK = threading.RLock()  # Serialize interactive work; background exports have one worker.
+SESSION_TTL = 30 * 60
 MAX_UPLOAD = 150 * 1024 * 1024
 ICC = ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes()
 ADVISOR = codex_assist.Advisor()
@@ -198,16 +200,35 @@ def filter_advice(source_id, base, result):
 ADVISOR.result_filter = filter_advice
 
 
-def import_image(body, name):
+def release_photo(key):
+    session = SESSIONS.pop(key)
+    ADVISOR.cancel_source(key)
+    CACHE.remove_source(key)
+    session['cache'].clear()
+    session['path'].unlink(missing_ok=True)
+
+
+def reap_sessions(now=None):
+    now = time.monotonic() if now is None else now
+    with LOCK:
+        for key, session in list(SESSIONS.items()):
+            if now - session.setdefault('last_seen', now) >= SESSION_TTL:
+                release_photo(key)
+
+
+def import_image(body, name, owner=None):
     ext = Path(name).suffix.lower()
     if ext not in ('.nef', '.jpg', '.jpeg', '.png'):
         raise ValueError('请选择 NEF、JPG 或 PNG 照片')
-    if len(SESSIONS) >= 8:
+    reap_sessions()
+    if sum(s.get('owner') == owner for s in SESSIONS.values()) >= 8:
         raise ValueError('当前已打开 8 张照片，请移除照片后再导入')
+    if len(SESSIONS) >= 32:
+        raise ValueError('本机照片会话已达上限，请关闭不用的照片或等待过期会话回收')
     key = secrets.token_hex(16)
     path = Path(TEMP.name) / (key + ext)
     path.write_bytes(body)
-    session = dict(path=path, name=name, raw=ext == '.nef', cache={})
+    session = dict(path=path, name=name, raw=ext == '.nef', cache={}, owner=owner, last_seen=time.monotonic())
     try:
         if session['raw']:
             with rawpy.imread(str(path)) as raw:
@@ -305,7 +326,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 source_id = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('source', [''])[0]
                 with LOCK:
-                    if source_id not in SESSIONS:
+                    if source_id not in SESSIONS or SESSIONS[source_id].get('owner') != self.headers.get('X-Z30-Client'):
                         return self.json({'error': '照片会话已关闭'}, 410)
                     key = ADVISOR.find_request(source_id, route.rsplit('/', 1)[-1])
                     job = ADVISOR.get(key)
@@ -346,8 +367,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 with LOCK:
                     job = ADVISOR.get(route.rsplit('/', 1)[-1])
-                    if job['source_id'] not in SESSIONS:
-                        ADVISOR.cancel_source(job['source_id'])
+                    if job['source_id'] not in SESSIONS or SESSIONS[job['source_id']].get('owner') != self.headers.get('X-Z30-Client'):
                         return self.json({'error': '照片会话已关闭，辅助任务已取消'}, 410)
                 return self.json(job)
             except KeyError:
@@ -376,6 +396,34 @@ class Handler(BaseHTTPRequestHandler):
             if len(body) != size:
                 raise ValueError('文件传输不完整')
             route = urllib.parse.urlsplit(self.path).path
+            owner = self.headers.get('X-Z30-Client')
+            if owner is not None and (len(owner) != 32 or any(c not in '0123456789abcdef' for c in owner)):
+                raise ValueError('无效的页面会话编号')
+            if route in ('/api/sessions/restore', '/api/sessions/heartbeat'):
+                if owner is None:
+                    raise ValueError('页面会话编号缺失')
+                data = json.loads(body)
+                with LOCK:
+                    reap_sessions()
+                    owned = [(k, s) for k, s in SESSIONS.items() if s.get('owner') == owner]
+                    for _, session in owned:
+                        session['last_seen'] = time.monotonic()
+                    if route.endswith('heartbeat'):
+                        return self.json({'ids': [k for k, _ in owned], 'ttl_seconds': SESSION_TTL})
+                    recipes = data.get('recipes', {})
+                    if not isinstance(recipes, dict) or len(recipes) > 8:
+                        raise ValueError('恢复参数格式无效')
+                    photos = []
+                    for key, session in owned:
+                        recipe = recipes.get(key, {})
+                        p = settings(recipe.get('settings', {}))
+                        if not session['raw']:
+                            p['wb'] = 'camera'
+                        item = session['meta'] | preview_result(session, p, True) | {'settings': p}
+                        if recipe.get('undo'):
+                            item['undo'] = {'settings': settings(recipe['undo'].get('settings', {})), 'preset': recipe['undo'].get('preset', 'custom')}
+                        photos.append(item)
+                    return self.json({'photos': photos, 'ttl_seconds': SESSION_TTL})
             if route.startswith('/api/exports/'):
                 data = json.loads(body)
                 queue = get_exports()
@@ -392,7 +440,7 @@ class Handler(BaseHTTPRequestHandler):
                     if not isinstance(protect, bool):
                         raise ValueError('画质保护选项无效')
                     with LOCK:
-                        if any(key not in SESSIONS for key in ids):
+                        if any(key not in SESSIONS or SESSIONS[key].get('owner') != owner for key in ids):
                             return self.json({'error': '部分照片会话已关闭，请重新选择'}, 410)
                         sources = [SESSIONS[key] for key in ids]
                         key = queue.submit(sources, p, fmt, max(60, min(100, int(data.get('quality', 95)))), protect)
@@ -404,21 +452,19 @@ class Handler(BaseHTTPRequestHandler):
                 action(data.get('job'))
                 return self.json({'ok': True})
             with LOCK:
+                reap_sessions()
                 if route == '/api/open':
                     name = urllib.parse.unquote(self.headers.get('X-Filename', 'image.nef'))
                     name = name.replace('\\', '/').split('/')[-1][:200]
-                    return self.json(import_image(body, name))
+                    return self.json(import_image(body, name, owner))
                 data = json.loads(body)
                 key = data.get('id')
-                if key not in SESSIONS:
+                if key not in SESSIONS or SESSIONS[key].get('owner') != owner:
                     return self.json({'error': '照片会话已结束，请重新导入'}, 404)
                 s = SESSIONS[key]
+                s['last_seen'] = time.monotonic()
                 if route == '/api/close':
-                    ADVISOR.cancel_source(key)
-                    CACHE.remove_source(key)
-                    s['cache'].clear()
-                    s['path'].unlink(missing_ok=True)
-                    del SESSIONS[key]
+                    release_photo(key)
                     return self.json({'ok': True})
                 p = settings(data.get('settings', {}))
                 if route == '/api/codex/cancel':
@@ -479,11 +525,18 @@ def main():
     print('Photos stay on this computer. Close this window or press Ctrl+C to stop.', flush=True)
     if not args.no_browser:
         threading.Timer(.5, lambda: webbrowser.open(url)).start()
+    stop_reaper = threading.Event()
+    def maintain_sessions():
+        while not stop_reaper.wait(60):
+            reap_sessions()
+    reaper = threading.Thread(target=maintain_sessions, daemon=True)
+    reaper.start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        stop_reaper.set(); reaper.join(timeout=2)
         server.server_close()
         ADVISOR.shutdown()
         if EXPORTS is not None:
