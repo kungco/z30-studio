@@ -3,6 +3,7 @@
 Profile snapshots travel with edits; rendering never silently substitutes a newer
 database. Pure NumPy strip warps avoid full-frame coordinate-map allocations.
 """
+import native_cache as frame_memory
 from functools import lru_cache
 import json
 import math
@@ -152,8 +153,9 @@ def correct(arr,p,sample):
     calibration=p['lens_calibration'];h,w=arr.shape[:2];cx=(w-1)/2;cy=(h-1)/2
     scale=coordinate_scale(w,h,calibration)
     zoom=fill_scale(w,h,json.dumps(calibration,sort_keys=True),p.get('lens_tca',True)) if p.get('lens_fill',True) else 1.
-    xx=(np.arange(w,dtype=np.float32)[None,:]-cx)/zoom;out=np.empty_like(arr)
+    xx=(np.arange(w,dtype=np.float32)[None,:]-cx)/zoom;out=frame_memory.allocate(arr.shape,arr.dtype)
     for top in range(0,h,128):
+        frame_memory.checkpoint()
         bottom=min(h,top+128);yy=(np.arange(top,bottom,dtype=np.float32)[:,None]-cy)/zoom
         r=np.sqrt(xx*xx+yy*yy)/scale;factor=radial(r,calibration)
         for channel in range(3):

@@ -76,6 +76,8 @@ def isolated_stage(args, m, session, p):
     import numpy as np
     stage = args.single_stage
     result = {'supported': True}
+    if stage.startswith('native_') and not hasattr(m,'native_pixels'):
+        print(json.dumps({'supported':False}));return
     if stage == 'export_tiff16' and not hasattr(m, 'export_bytes'):
         print(json.dumps({'supported': False})); return
     if stage in ('develop_full', 'encode_jpeg'):
@@ -86,7 +88,15 @@ def isolated_stage(args, m, session, p):
         m.decode(session, 'camera', True)
     if stage == 'preview_pipeline_repeat':
         m.preview_result(session, p, True)
+    def native_inspect():
+        with m.native_pixels(session,p) as pixels:
+            h,w=pixels.shape[:2];tile=np.rint(pixels[max(0,h//2-240):h//2+240,max(0,w//2-320):w//2+320]*255).astype(np.uint8)
+            return dict(dimensions=[w,h],tile=tile)
+    if stage in ('native_inspect_cached','native_export_warm'):native_inspect()
     operations = {
+        'native_inspect':native_inspect,
+        'native_inspect_cached':native_inspect,
+        'native_export_warm':lambda:m.export_bytes(session,p,'TIFF16',95),
         'decode_full': lambda: m.decode(session, 'camera', False),
         'decode_preview': lambda: m.decode(session, 'camera', True),
         'decode_preview_cached': lambda: m.decode(session, 'camera', True),
@@ -98,7 +108,9 @@ def isolated_stage(args, m, session, p):
     }
     start = time.perf_counter(); out = operations[stage]()
     result.update(seconds=time.perf_counter() - start, peak_rss_mib=peak_rss())
-    if stage == 'develop_full':
+    if stage in ('native_inspect','native_inspect_cached'):
+        result.update(dimensions=out['dimensions'],tile_sum=int(out['tile'].sum()),cache=m.get_native_cache().stats())
+    elif stage == 'develop_full':
         a = np.asarray(out)
         result.update(dimensions=list(out.size), dtype=str(arr.dtype),
                       channel_means=a.mean(axis=(0, 1)).tolist(),
@@ -109,7 +121,7 @@ def isolated_stage(args, m, session, p):
                 args.artifacts / (args.sample.stem + '.png'))
     elif stage == 'decode_preview':
         result['dimensions'] = [out.shape[1], out.shape[0]]
-    elif stage in ('encode_jpeg', 'export_tiff16'):
+    elif stage in ('encode_jpeg', 'export_tiff16','native_export_warm'):
         result['bytes'] = len(out)
     print(json.dumps(result))
 
@@ -142,7 +154,8 @@ def main():
             if args.isolated:
                 stages = {}
                 for stage in ('decode_full', 'decode_preview', 'decode_preview_cached', 'develop_full',
-                              'encode_jpeg', 'preview_pipeline_cached', 'preview_pipeline_repeat', 'export_tiff16'):
+                              'encode_jpeg', 'preview_pipeline_cached', 'preview_pipeline_repeat', 'export_tiff16',
+                              'native_inspect','native_inspect_cached','native_export_warm'):
                     r = subprocess.run(cmd + ['--single-stage', stage], check=True, capture_output=True,
                                        encoding='utf8', timeout=240)
                     data = json.loads(r.stdout)

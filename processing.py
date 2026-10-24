@@ -145,13 +145,13 @@ def sharpen_float(rgb, amount):
     return rgb
 
 
-def render_array(arr, p, bits=8, chunk_rows=128):
+def render_array(arr, p, bits=8, chunk_rows=128, sink=None, progress=None):
     if bits not in (8, 16, 32):
         raise ValueError('Output depth must be 8, 16 or float32')
     if arr.dtype != np.float32:
         raise ValueError('调色输入必须是 float32 线性 RGB 数据')
     dtype, scale = (np.uint8, 255) if bits == 8 else (np.uint16, 65535) if bits==16 else (np.float32,1)
-    output = np.empty(arr.shape, dtype=dtype)
+    output = None if sink else np.empty(arr.shape, dtype=dtype)
     radius=max(2,round(min(arr.shape[:2])*.006))
     halo = (max(radius if p.get('clarity') else 0,2 if p.get('texture') else 0) + (2 if p['sharpen'] else 0))
     for start in range(0, arr.shape[0], chunk_rows):
@@ -168,5 +168,7 @@ def render_array(arr, p, bits=8, chunk_rows=128):
         if bits!=32:
             rgb *= scale
             np.rint(rgb, out=rgb)
-        output[start:end] = rgb
+        if sink:sink(start,end,rgb)
+        else:output[start:end] = rgb
+        if progress:progress("render",.4+.4*end/arr.shape[0])
     return output

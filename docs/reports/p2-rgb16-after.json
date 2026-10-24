@@ -1,0 +1,13 @@
+{
+  "source_sha256": "03d94c1f184c4236ea8f890ab0fe30e91b65965e8b09cebecc397fba081a607f",
+  "rgb16_sha256": "bb582acac7ed07666b38fe4cc61285162955d795eb9e8659df3ccdece59a34d3",
+  "shape": [
+    5568,
+    3712,
+    3
+  ],
+  "dtype": "uint16",
+  "icc": true,
+  "workbench": true,
+  "original_unchanged": true
+}

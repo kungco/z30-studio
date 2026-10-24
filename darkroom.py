@@ -1,4 +1,5 @@
 """Bounded, non-destructive manual darkroom controls; float32 until final encode."""
+import native_cache as frame_memory
 from functools import lru_cache
 import math
 import numpy as np
@@ -172,7 +173,7 @@ def geometry(arr,p):
     if angle:
         h,w=arr.shape[:2];a=np.deg2rad(angle);c,s=np.cos(a),np.sin(a)
         zoom=max(abs(c)+abs(s)*h/w,abs(c)+abs(s)*w/h)
-        oh,ow=max(1,int(h/zoom)),max(1,int(w/zoom));out=np.empty((oh,ow,3),np.float32)
+        oh,ow=max(1,int(h/zoom)),max(1,int(w/zoom));out=frame_memory.allocate((oh,ow,3),np.float32)
         xx=(np.arange(ow,dtype=np.float32)[None,:]-(ow-1)/2)
         for top in range(0,oh,128):
             bottom=min(oh,top+128);yy=np.arange(top,bottom,dtype=np.float32)[:,None]-(oh-1)/2

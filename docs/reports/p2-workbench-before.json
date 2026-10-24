@@ -1,0 +1,68 @@
+{
+  "platform": "Windows-11-10.0.22631-SP0",
+  "python": "3.14.6",
+  "variant": "radial mask + denoise + manual optics",
+  "repeats": 1,
+  "memory": "Fresh process per stage including prerequisite decode/render",
+  "samples": [
+    {
+      "sample": "Z30-14bit.NEF",
+      "sha256": "03d94c1f184c4236ea8f890ab0fe30e91b65965e8b09cebecc397fba081a607f",
+      "stages": {
+        "decode_full": {
+          "seconds": 0.9984647999954177,
+          "peak_rss_mib": 402.3125
+        },
+        "decode_preview": {
+          "seconds": 0.4470852999947965,
+          "peak_rss_mib": 156.24609375,
+          "dimensions": [
+            1067,
+            1600
+          ]
+        },
+        "decode_preview_cached": {
+          "seconds": 2.6599998818710446e-05,
+          "peak_rss_mib": 156.4140625
+        },
+        "develop_full": {
+          "seconds": 13.864957099998719,
+          "peak_rss_mib": 638.2734375,
+          "dimensions": [
+            3712,
+            5568
+          ],
+          "dtype": "float32",
+          "channel_means": [
+            74.90162250459832,
+            54.276899884345276,
+            50.3154610396849
+          ],
+          "channel_clip_fraction": [
+            0.014283726435543005,
+            0.0,
+            5.1914960488505745e-05
+          ]
+        },
+        "encode_jpeg": {
+          "seconds": 0.09234799999831012,
+          "peak_rss_mib": 638.5859375,
+          "bytes": 6321718
+        },
+        "preview_pipeline_cached": {
+          "seconds": 1.2497915999992983,
+          "peak_rss_mib": 156.15625
+        },
+        "preview_pipeline_repeat": {
+          "seconds": 7.370000093942508e-05,
+          "peak_rss_mib": 156.24609375
+        },
+        "export_tiff16": {
+          "seconds": 17.672152799998003,
+          "peak_rss_mib": 698.7890625,
+          "bytes": 114184688
+        }
+      }
+    }
+  ]
+}

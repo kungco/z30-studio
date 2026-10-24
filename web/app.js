@@ -245,15 +245,17 @@ async function refreshExportJobs(){
   const active=data.jobs.filter(j=>j.state==='running'||j.state==='queued'||j.worker_active).length;
   $('jobsTop').textContent=active?'后台任务 · '+active:'后台任务';
   $('jobsStorage').textContent=`本机快照与结果 ${(data.storage_bytes/1048576).toFixed(1)} MiB / ${(data.limit_bytes/1048576).toFixed(0)} MiB；${data.jobs.length} 个任务`;
+  const cache=await(await localFetch('/api/cache')).json();$('nativeCacheStatus').textContent=`全尺寸浮点磁盘缓存 ${(cache.bytes/1048576).toFixed(0)} / ${(cache.limit_bytes/1048576).toFixed(0)} MiB · 复用 ${cache.hits} 次` ;
   $('jobsList').replaceChildren();
   if(!data.jobs.length){const empty=document.createElement('p');empty.textContent='暂无后台导出任务。';$('jobsList').append(empty);}
   for(const job of data.jobs){
    const card=document.createElement('section');card.className='export-job';
    const count=job.items.filter(x=>x.state==='done').length;
    const title=document.createElement('h3');title.textContent=`${jobLabels[job.state]||job.state} · ${count}/${job.items.length} 张 · ${job.format}`;
-   const progress=document.createElement('progress');progress.max=job.items.length;progress.value=count;
+   if(job.state==='running')title.textContent+=` · ${job.workers||1} 路${job.eta_seconds==null?'':` · 约 ${job.eta_seconds} 秒`}`;
+   const progress=document.createElement('progress');progress.max=job.items.length;progress.value=(job.progress??count/job.items.length)*job.items.length;
    const list=document.createElement('ul');
-   for(const item of job.items){const li=document.createElement('li');li.textContent=item.name+' · '+(item.state==='done'?'完成':item.state==='running'?'正在处理':item.state==='error'?'失败：'+item.error:'等待处理')+(item.quality?.strength<1?' · 自动保护 '+Math.round(item.quality.strength*100)+'%':'');list.append(li);}
+   for(const item of job.items){const li=document.createElement('li');li.textContent=item.name+' · '+(item.state==='done'?'完成':item.state==='running'?`${({decode:'解码',prepare:'镜头与局部调整',render:'调色',cache:'复用缓存',encode:'编码'})[item.phase]||'正在处理'} ${Math.round((item.progress||0)*100)}%`:item.state==='error'?'失败：'+item.error:'等待处理')+(item.quality?.strength<1?' · 自动保护 '+Math.round(item.quality.strength*100)+'%':'');list.append(li);}
    const actions=document.createElement('div');actions.className='job-actions';
    if(count){
     const link=document.createElement('a');const single=job.items.length===1;
@@ -710,3 +712,5 @@ colourControls=new ColourControls({current:()=>current,locked:()=>importBusy||ex
  list:async()=>await(await localFetch('/api/colour/profiles')).json(),upload:file=>api('/api/colour/profiles',file,true),
  change:delta=>{if(!current||importBusy||exportBusy)return;current.settings={...current.settings,...delta};current.preset='custom';syncLabels();schedulePreview(0);}});colourControls.init();
 outputControls=new OutputControls();
+
+$('clearNativeCache').onclick=async()=>{try{await api('/api/cache/clear',{});await refreshExportJobs();toast('已清理闲置缓存；原片、草稿和导出结果不变');}catch(e){toast(e.message);}};

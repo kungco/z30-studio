@@ -6,12 +6,13 @@ import math
 from pathlib import Path
 import re
 import string
+import zlib
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import colour_management as colour
 from processing import sharpen_float
 
-DEFAULTS=dict(long_edge=0,width=0,height=0,upscale=False,output_sharpen=0,watermark='',
+DEFAULTS=dict(workers=1,long_edge=0,width=0,height=0,upscale=False,output_sharpen=0,watermark='',
               watermark_opacity=50,watermark_size=3,watermark_position='br',
               watermark_color='white',metadata='clear',name_template='{name}-Z30-{index:03d}')
 PRESETS={'full':dict(name='原尺寸',format='JPEG',quality=95),
@@ -22,6 +23,7 @@ PRESETS={'full':dict(name='原尺寸',format='JPEG',quality=95),
 def normalize(data):
     if not isinstance(data,dict):raise ValueError('导出选项格式无效')
     p=DEFAULTS|{k:v for k,v in data.items() if k in DEFAULTS}
+    if isinstance(p['workers'],bool) or p['workers'] not in (1,2):raise ValueError('导出并发只支持 1 或 2')
     for k,lo,hi in [('long_edge',0,30000),('width',0,30000),('height',0,30000),('output_sharpen',0,100),
                     ('watermark_opacity',0,100),('watermark_size',1,12)]:
         v=float(p[k])
@@ -64,33 +66,49 @@ def dimensions(size,p):
     if result[0]*result[1]>100_000_000:raise ValueError('输出最多 1 亿像素')
     return result
 
+def resized(pixels,space,p):
+    h,w=pixels.shape[:2];size=dimensions((w,h),p)
+    if size==(w,h):return pixels
+    channels=[]
+    for c in range(3):
+        channel=colour.decode(pixels[...,c],space)
+        channels.append(np.asarray(Image.fromarray(channel).resize(size,Image.Resampling.LANCZOS)))
+    return colour.encode(np.stack(channels,axis=2),space)
+
+def watermark_layer(size,p):
+    w,h=size;margin=max(3,round(min(w,h)*.025));font_size=max(8,round(min(w,h)*p['watermark_size']/100))
+    font_path=next((str(v) for v in (Path('C:/Windows/Fonts/msyh.ttc'),Path('C:/Windows/Fonts/arial.ttf'),Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')) if v.exists()),None)
+    def font(size):return ImageFont.truetype(font_path,size) if font_path else ImageFont.load_default(size=size)
+    f=font(font_size);bbox=f.getbbox(p['watermark'])
+    while bbox[2]-bbox[0]>w-2*margin and font_size>8:
+        font_size-=1;f=font(font_size);bbox=f.getbbox(p['watermark'])
+    tw,th=min(w,bbox[2]-bbox[0]+4),min(h,bbox[3]-bbox[1]+4)
+    mask=Image.new('L',(tw,th));ImageDraw.Draw(mask).text((2-bbox[0],2-bbox[1]),p['watermark'],fill=255,font=f)
+    position=p['watermark_position'];x=margin if position.endswith('l') else w-tw-margin;y=margin if position.startswith('t') else h-th-margin
+    if position=='center':x,y=(w-tw)//2,(h-th)//2
+    x,y=max(0,min(w-tw,x)),max(0,min(h-th,y))
+    return x,y,np.asarray(mask,dtype=np.float32)[...,None]*(p['watermark_opacity']/25500)
+
+def output_tiles(pixels,space,p,rows=128,progress=None):
+    h,w=pixels.shape[:2];layer=watermark_layer((w,h),p) if p['watermark'] else None
+    for top in range(0,h,rows):
+        bottom=min(h,top+rows);low=max(0,top-2);high=min(h,bottom+2)
+        if p['output_sharpen']:
+            tile=sharpen_float(pixels[low:high].copy(),p['output_sharpen'])[top-low:bottom-low]
+        else:tile=pixels[top:bottom].copy()
+        if layer:
+            x,y,alpha=layer;a=max(top,y);b=min(bottom,y+len(alpha))
+            if b>a:
+                region=tile[a-top:b-top,x:x+alpha.shape[1]];weight=alpha[a-y:b-y]
+                region*=1-weight;region+=weight*(1 if p['watermark_color']=='white' else 0)
+        if progress:progress('encode',.8+.19*bottom/h)
+        yield top,bottom,np.clip(tile,0,1,out=tile)
+
 def finish(pixels,space,options):
-    """All pixels remain float32 through output resize, sharpening and watermark."""
-    p=normalize(options);h,w=pixels.shape[:2];size=dimensions((w,h),p)
-    changed=False
-    if size!=(w,h):
-        channels=[]
-        for c in range(3):
-            channel=colour.decode(pixels[...,c],space)
-            channels.append(np.asarray(Image.fromarray(channel).resize(size,Image.Resampling.LANCZOS)))
-        pixels=colour.encode(np.stack(channels,axis=2),space);changed=True
-    if p['output_sharpen'] or p['watermark']:
-        if not changed:pixels=pixels.copy()
-    if p['output_sharpen']:pixels=sharpen_float(pixels,p['output_sharpen'])
-    if p['watermark']:
-        h,w=pixels.shape[:2];margin=max(3,round(min(w,h)*.025));font_size=max(8,round(min(w,h)*p['watermark_size']/100))
-        font_path=next((str(v) for v in (Path('C:/Windows/Fonts/msyh.ttc'),Path('C:/Windows/Fonts/arial.ttf'),Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')) if v.exists()),None)
-        def font(size):return ImageFont.truetype(font_path,size) if font_path else ImageFont.load_default(size=size)
-        f=font(font_size);bbox=f.getbbox(p['watermark'])
-        while bbox[2]-bbox[0]>w-2*margin and font_size>8:
-            font_size-=1;f=font(font_size);bbox=f.getbbox(p['watermark'])
-        tw,th=min(w,bbox[2]-bbox[0]+4),min(h,bbox[3]-bbox[1]+4)
-        mask=Image.new('L',(tw,th));ImageDraw.Draw(mask).text((2-bbox[0],2-bbox[1]),p['watermark'],fill=255,font=f)
-        position=p['watermark_position'];x=margin if position.endswith('l') else w-tw-margin;y=margin if position.startswith('t') else h-th-margin
-        if position=='center':x,y=(w-tw)//2,(h-th)//2
-        x,y=max(0,min(w-tw,x)),max(0,min(h-th,y));alpha=np.asarray(mask,dtype=np.float32)[...,None]*(p['watermark_opacity']/25500)
-        region=pixels[y:y+th,x:x+tw];region*=1-alpha;region+=alpha*(1 if p['watermark_color']=='white' else 0)
-    return np.clip(pixels,0,1,out=pixels) if pixels.flags.writeable else pixels
+    p=normalize(options);pixels=resized(pixels,space,p);out=np.empty_like(pixels)
+    for top,bottom,tile in output_tiles(pixels,space,p):out[top:bottom]=tile
+    return out
+
 
 ASCII_TAGS=(271,272,306,315,33432,36867,36868,42036)
 RATIONAL_TAGS=(33434,33437,37386)
@@ -134,15 +152,19 @@ def tiff_tags(values):
     if result:result.append((274,'H',1,1,False))
     return result
 
-def encode(pixels,space,fmt,quality,source,options):
-    p=normalize(options);pixels=finish(pixels,space,p);values=metadata(source,p['metadata']);out=io.BytesIO()
+def encode(pixels,space,fmt,quality,source,options,progress=None):
+    p=normalize(options);pixels=resized(pixels,space,p);values=metadata(source,p['metadata']);out=io.BytesIO()
+    h,w=pixels.shape[:2]
     if fmt=='TIFF16':
         import tifffile
-        quant=np.rint(pixels*65535).astype(np.uint16)
-        tifffile.imwrite(out,quant,photometric='rgb',iccprofile=colour.profile(space),metadata=None,
-                         extratags=tiff_tags(values),software='Z30 Studio' if values else None,compression='deflate',maxworkers=1)
+        def strips():
+            for top,bottom,tile in output_tiles(pixels,space,p,progress=progress):yield zlib.compress(np.rint(tile*65535).astype('<u2').tobytes())
+        tifffile.imwrite(out,strips(),shape=(h,w,3),dtype=np.uint16,byteorder='<',photometric='rgb',iccprofile=colour.profile(space),metadata=None,
+                         extratags=tiff_tags(values),software='Z30 Studio' if values else None,compression='deflate',maxworkers=1,rowsperstrip=128)
     else:
-        image=Image.fromarray(np.rint(pixels*255).astype(np.uint8));opts=dict(icc_profile=colour.profile(space))
+        quant=np.empty((h,w,3),np.uint8)
+        for top,bottom,tile in output_tiles(pixels,space,p,progress=progress):quant[top:bottom]=np.rint(tile*255)
+        image=Image.fromarray(quant);opts=dict(icc_profile=colour.profile(space))
         if fmt=='JPEG':opts.update(quality=quality,subsampling=0)
         exif=exif_bytes(values,image.size,space)
         if exif:opts['exif']=exif

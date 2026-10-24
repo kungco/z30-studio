@@ -1,5 +1,7 @@
 """Z30 Studio: loopback-only, non-destructive RAW development."""
 import argparse
+from contextlib import contextmanager,ExitStack
+import hashlib
 import base64
 import io
 import json
@@ -34,6 +36,7 @@ import local_vision
 import lens_tools
 import colour_management as colour
 import export_tools
+import native_cache
 from app_runtime import APP_VERSION, resource_root, data_root
 from imaging import raw_crop, raw_pixels, raster_linear, resize_linear, srgb_to_linear
 
@@ -153,6 +156,63 @@ def get_profiles():
         return STORES[root]
 
 
+def get_native_cache():
+    root=data_root()/'native-cache'
+    with STORES_LOCK:
+        if root not in STORES:STORES[root]=native_cache.NativeCache(root)
+        return STORES[root]
+
+
+def source_digest(session):
+    path=Path(session['path']);stat=path.stat();stamp=(stat.st_mtime_ns,stat.st_size)
+    if session.get('asset') and session.get('verified_stamp')!=stamp:
+        get_drafts().asset_path(session['asset'],verify=True);session['verified_stamp']=stamp
+    if session.get('_digest_stamp')!=stamp:
+        with path.open('rb') as file:session['_digest']=hashlib.file_digest(file,'sha256').hexdigest()
+        session['_digest_stamp']=stamp
+    return session['_digest']
+
+
+@contextmanager
+def native_pixels(session,p,progress=None):
+    cache=get_native_cache();digest=source_digest(session);wide=p['output_space']!='srgb'
+    linear_key=native_cache.key(['linear',digest,session['raw'],source_wb(session,p),wide])
+    core={k:v for k,v in p.items() if k not in ('display_profile','proof_profile','proof_enabled','proof_intent','proof_paper','proof_gamut')}
+    render_key=native_cache.key(['render',linear_key,core])
+    def build_linear(path):
+        if progress:progress('decode',.02)
+        if session['raw']:
+            from imaging import orient
+            wb=source_wb(session,p)
+            with rawpy.imread(str(session['path'])) as raw:
+                sizes=raw.sizes
+                if sizes.pixel_aspect!=1:raise ValueError('非方形像素 RAW 尚未验证')
+                rgb=raw.postprocess(output_bps=16,gamma=(1,1),no_auto_bright=True,use_camera_wb=wb=='camera',
+                    use_auto_wb=wb=='auto',half_size=False,output_color=rawpy.ColorSpace.ProPhoto if wide else rawpy.ColorSpace.sRGB,user_flip=0)
+            if rgb.shape[:2]!=(sizes.height,sizes.width):raise ValueError('RAW 解码尺寸不一致')
+            x,y,w,h=raw_crop(sizes);view=orient(rgb[y:y+h,x:x+w],int(sizes.flip))
+            with native_cache.writer(path,view.shape) as write:
+                for top in range(0,len(view),128):
+                    bottom=min(len(view),top+128);tile=np.multiply(view[top:bottom],np.float32(1/65535),dtype=np.float32)
+                    if wide:tile=colour.to_working(tile,'prophoto')
+                    write(top,bottom,tile)
+                    if progress:progress('decode',.02+.13*bottom/len(view))
+        else:
+            arr=decode_settings(session,p,False)
+            with native_cache.writer(path,arr.shape) as write:
+                for top in range(0,len(arr),128):write(top,min(len(arr),top+128),arr[top:top+128])
+    def build_render(path):
+        with ExitStack() as leases:
+            linear=leases.enter_context(cache.lease(linear_key,build_linear))
+            with native_cache.Scratch(cache.root,progress,linear,leases.close) as scratch:
+                if progress:progress('prepare',.18)
+                prepared=spatial.prepare(linear,p);native_cache.release_input(prepared)
+                prepared=geometry(prepared,p);native_cache.release_input(prepared);scratch.retain(prepared)
+                prepared=spatial.retouch(prepared,p);native_cache.release_input(prepared);scratch.retain(prepared)
+                with native_cache.writer(path,prepared.shape) as sink:render_array(prepared,p,bits=32,sink=sink,progress=progress)
+    with cache.lease(render_key,build_render,progress) as pixels:yield pixels
+
+
 def geometry(arr, p):
     if p['rotation']:
         arr = np.rot90(arr, -p['rotation'])
@@ -182,9 +242,12 @@ def image_bytes(im, fmt='JPEG', quality=93):
     return b.getvalue()
 
 
-def export_bytes(session, p, fmt='JPEG', quality=95, options=None):
+def export_bytes(session, p, fmt='JPEG', quality=95, options=None, progress=None):
     if fmt not in ('JPEG', 'PNG', 'TIFF16'):
         raise ValueError('不支持的导出格式')
+    if session.get('path') and Path(session['path']).is_file():
+        with native_pixels(session,p,progress) as pixels:
+            return export_tools.encode(pixels,p['output_space'],fmt,quality,session['path'],options or {},progress)
     arr = decode_settings(session,p,False)
     if options is not None:
         pixels=render_array(spatial.retouch(geometry(spatial.prepare(arr,p),p),p),p,bits=32)
@@ -199,7 +262,7 @@ def export_bytes(session, p, fmt='JPEG', quality=95, options=None):
     return image_bytes(develop(arr, p), fmt, quality)
 
 
-def export_snapshot(path, is_raw, params, fmt, quality, protect, options=None):
+def export_snapshot(path, is_raw, params, fmt, quality, protect, options=None, progress=None):
     session = dict(path=path, raw=is_raw, cache={})
     p = settings(params)
     metrics = None
@@ -207,7 +270,7 @@ def export_snapshot(path, is_raw, params, fmt, quality, protect, options=None):
         if protect:
             base = p | {k: DEFAULTS[k] for k in codex_assist.RANGES}
             p, metrics = quality_checks.guard(decode_settings(session,p,True), base, p, develop)
-        return export_bytes(session, p, fmt, quality, options), p, metrics
+        return export_bytes(session, p, fmt, quality, options,progress), p, metrics
     finally:
         if session.get('_cache_id'):
             CACHE.remove_source(session['_cache_id'])
@@ -549,6 +612,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({'error': str(exc)}, 404)
             except ValueError as exc:
                 return self.json({'error': str(exc)}, 400)
+        if route == '/api/cache':
+            return self.json(get_native_cache().stats())
         if route == '/api/colour/profiles':
             return self.json(dict(profiles=get_profiles().list(),spaces=colour.SPACES))
         if route == '/api/exports' or route.startswith('/api/exports/'):
@@ -757,6 +822,8 @@ class Handler(BaseHTTPRequestHandler):
                             item['undo'] = {'settings': settings(recipe['undo'].get('settings', {})), 'preset': recipe['undo'].get('preset', 'custom')}
                         photos.append(item)
                     return self.json({'photos': photos, 'ttl_seconds': SESSION_TTL})
+            if route == '/api/cache/clear':
+                get_native_cache().clear();return self.json(get_native_cache().stats())
             if route == '/api/colour/profiles':
                 return self.json(get_profiles().add(body),201)
             if route.startswith('/api/exports/'):
@@ -828,7 +895,7 @@ class Handler(BaseHTTPRequestHandler):
                         edit['sx'],edit['sy']=spatial.choose_donor(arr,edit['x'],edit['y'],edit['radius'])
                     return self.json({'repair':edit})
                 if route == '/api/masks/semantic':
-                    im=develop(decode_settings(s,p,True),p)
+                    im=colour.as_srgb(develop(decode_settings(s,p,True),p))
                     result=get_vision().segment(im,data.get('kind','subject'))
                     mask=spatial.masks([dict(type='semantic',bitmap=result.pop('bitmap'),label={'subject':'主体','person':'人像','sky':'天空'}[result['kind']],exposure=0)])[0]
                     return self.json(result|{'mask':mask})
@@ -844,7 +911,7 @@ class Handler(BaseHTTPRequestHandler):
                     x,y=float(data.get('x',.5)),float(data.get('y',.5))
                     if not math.isfinite(x) or not math.isfinite(y) or not 0<=x<=1 or not 0<=y<=1:
                         raise ValueError('白平衡取样坐标无效')
-                    arr=geometry(spatial.prepare(decode(s,'daylight' if s['raw'] else 'camera',True),p),p)
+                    arr=geometry(spatial.prepare(decode_settings(s,p|{'wb':'daylight' if s['raw'] else 'camera','wb_mode':'legacy'},True),p),p)
                     return self.json({'wb_gains':darkroom.sample_neutral(arr,x,y),'reference':'daylight' if s['raw'] else 'encoded image'})
                 if route == '/api/settings':
                     return self.json({'settings':p})
@@ -852,18 +919,18 @@ class Handler(BaseHTTPRequestHandler):
                     cx, cy = float(data.get('cx', .5)), float(data.get('cy', .5))
                     if not math.isfinite(cx) or not math.isfinite(cy) or not 0 <= cx <= 1 or not 0 <= cy <= 1:
                         raise ValueError('检视位置无效')
-                    token = s.setdefault('_cache_id', key)
-                    cache_key = (token, 'native-rgb8', json.dumps(p, sort_keys=True, allow_nan=False))
-                    pixels = CACHE.get(cache_key)
-                    if pixels is None:
-                        pixels = np.asarray(develop(decode_settings(s,p,False), p))
-                        pixels.setflags(write=False); CACHE.put(cache_key, pixels)
-                    full_h, full_w = pixels.shape[:2]
+                    with native_pixels(s,p) as pixels:
+                        full_h,full_w=pixels.shape[:2]
+                        w=min(full_w,max(64,min(1024,int(data.get('width',640)))))
+                        h=min(full_h,max(64,min(1024,int(data.get('height',480)))))
+                        x=max(0,min(full_w-w,round(cx*full_w-w/2)));y=max(0,min(full_h-h,round(cy*full_h-h/2)))
+                        tile=Image.fromarray(np.rint(pixels[y:y+h,x:x+w]*255).astype(np.uint8))
+                    full_h, full_w = int(full_h),int(full_w)
                     w = min(full_w, max(64, min(1024, int(data.get('width', 640)))))
                     h = min(full_h, max(64, min(1024, int(data.get('height', 480)))))
                     x = max(0, min(full_w-w, round(cx*full_w-w/2)))
                     y = max(0, min(full_h-h, round(cy*full_h-h/2)))
-                    tile = Image.fromarray(pixels[y:y+h, x:x+w]);tile.info['icc_profile']=colour.profile(p['output_space']);tile=get_profiles().preview(tile,p)
+                    tile.info['icc_profile']=colour.profile(p['output_space']);tile=get_profiles().preview(tile,p)
                     return self.json(dict(image='data:image/png;base64,'+base64.b64encode(image_bytes(tile,'PNG')).decode(),
                         width=w,height=h,x=x,y=y,full_width=full_w,full_height=full_h,cx=(x+w/2)/full_w,cy=(y+h/2)/full_h))
                 if route == '/api/codex/cancel':
@@ -963,6 +1030,9 @@ def serve(server, shutdown_phase=None):
             waited = time.monotonic() - export_started
             if waited > 2:
                 logging.warning('Export shutdown waited %.2fs for an in-flight item', waited)
+        note('Closing full-size caches')
+        for store in list(STORES.values()):
+            if isinstance(store,native_cache.NativeCache):store.close()
         note('Removing temporary photo copies')
         TEMP.cleanup()
         note('Local service stopped')

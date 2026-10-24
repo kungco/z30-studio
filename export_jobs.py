@@ -14,6 +14,8 @@ import threading
 import time
 import zipfile
 import export_tools
+import inspect
+import native_cache
 
 FORMATS = {'JPEG': 'jpg', 'PNG': 'png', 'TIFF16': 'tif'}
 INPUTS = {'.nef', '.jpg', '.jpeg', '.png'}
@@ -38,6 +40,8 @@ class ExportQueue:
             self.owner_file.close()
             raise ValueError('另一软件实例正在管理后台导出，请关闭多余实例') from exc
         self.exporter = exporter
+        self.has_progress="progress" in inspect.signature(exporter).parameters
+        self.output_reservations={}
         self.max_jobs, self.max_bytes = max_jobs, max_bytes
         self.shutdown_timeout = max(0.0, float(shutdown_timeout))
         self.lock = threading.RLock()
@@ -227,7 +231,22 @@ class ExportQueue:
 
     def list(self):
         with self.lock:
-            return [copy.deepcopy(j) for j in sorted(self.jobs.values(), key=lambda j: j['created'], reverse=True)]
+            return [self._status(copy.deepcopy(j)) for j in sorted(self.jobs.values(), key=lambda j: j['created'], reverse=True)]
+
+    @staticmethod
+    def _status(job):
+        active=[i for i in job['items'] if i['state']=='running'];done=[i for i in job['items'] if i['state']=='done']
+        job['progress']=(len(done)+sum(i.get('progress',0) for i in active))/len(job['items']);job['eta_seconds']=None
+        if job['state']=='running':
+            durations=[i['seconds'] for i in done if i.get('seconds')]
+            remaining=[]
+            for item in active:
+                progress=item.get('progress',0);elapsed=max(0,time.time()-item.get('started',time.time()))
+                if progress>=.05:durations.append(elapsed/progress);remaining.append(elapsed*(1-progress)/progress)
+            if durations:
+                average=sum(durations)/len(durations);pending=sum(i['state']=='pending' for i in job['items'])
+                job['eta_seconds']=round(max(max(remaining,default=0),(sum(remaining)+pending*average)/job.get('workers',1)))
+        return job
 
     def retry(self, key):
         with self.lock:
@@ -292,52 +311,26 @@ class ExportQueue:
 
     def _run(self, key):
         with self.lock:
-            job = self.jobs.get(key)
-            if not job or job['state'] != 'queued' or self.stopped:
-                return
-            job['state'] = 'running'; job['worker_active'] = True; self._save(job)
-        folder = self._folder(key)
+            job=self.jobs.get(key)
+            if not job or job['state']!='queued' or self.stopped:return
+            requested=job.get('options',{}).get('workers',1)
+            workers=min(requested,len(job['items']))
+            if workers>1 and native_cache.available_memory()<3*1024**3:workers=1
+            job.update(state='running',worker_active=True,workers=workers,started=time.time())
+            self._save(job)
+        folder=self._folder(key)
         try:
+            pending=queue.Queue()
             for item in job['items']:
-                with self.lock:
-                    if job['state'] != 'running' or self.stopped:
-                        return
-                    if item['state'] == 'done':
-                        continue
-                    item['state'] = 'running'; self._save(job)
-                partial = folder / f"output-{item['index']}.part"
-                try:
-                    source = folder / f"input-{item['index']}{item['extension']}"
-                    with source.open('rb') as file:
-                        if hashlib.file_digest(file, 'sha256').hexdigest() != item['sha256']:
-                            raise ValueError('导出输入快照校验失败；未处理可能已改变的文件')
-                    params = copy.deepcopy(item.get('settings',job['settings']))
-                    if not item['raw']:
-                        params['wb'] = 'camera'
-                    args=(source,item['raw'],params,job['format'],job['quality'],job['protect'])
-                    data, applied, quality = self.exporter(*args,job['options']) if 'options' in job else self.exporter(*args)
-                    if self.disk_bytes() + len(data) > self.max_bytes:
-                        raise ValueError('本机任务空间不足，请删除旧任务后重试')
-                    output_digest = hashlib.sha256(data).hexdigest()
-                    output_size = len(data)
-                    with partial.open('wb') as file:
-                        file.write(data); file.flush(); os.fsync(file.fileno())
-                    del data
-                    with self.lock:
-                        if job['state'] != 'running' or self.stopped:
-                            return
-                        output = f"output-{item['index']}.{FORMATS[job['format']]}"
-                        os.replace(partial, folder / output)
-                        item.update(state='done', output=output, output_sha256=output_digest, output_bytes=output_size,
-                                    applied_settings=applied, quality=quality)
-                        item.pop('error', None); self._save(job)
-                except Exception as exc:
-                    with self.lock:
-                        if job['state'] == 'running':
-                            item.update(state='error', error=str(exc)[:300])
-                            self._save(job)
-                finally:
-                    partial.unlink(missing_ok=True)
+                if item['state']!='done':pending.put(item)
+            def consume():
+                while not self.stopped:
+                    try:item=pending.get_nowait()
+                    except queue.Empty:return
+                    self._run_item(key,job,item)
+            threads=[threading.Thread(target=consume,name='z30-export-item',daemon=True) for _ in range(workers)]
+            for thread in threads:thread.start()
+            for thread in threads:thread.join()
             with self.lock:
                 if job['state'] != 'running' or self.stopped:
                     return
@@ -358,6 +351,48 @@ class ExportQueue:
                     if item['state'] == 'running':
                         item['state'] = 'pending'
                 self._save(job)
+
+    def _run_item(self,key,job,item):
+        folder=self._folder(key);reservation=(key,item['index']);partial=folder/f"output-{item['index']}.part"
+        with self.lock:
+            if job['state']!='running' or self.stopped:return
+            item.update(state='running',progress=0.,phase='decode',started=time.time());self._save(job)
+        def progress(phase,fraction):
+            if self.stopped:raise ValueError('导出服务正在停止')
+            with self.lock:
+                if job['state']!='running':raise ValueError('导出已取消')
+                item.update(phase=phase,progress=max(item.get('progress',0),min(.999,max(0,float(fraction)))))
+        try:
+            source=folder/f"input-{item['index']}{item['extension']}"
+            with source.open('rb') as file:
+                if hashlib.file_digest(file,'sha256').hexdigest()!=item['sha256']:raise ValueError('导出输入快照校验失败；未处理可能已改变的文件')
+            params=copy.deepcopy(item.get('settings',job['settings']))
+            if not item['raw']:params['wb']='camera'
+            args=(source,item['raw'],params,job['format'],job['quality'],job['protect'])
+            if 'options' in job:args+= (job['options'],)
+            data,applied,quality=self.exporter(*args,**({'progress':progress} if self.has_progress else {}))
+            with self.lock:
+                if self.stopped or job['state']!='running':return
+                if self.disk_bytes()+sum(self.output_reservations.values())+len(data)>self.max_bytes:raise ValueError('本机任务空间不足，请删除旧任务后重试')
+                self.output_reservations[reservation]=len(data)
+            digest=hashlib.sha256(data).hexdigest();size=len(data)
+            with partial.open('wb') as file:file.write(data);file.flush();os.fsync(file.fileno())
+            del data
+            with self.lock:
+                if job['state']!='running' or self.stopped:return
+                output=f"output-{item['index']}.{FORMATS[job['format']]}";os.replace(partial,folder/output)
+                item.update(state='done',progress=1.,phase='done',output=output,output_sha256=digest,output_bytes=size,
+                            applied_settings=applied,quality=quality,seconds=time.time()-item['started'])
+                item.pop('error',None);self._save(job)
+        except Exception as exc:
+            with self.lock:
+                if job['state']=='running' and not self.stopped:item.update(state='error',error=str(exc)[:300]);self._save(job)
+        finally:
+            partial.unlink(missing_ok=True)
+            with self.lock:
+                self.output_reservations.pop(reservation,None)
+                if item['state']=='running':item['state']='pending'
+
 
     def shutdown(self, timeout=None):
         """Bound the whole call, including contended locks / slow manifest storage.

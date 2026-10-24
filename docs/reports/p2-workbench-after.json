@@ -1,0 +1,105 @@
+{
+  "platform": "Windows-11-10.0.22631-SP0",
+  "python": "3.14.6",
+  "variant": "radial mask + denoise + manual optics",
+  "repeats": 1,
+  "memory": "Fresh process per stage including prerequisite decode/render",
+  "samples": [
+    {
+      "sample": "Z30-14bit.NEF",
+      "sha256": "03d94c1f184c4236ea8f890ab0fe30e91b65965e8b09cebecc397fba081a607f",
+      "stages": {
+        "decode_full": {
+          "seconds": 0.9914381999988109,
+          "peak_rss_mib": 402.4453125
+        },
+        "decode_preview": {
+          "seconds": 0.4438672000032966,
+          "peak_rss_mib": 156.28515625,
+          "dimensions": [
+            1067,
+            1600
+          ]
+        },
+        "decode_preview_cached": {
+          "seconds": 3.0800001695752144e-05,
+          "peak_rss_mib": 156.26953125
+        },
+        "develop_full": {
+          "seconds": 11.469211900002847,
+          "peak_rss_mib": 638.8828125,
+          "dimensions": [
+            3712,
+            5568
+          ],
+          "dtype": "float32",
+          "channel_means": [
+            74.90162235944932,
+            54.27690017464328,
+            50.315461668663914
+          ],
+          "channel_clip_fraction": [
+            0.014283678052541618,
+            0.0,
+            5.1914960488505745e-05
+          ]
+        },
+        "encode_jpeg": {
+          "seconds": 0.0940342999965651,
+          "peak_rss_mib": 639.03515625,
+          "bytes": 6321580
+        },
+        "preview_pipeline_cached": {
+          "seconds": 1.2479683000055957,
+          "peak_rss_mib": 156.3203125
+        },
+        "preview_pipeline_repeat": {
+          "seconds": 7.860000187065452e-05,
+          "peak_rss_mib": 156.5234375
+        },
+        "export_tiff16": {
+          "seconds": 16.017952900001546,
+          "peak_rss_mib": 545.140625,
+          "bytes": 114165102
+        },
+        "native_inspect": {
+          "seconds": 12.83165540000482,
+          "peak_rss_mib": 545.0859375,
+          "dimensions": [
+            3712,
+            5568
+          ],
+          "tile_sum": 163292486,
+          "cache": {
+            "bytes": 496042240,
+            "limit_bytes": 2147483648,
+            "frames": 2,
+            "hits": 0,
+            "misses": 2
+          }
+        },
+        "native_inspect_cached": {
+          "seconds": 0.007522899999457877,
+          "peak_rss_mib": 545.03125,
+          "dimensions": [
+            3712,
+            5568
+          ],
+          "tile_sum": 163292486,
+          "cache": {
+            "bytes": 496042240,
+            "limit_bytes": 2147483648,
+            "frames": 2,
+            "hits": 1,
+            "misses": 2
+          }
+        },
+        "native_export_warm": {
+          "seconds": 2.984074200001487,
+          "peak_rss_mib": 545.4140625,
+          "bytes": 114165102
+        }
+      }
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 """Float32 spatial edits: analytic masks, edge-aware denoise and manual optics."""
+import native_cache as frame_memory
 import math
 import base64
 import io
@@ -145,25 +146,29 @@ def optical(arr,p):
     if p.get('lens_auto'):
         from lens_tools import correct
         arr=correct(arr,p,_sample)
+        frame_memory.release_input(arr)
     if not any(p.get(k,0) for k in ('lens_k1','lens_k2','lens_red','lens_blue','vignette')):return arr
-    h,w=arr.shape[:2];out=np.empty_like(arr);cx=(w-1)/2;cy=(h-1)/2;scale=max(cx,cy,1)
+    h,w=arr.shape[:2];out=frame_memory.allocate(arr.shape,arr.dtype);cx=(w-1)/2;cy=(h-1)/2;scale=max(cx,cy,1)
     xx=(np.arange(w,dtype=np.float32)[None,:]-cx)/scale
     for top in range(0,h,128):
+        frame_memory.checkpoint()
         bottom=min(h,top+128);yy=(np.arange(top,bottom,dtype=np.float32)[:,None]-cy)/scale
         r2=xx*xx+yy*yy;radial=1+p.get('lens_k1',0)*r2+p.get('lens_k2',0)*r2*r2
         for c,offset in enumerate((p.get('lens_red',0),0,p.get('lens_blue',0))):
             factor=radial*(1+offset/1000)
             out[top:bottom,:,c]=_sample(arr[...,c],cx+xx*factor*scale,cy+yy*factor*scale)
         if p.get('vignette',0):out[top:bottom]*=np.exp2(np.clip(r2,0,2)*p['vignette']/100)[...,None]
+    frame_memory.release_input(out)
     return out
 
 
 def denoise(arr,p,inplace=False):
     l=p.get('denoise_luma',0)/100;c=p.get('denoise_chroma',0)/100
     if not l and not c:return arr
-    out=arr if inplace else np.empty_like(arr);h,w=arr.shape[:2];tail=None
+    out=arr if inplace else frame_memory.allocate(arr.shape,arr.dtype);h,w=arr.shape[:2];tail=None
     offsets=[(-2,0),(2,0),(0,-2),(0,2),(-1,-1),(-1,1),(1,-1),(1,1),(0,0)]
     for top in range(0,h,128):
+        frame_memory.checkpoint()
         bottom=min(h,top+128);lo=max(0,top-2);hi=min(h,bottom+2)
         source=arr[lo:hi].copy() if inplace else arr[lo:hi]
         if inplace and tail is not None:source[:len(tail)]=tail
@@ -224,7 +229,7 @@ def retouch(arr,p):
     """Float clone / mean-matched heal, then conservative portrait skin smoothing."""
     edits=p.get('repairs',[]);amount=p.get('skin_smooth',0)
     if not edits and not amount:return arr
-    h,w=arr.shape[:2];out=arr.copy() if edits else arr
+    h,w=arr.shape[:2];out=frame_memory.copy_array(arr) if edits else arr
     for edit in edits:
         radius=max(1,edit['radius']*min(w,h));cx=edit['x']*(w-1);cy=edit['y']*(h-1)
         left=max(0,int(cx-radius));right=min(w,int(cx+radius)+2);top=max(0,int(cy-radius));bottom=min(h,int(cy+radius)+2)
@@ -245,6 +250,7 @@ def retouch(arr,p):
         from processing import rgb_to_oklab
         smooth=denoise(out,{'denoise_luma':amount*.35,'denoise_chroma':amount*.6})
         for top in range(0,h,128):
+            frame_memory.checkpoint()
             bottom=min(h,top+128);region=out[top:bottom];lab=rgb_to_oklab(region)
             hue=np.arctan2(lab[...,2],lab[...,1]);chroma=np.hypot(lab[...,1],lab[...,2])
             # Broad warm-colour selection within an actual person semantic mask.
