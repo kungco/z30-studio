@@ -330,6 +330,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({'error': '建议任务不存在，请重新生成'}, 404)
         files = {'/': ('index.html', 'text/html; charset=utf-8'),
                  '/app.js': ('app.js', 'application/javascript; charset=utf-8'),
+                 '/auto-grade.js': ('auto-grade.js', 'application/javascript; charset=utf-8'),
                  '/style.css': ('style.css', 'text/css; charset=utf-8'),
                  '/assistant.css': ('assistant.css', 'text/css; charset=utf-8')}
         if route in files:
@@ -396,14 +397,22 @@ class Handler(BaseHTTPRequestHandler):
                     del SESSIONS[key]
                     return self.json({'ok': True})
                 p = settings(data.get('settings', {}))
-                if route == '/api/codex/suggest':
-                    goal = data.get('goal', '')
+                if route == '/api/codex/cancel':
+                    job = ADVISOR.get(data.get('job'))
+                    if job['source_id'] != key:
+                        raise ValueError('任务不属于这张照片')
+                    ADVISOR.cancel(data['job'])
+                    return self.json({'ok': True})
+                if route in ('/api/codex/suggest', '/api/codex/auto'):
+                    automatic = route == '/api/codex/auto'
+                    goal = codex_assist.AUTO_GOAL if automatic else data.get('goal', '')
                     if not isinstance(goal, str) or not goal.strip() or len(goal) > 1200:
                         raise ValueError('请输入 1 到 1200 字的调色目标')
                     base = DEFAULTS | {'rotation': p['rotation'], 'crop': p['crop']}
                     before = image_bytes(develop(decode(s, 'camera', True), base), quality=88)
                     current = image_bytes(develop(decode(s, p['wb'], True), p), quality=88)
-                    job = ADVISOR.submit(key, before, current, p, goal, s['raw'])
+                    job = ADVISOR.submit(key, before, current, p, goal, s['raw'],
+                                         mode='auto' if automatic else 'suggest')
                     return self.json({'job': job,
                                       'current_image': 'data:image/jpeg;base64,' + base64.b64encode(current).decode()}, 202)
                 if route == '/api/codex/preview':

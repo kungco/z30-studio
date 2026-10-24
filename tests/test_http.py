@@ -6,6 +6,7 @@ import time
 import zipfile
 from pathlib import Path
 import unittest
+from unittest.mock import Mock, patch
 import urllib.error
 import urllib.request
 
@@ -25,7 +26,7 @@ class QuietHandler(server.Handler):
 class HttpTests(unittest.TestCase):
     def setUp(self):
         self.advisor = server.ADVISOR
-        server.ADVISOR = codex_assist.Advisor()
+        server.ADVISOR = codex_assist.Advisor(server.filter_advice)
         self.exports = server.EXPORTS
         self.tmp = tempfile.TemporaryDirectory()
         server.EXPORTS = ExportQueue(Path(self.tmp.name), server.export_snapshot)
@@ -97,6 +98,65 @@ class HttpTests(unittest.TestCase):
             self.post('/api/exports/create', dict(ids=['missing'], format='PNG', settings={}))
         self.assertEqual(cm.exception.code, 410); cm.exception.close()
         self.assertFalse(server.EXPORTS.list())
+
+    def test_one_click_auto_uses_existing_cli_then_quality_filter_and_local_preview(self):
+        key = self.open_photo()
+        path = server.SESSIONS[key]['path']; original = path.read_bytes()
+        advice = dict(title='自然通透', summary='温和提亮', observations=['测试画面'], limitations='合成测试',
+                      adjustments={**{k: 0 for k in codex_assist.RANGES}, 'exposure': .5, 'wb': 'camera'})
+        def launch(cmd, **kwargs):
+            Path(cmd[cmd.index('--output-last-message') + 1]).write_text(json.dumps(advice), encoding='utf8')
+            return Mock(returncode=0)
+        try:
+            with patch.object(codex_assist, 'codex_command', return_value=['codex']), patch.object(codex_assist.subprocess, 'Popen', side_effect=launch) as popen:
+                with self.post('/api/codex/auto', dict(id=key, settings=dict(rotation=1, crop='1:1'))) as response:
+                    self.assertEqual(response.status, 202); start = json.load(response)
+                deadline = time.monotonic() + 3
+                while time.monotonic() < deadline:
+                    with urllib.request.urlopen(self.base + '/api/codex/jobs/' + start['job']) as response:
+                        job = json.load(response)
+                    if job['state'] != 'running': break
+                    time.sleep(.01)
+                self.assertEqual(job['state'], 'done'); self.assertEqual(job['phase'], 'ready')
+                self.assertEqual(job['mode'], 'auto'); self.assertEqual(job['source_id'], key)
+                self.assertIn('quality', job['result'])
+                self.assertEqual(job['result']['settings']['rotation'], 1)
+                self.assertEqual(job['result']['settings']['crop'], '1:1')
+                with self.post('/api/preview', dict(id=key, settings=job['result']['settings'], before=True)) as response:
+                    preview = json.load(response)
+                self.assertEqual((preview['width'], preview['height']), (8, 8))
+                self.assertTrue(preview['image'].startswith('data:image/jpeg;base64,'))
+                self.assertTrue(start['current_image'].startswith('data:image/jpeg;base64,'))
+                popen.assert_called_once()
+                self.assertIn('--output-schema', popen.call_args.args[0])
+            self.assertEqual(path.read_bytes(), original)
+        finally:
+            self.post('/api/close', {'id': key}).close()
+
+    def test_cancel_is_scoped_to_source_and_invalidates_completed_auto_result(self):
+        key, other = self.open_photo(), self.open_photo()
+        try:
+            server.ADVISOR.jobs['auto'] = dict(state='done', source_id=key, mode='auto', result={'settings': {}})
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                self.post('/api/codex/cancel', dict(id=other, job='auto'))
+            self.assertEqual(cm.exception.code, 400); cm.exception.close()
+            self.assertEqual(server.ADVISOR.get('auto')['state'], 'done')
+            self.post('/api/codex/cancel', dict(id=key, job='auto')).close()
+            self.assertEqual(server.ADVISOR.get('auto')['state'], 'cancelled')
+            self.assertNotIn('result', server.ADVISOR.get('auto'))
+        finally:
+            for source in (key, other): self.post('/api/close', {'id': source}).close()
+
+    def test_auto_missing_cli_reports_error_without_changing_photo(self):
+        key = self.open_photo(); original = server.SESSIONS[key]['path'].read_bytes()
+        try:
+            with patch.object(codex_assist, 'codex_command', return_value=None), self.assertRaises(urllib.error.HTTPError) as cm:
+                self.post('/api/codex/auto', dict(id=key))
+            self.assertEqual(cm.exception.code, 400)
+            self.assertIn('未找到 Codex', json.load(cm.exception)['error']); cm.exception.close()
+            self.assertEqual(server.SESSIONS[key]['path'].read_bytes(), original)
+        finally:
+            self.post('/api/close', {'id': key}).close()
 
 
 if __name__ == '__main__':

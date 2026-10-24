@@ -14,6 +14,9 @@ RANGES = {'exposure': (-4, 4), 'contrast': (-100, 100), 'highlights': (-100, 100
           'shadows': (-100, 100), 'temperature': (-100, 100), 'tint': (-100, 100),
           'saturation': (-100, 100), 'vibrance': (-100, 100), 'sharpen': (0, 100)}
 WB = ('camera', 'auto', 'daylight')
+AUTO_GOAL = ('自动判断画面类型、曝光、动态范围和偏色，完成自然、有节制的全局调色。'
+             '保留场景氛围、肤色和现有风格；黑白画面保持黑白，避免过曝、过饱和和过度锐化。'
+             '以当前调整为起点，如果已经合适则保持参数，不为修改而修改；不要声称恢复丢失细节。')
 SCHEMA = {
     'type': 'object', 'additionalProperties': False,
     'properties': {
@@ -135,7 +138,9 @@ class Advisor:
         self.stopped = False
         self.result_filter = result_filter
 
-    def submit(self, source_id, before, current_image, current_settings, goal, is_raw):
+    def submit(self, source_id, before, current_image, current_settings, goal, is_raw, mode='suggest'):
+        if mode not in ('suggest', 'auto'):
+            raise ValueError('无效的辅助模式')
         if not isinstance(goal, str) or not goal.strip() or len(goal) > 1200:
             raise ValueError('请输入 1 到 1200 字的调色目标')
         cmd = codex_command()
@@ -144,12 +149,13 @@ class Advisor:
         with self.lock:
             if self.stopped:
                 raise ValueError('Codex 辅助服务已停止')
-            if any(j['state'] == 'running' for j in self.jobs.values()):
-                raise ValueError('Codex 正在分析另一张照片，请稍后再试')
+            if self.workers or any(j['state'] == 'running' for j in self.jobs.values()):
+                raise ValueError('Codex 正在分析或结束上一次任务，请稍后再试')
             if len(self.jobs) >= 16:
                 self.jobs.pop(next(iter(self.jobs)))
             key = secrets.token_hex(16)
-            self.jobs[key] = {'state': 'running', 'source_id': source_id, 'started': time.time()}
+            self.jobs[key] = {'state': 'running', 'source_id': source_id, 'started': time.time(),
+                              'mode': mode, 'phase': 'analyzing'}
         worker = threading.Thread(target=self._run,
                                   args=(key, cmd, before, current_image, dict(current_settings), goal.strip(), is_raw),
                                   daemon=True)
@@ -159,11 +165,23 @@ class Advisor:
         return key
 
     def cancel_source(self, source_id):
+        with self.lock:
+            keys = [key for key, job in self.jobs.items() if job.get('source_id') == source_id]
+        self._cancel(keys, '照片会话已关闭，辅助任务已取消')
+
+    def cancel(self, key):
+        with self.lock:
+            if key not in self.jobs:
+                raise KeyError('建议任务不存在')
+        self._cancel([key], '已取消自动调色或辅助分析')
+
+    def _cancel(self, keys, message):
         processes = []
         with self.lock:
-            for key, job in self.jobs.items():
-                if job.get('source_id') == source_id and job['state'] != 'cancelled':
-                    job.update(state='cancelled', error='照片会话已关闭，辅助任务已取消')
+            for key in keys:
+                job = self.jobs.get(key)
+                if job and job['state'] != 'cancelled':
+                    job.update(state='cancelled', error=message)
                     job.pop('result', None)
                     if key in self.processes:
                         processes.append(self.processes[key])
@@ -232,11 +250,15 @@ class Advisor:
                     raise ValueError('Codex 返回的 JSON 无法读取，请重试')
                 result['adjustments']['wb'] = p['wb'] if is_raw else 'camera'
                 result['settings'] = {**p, **result.pop('adjustments')}
+                with self.lock:
+                    if self.jobs[key]['state'] != 'running' or self.stopped:
+                        return
+                    self.jobs[key]['phase'] = 'checking'
                 if self.result_filter:
                     result = self.result_filter(self.jobs[key]['source_id'], p, result)
                 with self.lock:
                     if self.jobs[key]['state'] == 'running' and not self.stopped:
-                        self.jobs[key].update(state='done', result=result)
+                        self.jobs[key].update(state='done', phase='ready', result=result)
         except (OSError, ValueError) as exc:
             self._fail(key, str(exc) if isinstance(exc, ValueError)
                        else '无法启动 Codex。请检查本机 CLI 安装和目录权限')

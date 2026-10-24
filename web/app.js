@@ -3,6 +3,7 @@ const $ = id => document.getElementById(id);
 const defaults = {exposure:0,contrast:0,highlights:0,shadows:0,temperature:0,tint:0,saturation:0,vibrance:0,sharpen:0,rotation:0,crop:'original',wb:'camera'};
 const presets = {neutral:{},portrait:{exposure:.15,contrast:-12,highlights:-22,shadows:12,temperature:7,vibrance:10},travel:{contrast:12,highlights:-20,shadows:15,vibrance:25,sharpen:18},film:{contrast:-9,highlights:-25,shadows:18,temperature:20,tint:6,saturation:-12},mono:{contrast:22,highlights:-15,shadows:8,saturation:-100,sharpen:20}};
 const files = [];
+let autoGrader=null,autoContext=null;
 let current = null, importBusy = false, exportBusy = false, previewRunning = false, previewTimer, previewWanted = false, toastTimer, showingBefore = false, revision = 0;
 const assistant = {connection:null, checking:false, running:false, source:null, base:null, result:null, image:null, strength:100, trialRevision:0, trialRunning:false, trialWanted:false, trialTimer:null, previewSignature:null, currentImage:null};
 const sliderSpecs = [
@@ -32,7 +33,7 @@ function toast(message){$('toast').textContent=message;$('toast').hidden=false;c
 function busy(show,message='正在更新预览…'){$('busy').hidden=!show;$('busyText').textContent=message;}
 function setEnabled(){const yes=!!current,locked=exportBusy||importBusy; $('controls').disabled=!yes||locked;$('wb').disabled=!yes||!current.raw||locked; ['compare','rotate','zoom','reset','saveRecipe','loadRecipe'].forEach(id=>$(id).disabled=!yes||locked);$('exportTop').disabled=!yes||locked;document.querySelectorAll('[data-preset]').forEach(b=>b.disabled=!yes||locked);syncAssistantControls();}
 function syncLabels(){const p=current?current.settings:defaults;sliderSpecs.forEach(([,id,,,,step,suffix])=>{const n=p[id];$(id).value=n;$(id+'Value').textContent=(n>0?'+':'')+(step<1?n.toFixed(2):n)+suffix;});$('wb').value=p.wb;$('crop').value=p.crop;document.querySelectorAll('[data-preset]').forEach(b=>b.classList.toggle('selected',b.dataset.preset===(current?.preset||'neutral')));}
-async function api(path,data,binary=false,extra={}){const r=await fetch(path,{method:'POST',headers:{'Content-Type':binary?'application/octet-stream':'application/json','X-Z30-Request':'1',...extra},body:binary?data:JSON.stringify(data)});if(!r.ok){let message;try{message=(await r.json()).error;}catch{message=`处理失败 (${r.status})`;}throw Error(message);}return r;}
+async function api(path,data,binary=false,extra={},options={}){const r=await fetch(path,{method:'POST',headers:{'Content-Type':binary?'application/octet-stream':'application/json','X-Z30-Request':'1',...extra},body:binary?data:JSON.stringify(data),...options});if(!r.ok){let message;try{message=(await r.json()).error;}catch{message=`处理失败 (${r.status})`;}throw Error(message);}return r;}
 function histogram(hist){const c=$('histogram'),ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#2b2d2f';ctx.lineWidth=1;[.25,.5,.75].forEach(t=>{ctx.beginPath();ctx.moveTo(t*c.width,0);ctx.lineTo(t*c.width,c.height);ctx.stroke();});if(!hist)return;const peak=Math.max(1,...hist.flat());ctx.globalCompositeOperation='screen';['#b65e56','#599173','#5c83ae'].forEach((color,ch)=>{ctx.beginPath();ctx.moveTo(0,c.height);hist[ch].forEach((n,i)=>ctx.lineTo(i*c.width/127,c.height-(Math.log1p(n)/Math.log1p(peak))*c.height*.92));ctx.lineTo(c.width,c.height);ctx.closePath();ctx.fillStyle=color+'90';ctx.fill();});ctx.globalCompositeOperation='source-over';}
 function drawLibrary(){$('fileList').replaceChildren();files.forEach(f=>{const card=document.createElement('div');card.className='filecard'+(current===f?' selected':'');const b=document.createElement('button');b.className='selectfile';b.title=f.name;const img=new Image();img.src=f.thumb;img.alt=f.name;const name=document.createElement('strong');name.textContent=f.name;const sub=document.createElement('small');sub.textContent=`${f.raw?'NEF RAW':'IMAGE'} · ${(f.bytes/1024/1024).toFixed(1)} MB`;b.append(img,name,sub);b.onclick=()=>selectFile(f);const remove=document.createElement('button');remove.className='remove';remove.textContent='×';remove.setAttribute('aria-label','移除 '+f.name);remove.onclick=()=>removeFile(f);card.append(b,remove);$('fileList').append(card);});$('count').textContent=String(files.length).padStart(2,'0');$('libraryHint').hidden=files.length>0;}
 function selectFile(f){current=f;revision++;showingBefore=false;$('beforeLabel').hidden=true;$('empty').hidden=!!f;$('imageWrap').hidden=!f;setEnabled();syncLabels();drawLibrary();if(!f){$('filename').textContent='尚未选择照片';$('filetype').textContent='RAW WORKSPACE';$('imageMeta').textContent='为 NEF 照片而设计';$('renderState').textContent='准备就绪';histogram();return;}$('filename').textContent=f.name;$('filetype').textContent=f.raw?'NEF RAW':'IMAGE';$('imageMeta').textContent=`${f.camera} · ${f.width} × ${f.height} · sRGB`;$('preview').src=f.image;histogram(f.histogram);$('qualityStatus').textContent=f.quality?.message||'等待画质检查';schedulePreview(0);}
@@ -63,10 +64,14 @@ $('quality').oninput=()=>$('qualityValue').textContent=$('quality').value;
 $('exportFormat').onchange=()=>$('qualityRow').hidden=$('exportFormat').value!=='JPEG';
 fetch('/api/health').then(r=>{if(!r.ok)throw Error();return r.json();}).then(d=>{$('engine').textContent='LibRaw '+d.libraw+' · 就绪';}).catch(()=>{$('engine').textContent='解码服务连接失败';toast('请通过 start.bat 启动本地服务，再打开网页');});
 function syncAssistantControls(){
- const locked=importBusy||exportBusy;
+ const locked=importBusy||exportBusy||!!autoGrader?.busy;
+ $('autoGrade').disabled=!current||locked||assistant.running;
+ $('autoCancel').hidden=!autoGrader?.busy;
+ $('autoUndo').disabled=!current?.aiUndo||locked||assistant.running;
+ $('autoDetails').disabled=!current?.autoResult||locked||assistant.running;
  if(current&&!assistant.running&&!assistant.result&&$('aiProgress').textContent.startsWith('请先导入'))$('aiProgress').textContent='描述目标后，发送预览生成建议。';
  $('aiGenerate').disabled=!current||locked||assistant.running||!assistant.connection?.ready;
- $('aiGoal').disabled=assistant.running;
+ $('aiGoal').disabled=assistant.running||!!autoGrader?.busy;
  $('codexRecheck').disabled=assistant.running||assistant.checking;
  $('aiUndo').disabled=!current?.aiUndo||locked||assistant.running;
  document.querySelectorAll('[data-goal]').forEach(b=>b.disabled=assistant.running);
@@ -74,9 +79,10 @@ function syncAssistantControls(){
  const unchanged=sameSource&&assistant.base&&JSON.stringify(current.settings)===JSON.stringify(assistant.base);
  const candidate=assistant.result?assistantCandidate():null;
  const previewReady=candidate&&assistant.previewSignature===JSON.stringify(candidate);
+ const alreadyApplied=sameSource&&current.autoResult?.result===assistant.result&&JSON.stringify(current.settings)===JSON.stringify(assistant.result.settings);
  $('aiApply').disabled=!unchanged||!assistant.result||locked||assistant.running||!previewReady;
  if(assistant.result){
-  $('aiApplyHint').textContent=!sameSource?'建议属于另一张照片。请选择生成建议时的照片。':!unchanged?'当前参数已改变，请重新生成建议后再应用。':!previewReady?'正在生成本地试片，请稍候…':'应用会更新调色参数，可恢复应用前状态。';
+  $('aiApplyHint').textContent=!sameSource?'建议属于另一张照片。请选择生成建议时的照片。':alreadyApplied?'自动调色已应用，可恢复应用前参数。':!unchanged?'当前参数已改变，请重新生成建议后再应用。':!previewReady?'正在生成本地试片，请稍候…':'应用会更新调色参数，可恢复应用前状态。';
  }
 }
 async function checkCodex(){
@@ -133,7 +139,7 @@ async function runAssistantTrial(){
  finally{assistant.trialRunning=false;syncAssistantControls();if(assistant.trialWanted)runAssistantTrial();}
 }
 async function generateAdvice(){
- if(!current||assistant.running||!assistant.connection?.ready)return;
+ if(!current||assistant.running||autoGrader?.busy||!assistant.connection?.ready)return;
  const source=current,base={...current.settings},goal=$('aiGoal').value.trim();
  if(!goal){toast('请先输入调色目标');return;}
  assistant.running=true;assistant.source=source;assistant.base=base;assistant.result=null;assistant.strength=100;assistant.previewSignature=null;
@@ -176,11 +182,14 @@ $('aiApply').onclick=()=>{
  current.settings=assistantCandidate();current.preset='custom';syncLabels();schedulePreview(0);syncAssistantControls();
  $('assistantDialog').close();toast('已应用 Codex 建议，可在辅助面板恢复应用前参数');
 };
-$('aiUndo').onclick=()=>{
- if(!current?.aiUndo||importBusy||exportBusy)return;
+function undoAI(){
+ if(!current?.aiUndo||importBusy||exportBusy||autoGrader?.busy||assistant.running)return;
  current.settings={...current.aiUndo.settings};current.preset=current.aiUndo.preset;delete current.aiUndo;
  syncLabels();schedulePreview(0);syncAssistantControls();toast('已恢复应用前参数');
-};
+ $('autoStatus').textContent='已恢复上次 AI 调色前的参数。';
+}
+$('aiUndo').onclick=undoAI;
+$('autoUndo').onclick=undoAI;
 setEnabled();syncLabels();histogram();
 
 const jobLabels={queued:'排队中',running:'正在导出',done:'已完成',partial:'部分完成',error:'失败，可重试',cancelled:'已取消',interrupted:'上次中断，可重试'};
@@ -237,3 +246,61 @@ $('exportConfirm').onclick=async()=>{
  finally{exportBusy=false;setEnabled();$('exportConfirm').disabled=false;if(previewWanted)runPreview();}
 };
 refreshExportJobs();
+
+const autoPost=(path,data)=>api(path,data,false,{}, {signal:AbortSignal.timeout(25000)});
+autoGrader=new AutoGrader({
+ submit:async context=>{
+  assistant.trialRevision++;assistant.trialWanted=false;clearTimeout(assistant.trialTimer);
+  const data=await(await autoPost('/api/codex/auto',{id:context.source.id,settings:context.base})).json();
+  context.currentImage=data.current_image;return data;
+ },
+ poll:async job=>{
+  const response=await fetch('/api/codex/jobs/'+encodeURIComponent(job),{signal:AbortSignal.timeout(15000)});
+  const data=await response.json();if(!response.ok)throw Error(data.error||'无法读取自动调色任务');return data;
+ },
+ cancel:(context,job)=>autoPost('/api/codex/cancel',{id:context.source.id,job}),
+ preview:async(context,settings)=>{
+  const data=await(await autoPost('/api/preview',{id:context.source.id,settings,before:true})).json();
+  const image=new Image();image.src=data.image;await image.decode();return data;
+ },
+ isCurrent:context=>canApplyAuto(context,current,files,revision),
+ apply:(context,result,preview)=>{
+  const f=context.source;
+  f.aiUndo={settings:{...f.settings},preset:f.preset};
+  f.settings={...result.settings};f.preset='custom';
+  // Invalidate a pending old preview before publishing the verified new image.
+  revision++;clearTimeout(previewTimer);previewWanted=false;showingBefore=false;
+  Object.assign(f,{image:preview.image,before:preview.before,histogram:preview.histogram,quality:preview.quality});
+  $('beforeLabel').hidden=true;$('preview').src=f.image;histogram(f.histogram);
+  $('qualityStatus').textContent=preview.quality.message;
+  $('renderState').textContent=`GPT 自动调色已应用 · 预览 ${preview.width} × ${preview.height}`;
+  syncLabels();
+ },
+ onState:state=>{
+  const labels={preparing:'正在准备预览…',analyzing:'GPT 正在分析画面与调色…',checking:'正在检查通道、层次和色彩…',rendering:'正在验证本地调色预览…',cancelling:'正在取消；不会自动应用结果。'};
+  const context=state.context||autoContext;
+  if(state.result&&files.includes(context.source))context.source.autoResult={base:context.base,result:state.result,currentImage:context.currentImage};
+  let message=labels[state.state]||state.message;
+  if(state.state==='done')message='已自动应用。'+state.result.summary+' '+state.result.quality.message;
+  if(state.state==='stale')message='照片或参数已改变，未自动应用。可回到原照片查看分析。';
+  $('autoStatus').textContent=(context?context.source.name+' · ':'')+(message||'自动调色未完成');
+  $('autoGrade').textContent=autoGrader?.busy?'正在自动调色…':'一键 GPT 调色';
+  syncAssistantControls();
+  if(['done','stale','error','cancelled'].includes(state.state))toast(message);
+ }
+});
+$('autoGrade').onclick=()=>{
+ if(!current||autoGrader.busy||assistant.running||importBusy||exportBusy)return;
+ autoContext={source:current,base:{...current.settings},revision};
+ autoGrader.start(autoContext).catch(e=>toast(e.message));
+};
+$('autoCancel').onclick=()=>autoGrader.cancel();
+$('autoDetails').onclick=()=>{
+ if(!current?.autoResult||autoGrader.busy||assistant.running)return;
+ const saved=current.autoResult;
+ Object.assign(assistant,{source:current,base:saved.base,result:saved.result,currentImage:saved.currentImage,strength:100,previewSignature:null});
+ $('aiProgress').textContent='这是自动调色的分析与画质检查记录。';showAdvice();
+ $('assistantDialog').showModal();syncAssistantControls();
+ if(!assistant.connection)checkCodex();
+};
+setEnabled();

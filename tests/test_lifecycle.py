@@ -14,6 +14,13 @@ def advice():
 
 
 class AdvisorLifecycleTests(unittest.TestCase):
+    def test_cancelled_worker_must_finish_before_another_quota_spending_job(self):
+        advisor = ai.Advisor()
+        advisor.jobs['old'] = dict(state='cancelled', source_id='photo')
+        advisor.workers['old'] = Mock()
+        with patch.object(ai, 'codex_command', return_value=['codex']), self.assertRaises(ValueError):
+            advisor.submit('photo', b'', b'', {}, 'goal', True)
+
     def test_quality_filter_runs_before_publishing_the_advice(self):
         result_filter = Mock(side_effect=lambda source, base, result: {
             **result, 'settings': {**result['settings'], 'exposure': .4}, 'quality': {'strength': .5}})

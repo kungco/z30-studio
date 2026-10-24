@@ -1,0 +1,26 @@
+{
+  "sample": "Z30-14bit.NEF",
+  "sha256": "03d94c1f184c4236ea8f890ab0fe30e91b65965e8b09cebecc397fba081a607f",
+  "model_calls": 1,
+  "transport": "existing Codex CLI default model",
+  "applied_settings": {
+    "exposure": 0.4,
+    "contrast": 4,
+    "highlights": -10,
+    "shadows": 12,
+    "temperature": -4,
+    "tint": 0,
+    "saturation": -3,
+    "vibrance": 0,
+    "sharpen": 12,
+    "rotation": 0,
+    "crop": "original",
+    "wb": "camera"
+  },
+  "undo_restored_original_settings": true,
+  "source_unchanged": true,
+  "preview": [
+    1067,
+    1600
+  ]
+}
