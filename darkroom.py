@@ -109,7 +109,9 @@ def color(rgb,p):
     if not any(any(v.values()) for v in hsl.values()) and not any(v.get('saturation',0) or v.get('luminance',0) for v in grade.values() if isinstance(v,dict)):
         return out
     from processing import rgb_to_oklab,gamut_map
-    lab=rgb_to_oklab(srgb_to_linear(out));hue=np.arctan2(lab[...,2],lab[...,1]);chroma=np.hypot(lab[...,1],lab[...,2])
+    import colour_management as colour
+    space=p.get('output_space','srgb')
+    lab=rgb_to_oklab(colour.to_working(colour.decode(out,space),space));hue=np.arctan2(lab[...,2],lab[...,1]);chroma=np.hypot(lab[...,1],lab[...,2])
     delta=np.zeros_like(hue);sat=np.ones_like(hue);light=np.zeros_like(hue)
     centers=np.deg2rad([29,60,110,142,195,264,300,328])
     for name,center in zip(COLORS,centers):
@@ -127,7 +129,7 @@ def color(rgb,p):
         angle=np.deg2rad(a.get('hue',0));amount=weight*a.get('saturation',0)/500
         lab[...,1]+=amount*np.cos(angle);lab[...,2]+=amount*np.sin(angle)
         lab[...,0]+=weight*a.get('luminance',0)/500
-    return encode(gamut_map(lab))
+    return colour.encode(gamut_map(lab,space),space)
 
 
 def kelvin_gains(temperature):

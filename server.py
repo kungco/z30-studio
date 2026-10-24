@@ -32,6 +32,8 @@ import darkroom
 import workflow
 import local_vision
 import lens_tools
+import colour_management as colour
+import export_tools
 from app_runtime import APP_VERSION, resource_root, data_root
 from imaging import raw_crop, raw_pixels, raster_linear, resize_linear, srgb_to_linear
 
@@ -48,7 +50,7 @@ PROJECT_TICKETS = {}
 PROJECT_READERS = {}
 SESSION_TTL = 24 * 60 * 60
 MAX_UPLOAD = 150 * 1024 * 1024
-ICC = ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes()
+ICC = colour.profile('srgb')
 ADVISOR = codex_assist.Advisor()
 AI_SETTINGS = api_backend.Settings()
 CACHE = ByteLRU(128 * 1024 * 1024)
@@ -59,7 +61,7 @@ STORES = {}
 VISIONS = {}
 DEFAULTS = dict(exposure=0, contrast=0, highlights=0, shadows=0,
                 temperature=0, tint=0, saturation=0, vibrance=0,
-                sharpen=0, rotation=0, crop='original', wb='camera') | spatial.DEFAULTS | darkroom.DEFAULTS | lens_tools.DEFAULTS | {'lens_profile':'手动 / 未校准'}
+                sharpen=0, rotation=0, crop='original', wb='camera') | spatial.DEFAULTS | darkroom.DEFAULTS | lens_tools.DEFAULTS | colour.DEFAULTS | {'lens_profile':'手动 / 未校准'}
 LIMITS = dict(exposure=(-4, 4), contrast=(-100, 100), highlights=(-100, 100),
               shadows=(-100, 100), temperature=(-100, 100), tint=(-100, 100),
               saturation=(-100, 100), vibrance=(-100, 100), sharpen=(0, 100)) | spatial.LIMITS
@@ -87,6 +89,7 @@ def settings(data):
     p['lens_profile'] = str(data.get('lens_profile', '手动 / 未校准'))[:100]
     p.update(darkroom.normalize(data))
     p.update(lens_tools.normalize(data))
+    p.update(colour.normalize(data))
     return p
 
 
@@ -95,17 +98,17 @@ def source_wb(session,p):
 
 
 def baseline_settings(p):
-    return DEFAULTS | {k:p[k] for k in ('rotation','crop','crop_rect','straighten') if k in p}
+    return DEFAULTS | {k:p[k] for k in ('rotation','crop','crop_rect','straighten',*colour.DEFAULTS) if k in p}
 
 
-def decode(session, wb, preview):
+def decode(session, wb, preview, space="srgb"):
     if session.get('asset'):
         stamp = (session['path'].stat().st_mtime_ns, session['path'].stat().st_size)
         if session.get('verified_stamp') != stamp:
             get_drafts().asset_path(session['asset'], verify=True)
             session['verified_stamp'] = stamp
     token = session.setdefault('_cache_id', session.get('meta', {}).get('id') or secrets.token_hex(16))
-    cache_key = (token, 'linear', wb)
+    cache_key = (token, 'linear-wide' if space!='srgb' else 'linear', wb)
     if preview:
         cached = CACHE.get(cache_key)
         if cached is not None:
@@ -119,12 +122,13 @@ def decode(session, wb, preview):
             rgb = raw.postprocess(output_bps=16, gamma=(1, 1),
                                   no_auto_bright=True, use_camera_wb=wb == 'camera',
                                   use_auto_wb=wb == 'auto', half_size=preview,
-                                  output_color=rawpy.ColorSpace.sRGB, user_flip=0)
+                                  output_color=rawpy.ColorSpace.sRGB if space=="srgb" else rawpy.ColorSpace.ProPhoto, user_flip=0)
         arr = raw_pixels(rgb, sizes, preview)
         del rgb
+        if space!="srgb":arr=colour.to_working(arr,"prophoto")
     else:
         with Image.open(session['path']) as source:
-            arr, policy, warnings = raster_linear(source)
+            arr, policy, warnings = raster_linear(source,wide=space!="srgb")
             session['color_policy'], session['color_warnings'] = policy, warnings
     if preview:
         h, w = arr.shape[:2]
@@ -135,6 +139,18 @@ def decode(session, wb, preview):
         arr.setflags(write=False)
         CACHE.put(cache_key, arr)
     return arr
+
+
+def decode_settings(session,p,preview):
+    if p.get('output_space','srgb')=='srgb':return decode(session,source_wb(session,p),preview)
+    return decode(session,source_wb(session,p),preview,p['output_space'])
+
+
+def get_profiles():
+    root=data_root()/'profiles'
+    with STORES_LOCK:
+        if root not in STORES:STORES[root]=colour.Profiles(root)
+        return STORES[root]
 
 
 def geometry(arr, p):
@@ -155,39 +171,43 @@ def geometry(arr, p):
 
 
 def develop(arr, p):
-    return Image.fromarray(render_array(spatial.retouch(geometry(spatial.prepare(arr, p), p),p), p, bits=8))
+    image=Image.fromarray(render_array(spatial.retouch(geometry(spatial.prepare(arr, p), p),p), p, bits=8))
+    image.info['icc_profile']=colour.profile(p.get('output_space','srgb'));return image
 
 
 def image_bytes(im, fmt='JPEG', quality=93):
     b = io.BytesIO()
     opts = {'quality': quality, 'subsampling': 0} if fmt == 'JPEG' else {}
-    im.save(b, format=fmt, icc_profile=ICC, **opts)
+    im.save(b, format=fmt, icc_profile=im.info.get('icc_profile',ICC), **opts)
     return b.getvalue()
 
 
-def export_bytes(session, p, fmt='JPEG', quality=95):
+def export_bytes(session, p, fmt='JPEG', quality=95, options=None):
     if fmt not in ('JPEG', 'PNG', 'TIFF16'):
         raise ValueError('不支持的导出格式')
-    arr = decode(session, source_wb(session,p), False)
+    arr = decode_settings(session,p,False)
+    if options is not None:
+        pixels=render_array(spatial.retouch(geometry(spatial.prepare(arr,p),p),p),p,bits=32)
+        return export_tools.encode(pixels,p['output_space'],fmt,quality,session['path'],options)
     if fmt == 'TIFF16':
         import tifffile
         pixels = render_array(spatial.retouch(geometry(spatial.prepare(arr, p), p),p), p, bits=16)
         out = io.BytesIO()
-        tifffile.imwrite(out, pixels, photometric='rgb', iccprofile=ICC,
+        tifffile.imwrite(out, pixels, photometric='rgb', iccprofile=colour.profile(p.get("output_space","srgb")),
                          metadata=None, compression='deflate', maxworkers=1)
         return out.getvalue()
     return image_bytes(develop(arr, p), fmt, quality)
 
 
-def export_snapshot(path, is_raw, params, fmt, quality, protect):
+def export_snapshot(path, is_raw, params, fmt, quality, protect, options=None):
     session = dict(path=path, raw=is_raw, cache={})
     p = settings(params)
     metrics = None
     try:
         if protect:
             base = p | {k: DEFAULTS[k] for k in codex_assist.RANGES}
-            p, metrics = quality_checks.guard(decode(session, source_wb(session,p), True), base, p, develop)
-        return export_bytes(session, p, fmt, quality), p, metrics
+            p, metrics = quality_checks.guard(decode_settings(session,p,True), base, p, develop)
+        return export_bytes(session, p, fmt, quality, options), p, metrics
     finally:
         if session.get('_cache_id'):
             CACHE.remove_source(session['_cache_id'])
@@ -289,20 +309,21 @@ def preview_result(session, p, include_before=False):
     cached = CACHE.get(cache_key)
     if cached is not None:
         return dict(cached)
-    arr = decode(session, source_wb(session,p), True)
+    arr = decode_settings(session,p,True)
     im = develop(arr, p)
     if not session.get('thumbnail'):
         thumb = im.copy(); thumb.thumbnail((240, 240)); session['thumbnail'] = data_url(thumb)
     a = np.asarray(im)
     hist = [np.histogram(a[:, :, c], bins=128, range=(0, 256))[0].tolist() for c in range(3)]
-    result = dict(image=data_url(im), histogram=hist, width=im.width, height=im.height, thumbnail=session['thumbnail'])
+    display=get_profiles().preview(im,p)
+    result = dict(image=data_url(display), histogram=hist, width=im.width, height=im.height, thumbnail=session['thumbnail'])
     result['quality'] = quality_checks.measure(im)
     if include_before:
         base = baseline_settings(p)
-        before_key = (token, 'baseline', json.dumps({k:base[k] for k in ('rotation','crop','crop_rect','straighten')},sort_keys=True))
+        before_key = (token, 'baseline', json.dumps(base,sort_keys=True))
         before = CACHE.get(before_key)
         if before is None:
-            before = result['image'] if p == base else data_url(develop(decode(session, 'camera', True), base))
+            before = result['image'] if p == base else data_url(get_profiles().preview(develop(decode_settings(session,base,True), base),base))
             CACHE.put(before_key, before)
         result['before'] = before
     CACHE.put(cache_key, result)
@@ -314,7 +335,7 @@ def filter_advice(source_id, base, result):
         if source_id not in SESSIONS:
             raise ValueError('照片会话已关闭，无法检查辅助建议')
         session = SESSIONS[source_id]
-        linear = decode(session, source_wb(session,base), True)
+        linear = decode_settings(session,base,True)
         checked, metrics = quality_checks.guard(linear, base, result['settings'], develop)
     return {**result, 'settings': checked, 'quality': metrics}
 
@@ -528,6 +549,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({'error': str(exc)}, 404)
             except ValueError as exc:
                 return self.json({'error': str(exc)}, 400)
+        if route == '/api/colour/profiles':
+            return self.json(dict(profiles=get_profiles().list(),spaces=colour.SPACES))
         if route == '/api/exports' or route.startswith('/api/exports/'):
             try:
                 queue = get_exports()
@@ -567,6 +590,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({'error': '建议任务不存在，请重新生成'}, 404)
         files = {'/': ('index.html', 'text/html; charset=utf-8'),
                  '/app.js': ('app.js', 'application/javascript; charset=utf-8'),
+                 '/output-controls.js': ('output-controls.js','application/javascript; charset=utf-8'),
                  '/lens-controls.js': ('lens-controls.js','application/javascript; charset=utf-8'),
                  '/local-tools.js': ('local-tools.js','application/javascript; charset=utf-8'),
                  '/library-workflow.js': ('library-workflow.js','application/javascript; charset=utf-8'),
@@ -733,6 +757,8 @@ class Handler(BaseHTTPRequestHandler):
                             item['undo'] = {'settings': settings(recipe['undo'].get('settings', {})), 'preset': recipe['undo'].get('preset', 'custom')}
                         photos.append(item)
                     return self.json({'photos': photos, 'ttl_seconds': SESSION_TTL})
+            if route == '/api/colour/profiles':
+                return self.json(get_profiles().add(body),201)
             if route.startswith('/api/exports/'):
                 data = json.loads(body)
                 queue = get_exports()
@@ -742,6 +768,11 @@ class Handler(BaseHTTPRequestHandler):
                             any(not isinstance(x, str) for x in ids) or len(set(ids)) != len(ids)):
                         raise ValueError('请选择 1 到 256 张不同照片')
                     p = settings(data.get('settings', {}))
+                    recipes=data.get('recipes');per_photo=None
+                    if recipes is not None:
+                        if not isinstance(recipes,dict) or set(recipes)!=set(ids):raise ValueError('每张照片的导出参数不完整')
+                        per_photo=[settings(recipes[key]) for key in ids]
+                    options=export_tools.normalize(data['options']) if 'options' in data else None
                     fmt = data.get('format', 'JPEG')
                     if fmt not in FORMATS:
                         raise ValueError('不支持的导出格式')
@@ -755,7 +786,7 @@ class Handler(BaseHTTPRequestHandler):
                         for source_id in ids:
                             PROJECT_READERS[source_id] = PROJECT_READERS.get(source_id, 0) + 1
                     try:
-                        key = queue.submit(sources, p, fmt, max(60, min(100, int(data.get('quality', 95)))), protect)
+                        key = queue.submit(sources, p, fmt, max(60, min(100, int(data.get('quality', 95)))), protect, options=options, per_photo=per_photo)
                     finally:
                         with LOCK:
                             for source_id in ids:
@@ -789,22 +820,22 @@ class Handler(BaseHTTPRequestHandler):
                     update=lens_tools.select(s['meta'],data.get('options',{}))
                     return self.json({'settings':settings(p|update),'message':'已应用 Lensfun 配置；手动镜头系数已重置，请检查边缘。尚未做本机实镜网格标定。'})
                 if route == '/api/lens/tca':
-                    return self.json(lens_tools.estimate_tca(decode(s,source_wb(s,p),True),p))
+                    return self.json(lens_tools.estimate_tca(decode_settings(s,p,True),p))
                 if route == '/api/repairs/place':
                     edit=dict(data.get('repair',{}));edit=spatial.repairs([edit])[0]
                     if data.get('auto_source',False):
-                        arr=geometry(spatial.prepare(decode(s,source_wb(s,p),True),p),p)
+                        arr=geometry(spatial.prepare(decode_settings(s,p,True),p),p)
                         edit['sx'],edit['sy']=spatial.choose_donor(arr,edit['x'],edit['y'],edit['radius'])
                     return self.json({'repair':edit})
                 if route == '/api/masks/semantic':
-                    im=develop(decode(s,source_wb(s,p),True),p)
+                    im=develop(decode_settings(s,p,True),p)
                     result=get_vision().segment(im,data.get('kind','subject'))
                     mask=spatial.masks([dict(type='semantic',bitmap=result.pop('bitmap'),label={'subject':'主体','person':'人像','sky':'天空'}[result['kind']],exposure=0)])[0]
                     return self.json(result|{'mask':mask})
                 if route == '/api/masks/preview':
                     index=int(data.get('index',0))
                     if not 0<=index<len(p['masks']):raise ValueError('请选择蒙版')
-                    arr=geometry(spatial.prepare(decode(s,source_wb(s,p),True),p),p);h,w=arr.shape[:2]
+                    arr=geometry(spatial.prepare(decode_settings(s,p,True),p),p);h,w=arr.shape[:2]
                     field=spatial.mask_field(p['masks'][index],w,h,0,h,arr)
                     rgba=np.zeros((h,w,4),np.uint8);rgba[...,:3]=[237,203,104];rgba[...,3]=np.rint(field*150).astype(np.uint8)
                     out=io.BytesIO();Image.fromarray(rgba).save(out,'PNG')
@@ -825,14 +856,14 @@ class Handler(BaseHTTPRequestHandler):
                     cache_key = (token, 'native-rgb8', json.dumps(p, sort_keys=True, allow_nan=False))
                     pixels = CACHE.get(cache_key)
                     if pixels is None:
-                        pixels = np.asarray(develop(decode(s, source_wb(s,p), False), p))
+                        pixels = np.asarray(develop(decode_settings(s,p,False), p))
                         pixels.setflags(write=False); CACHE.put(cache_key, pixels)
                     full_h, full_w = pixels.shape[:2]
                     w = min(full_w, max(64, min(1024, int(data.get('width', 640)))))
                     h = min(full_h, max(64, min(1024, int(data.get('height', 480)))))
                     x = max(0, min(full_w-w, round(cx*full_w-w/2)))
                     y = max(0, min(full_h-h, round(cy*full_h-h/2)))
-                    tile = Image.fromarray(pixels[y:y+h, x:x+w])
+                    tile = Image.fromarray(pixels[y:y+h, x:x+w]);tile.info['icc_profile']=colour.profile(p['output_space']);tile=get_profiles().preview(tile,p)
                     return self.json(dict(image='data:image/png;base64,'+base64.b64encode(image_bytes(tile,'PNG')).decode(),
                         width=w,height=h,x=x,y=y,full_width=full_w,full_height=full_h,cx=(x+w/2)/full_w,cy=(y+h/2)/full_h))
                 if route == '/api/codex/cancel':
@@ -851,8 +882,8 @@ class Handler(BaseHTTPRequestHandler):
                     if not isinstance(goal, str) or not goal.strip() or len(goal) > 1200:
                         raise ValueError('请输入 1 到 1200 字的调色目标')
                     base = baseline_settings(p)
-                    before = image_bytes(develop(decode(s, 'camera', True), base), quality=88)
-                    current = image_bytes(develop(decode(s, source_wb(s,p), True), p), quality=88)
+                    before = image_bytes(colour.as_srgb(develop(decode_settings(s,base,True), base)), quality=88)
+                    current = image_bytes(colour.as_srgb(develop(decode_settings(s,p,True), p)), quality=88)
                     job = ADVISOR.submit(key, before, current, p, goal, s['raw'],
                                          mode='auto' if automatic else 'suggest', request_id=data.get('request_id'), auto_options=auto_options, backend=backend)
                     return self.json({'job': job,
@@ -866,7 +897,8 @@ class Handler(BaseHTTPRequestHandler):
                     if fmt not in ('JPEG', 'PNG', 'TIFF16'):
                         raise ValueError('不支持的导出格式')
                     quality = max(60, min(100, int(data.get('quality', 95))))
-                    content = export_bytes(s, p, fmt, quality)
+                    options=export_tools.normalize(data['options']) if 'options' in data else None
+                    content = export_bytes(s, p, fmt, quality,options)
                     ext = {'JPEG': 'jpg', 'PNG': 'png', 'TIFF16': 'tif'}[fmt]
                     name = urllib.parse.quote(Path(s['name']).stem + '-Z30.' + ext)
                     return self.send(content, {'JPEG': 'image/jpeg', 'PNG': 'image/png', 'TIFF16': 'image/tiff'}[fmt],

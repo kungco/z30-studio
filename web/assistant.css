@@ -14,3 +14,5 @@
 .mask-alpha{position:absolute;pointer-events:none;z-index:4;object-fit:fill!important}#retouchCanvas{z-index:7;cursor:crosshair}#localToolsMount label{font-size:11px;display:block;line-height:1.8;margin:9px 0}#localToolsMount input[type=range]{width:100%;accent-color:var(--yellow)}#localToolsMount button{border:1px solid #4c5849;border-radius:4px;padding:7px;margin:4px 0;font-size:11px}#localToolsMount select{max-width:100%;background:#222822;color:#ddd}
 
 #lensAutoMount label{display:block;font-size:11px;line-height:1.8;margin:8px 0}#lensAutoMount input[type=number],#lensAutoMount select{max-width:100%;width:100%;padding:6px;background:#252a24;color:#ddd;border:1px solid #4b5745}#lensAutoMount button{border:1px solid #56614c;padding:7px;font-size:11px;border-radius:4px;margin:6px 0}
+
+#exportDialog{max-height:90vh;overflow:auto}.output-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.output-grid input{width:100%;min-width:0}#exportDialog details{margin:12px 0}#exportDialog input[type="text"],#outputName,#outputWatermark{width:100%}

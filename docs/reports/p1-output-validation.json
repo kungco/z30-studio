@@ -1,0 +1,42 @@
+{
+  "source_sha256": "03d94c1f184c4236ea8f890ab0fe30e91b65965e8b09cebecc397fba081a607f",
+  "seconds": 8.156571100000292,
+  "output": {
+    "shape": [
+      5568,
+      3712,
+      3
+    ],
+    "dtype": "uint16",
+    "icc_matches": true,
+    "sub8bit_steps": true,
+    "camera": "NIKON Z 30",
+    "gps_absent": true
+  },
+  "original_unchanged": true,
+  "physical_print_or_monitor_verified": false,
+  "actual_browser_batch": [
+    {
+      "source": "Z30-14bit.NEF",
+      "output": "Z30-14bit-Z30-001.tif",
+      "space": "prophoto",
+      "shape": [
+        1024,
+        754,
+        3
+      ],
+      "state": "done"
+    },
+    {
+      "source": "Z30-12bit.NEF",
+      "output": "Z30-12bit-Z30-002.tif",
+      "space": "srgb",
+      "shape": [
+        1024,
+        683,
+        3
+      ],
+      "state": "done"
+    }
+  ]
+}

@@ -59,6 +59,22 @@ class HttpTests(unittest.TestCase):
         with self.post('/api/open', b.getvalue(), True) as response:
             return json.load(response)['id']
 
+    def test_all_html_scripts_are_served_and_output_endpoints_keep_per_photo_edits(self):
+        import re
+        with urllib.request.urlopen(self.base+'/') as r:html=r.read().decode('utf8')
+        for script in re.findall(r'<script src="([^"]+)"',html):
+            with urllib.request.urlopen(self.base+script) as r:self.assertEqual(r.status,200,script)
+        first=self.open_photo();second=self.open_photo()
+        with self.post('/api/exports/create',dict(ids=[first,second],recipes={first:{'exposure':-1},second:{'exposure':1}},
+                  options={'long_edge':8,'name_template':'batch-{index:02d}'},format='TIFF16')) as r:key=json.load(r)['job']
+        deadline=time.monotonic()+5
+        while server.EXPORTS.get(key)['state'] in ('queued','running') and time.monotonic()<deadline:time.sleep(.01)
+        job=server.EXPORTS.get(key);self.assertEqual(job['state'],'done');self.assertEqual([i['applied_settings']['exposure'] for i in job['items']],[-1,1])
+        with server.EXPORTS.downloads(key) as (entries,report):
+            arrays=[tifffile.imread(p) for p,name in entries]
+            self.assertEqual([name for p,name in entries],['batch-01.tif','batch-02.tif'])
+            self.assertEqual(arrays[0].shape[1],8);self.assertLess(arrays[0].mean(),arrays[1].mean())
+
     def test_actual_http_tiff16_export(self):
         key = self.open_photo()
         with self.post('/api/export', dict(id=key, format='TIFF16', settings=dict(rotation=1))) as response:

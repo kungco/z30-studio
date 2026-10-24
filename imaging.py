@@ -111,7 +111,7 @@ def _exif_space(im):
     return space, interop.get(1) if isinstance(interop, dict) else None
 
 
-def raster_linear(source):
+def raster_linear(source, wide=False):
     """Return float32 linear sRGB and an explicit input-colour policy/warnings."""
     bitdepth = None
     if source.format == 'PNG' and getattr(source, 'fp', None):
@@ -143,10 +143,17 @@ def raster_linear(source):
                 color = im
             else:
                 raise ValueError('ICC 色彩空间与图像通道不匹配，无法可靠转换')
-            converted = ImageCms.profileToProfile(color, src, SRGB, outputMode='RGB',
-                renderingIntent=ImageCms.Intent.RELATIVE_COLORIMETRIC)
-            a = srgb_to_linear(np.asarray(converted, dtype=np.float32) / 255)
-            policy = 'ICC → sRGB'
+            a=None
+            if wide and space=='RGB':
+                from colour_management import matrix_input
+                a=matrix_input(np.asarray(color,dtype=np.float32)/255,profile)
+            if a is None:
+                converted = ImageCms.profileToProfile(color, src, SRGB, outputMode='RGB',
+                    renderingIntent=ImageCms.Intent.RELATIVE_COLORIMETRIC)
+                a = srgb_to_linear(np.asarray(converted, dtype=np.float32) / 255)
+                policy = 'ICC → sRGB'
+                if wide:warnings.append('此 LUT/非 RGB ICC 通过 8 位 sRGB 转换，无法保留其全部广色域')
+            else:policy='ICC 矩阵/TRC → 浮点广色域'
         except (ImageCms.PyCMSError, OSError, TypeError) as e:
             raise ValueError('嵌入的 ICC 配置损坏或不受支持，未猜测其色彩空间') from e
     else:

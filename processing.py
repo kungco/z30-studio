@@ -5,6 +5,7 @@ from spatial import local_chunk
 
 import numpy as np
 import darkroom
+import colour_management as colour
 
 LUMA = np.array([.2126, .7152, .0722], np.float32)
 RGB_LMS = np.array([[.4122214708, .5363325363, .0514459929],
@@ -37,10 +38,10 @@ def channel_bounds(rgb):
             np.maximum(np.maximum(rgb[..., 0], rgb[..., 1]), rgb[..., 2]))
 
 
-def gamut_map(lab):
+def gamut_map(lab, space="srgb"):
     """Reduce only out-of-gamut chroma at fixed OKLab lightness and hue."""
     lab[..., 0] = np.clip(lab[..., 0], 0, 1)
-    rgb = oklab_to_rgb(lab)
+    rgb = colour.from_working(oklab_to_rgb(lab),space)
     low, high = channel_bounds(rgb)
     mask = (low < -1e-6) | (high > 1 + 1e-6)
     if mask.any():
@@ -51,12 +52,12 @@ def gamut_map(lab):
         for _ in range(10):
             mid = (lo + hi) * .5
             selected[:, 1:] = original * mid[:, None]
-            test = oklab_to_rgb(selected)
+            test = colour.from_working(oklab_to_rgb(selected),space)
             lower, upper = channel_bounds(test)
             good = (lower >= 0) & (upper <= 1)
             lo = np.where(good, mid, lo); hi = np.where(good, hi, mid)
         selected[:, 1:] = original * lo[:, None]
-        rgb[mask] = oklab_to_rgb(selected)
+        rgb[mask] = colour.from_working(oklab_to_rgb(selected),space)
     return np.clip(rgb, 0, 1)
 
 
@@ -106,7 +107,9 @@ def display_chunk(arr, p):
     mapped = fast_tone(y, p)
     ratio = np.divide(mapped, y, out=np.zeros_like(y), where=y > 1e-12)
     x *= ratio[..., None]
-    needs_gamut = bool(x.min() < 0 or x.max() > 1)
+    space=p.get('output_space','srgb')
+    target=colour.from_working(x,space)
+    needs_gamut = bool(target.min() < 0 or target.max() > 1)
     if p['saturation'] or p['vibrance'] or needs_gamut:
         lab = rgb_to_oklab(x)
         if p['saturation'] or p['vibrance']:
@@ -119,14 +122,10 @@ def display_chunk(arr, p):
             factor = (1 + sat * (1 - .55 * warm) if sat > 0 else 1 + sat)
             factor = factor * (1 + p['vibrance'] / 100 * np.exp(-chroma / .12) * (1 - .6 * warm))
             lab[..., 1:] *= np.asarray(factor, np.float32)[..., None] if np.ndim(factor) else factor
-        x = gamut_map(lab)
+        x = gamut_map(lab,space)
+    else:x=target
     np.maximum(x, 0, out=x)
-    # Avoid np.where's eager allocation of both three-channel branches.
-    encoded = np.power(x, np.float32(1 / 2.4))
-    encoded *= 1.055; encoded -= .055
-    low = x <= .0031308
-    encoded[low] = x[low] * 12.92
-    return darkroom.color(np.clip(encoded, 0, 1, out=encoded),p)
+    return darkroom.color(colour.encode(x,space),p)
 
 
 def sharpen_float(rgb, amount):
@@ -147,11 +146,11 @@ def sharpen_float(rgb, amount):
 
 
 def render_array(arr, p, bits=8, chunk_rows=128):
-    if bits not in (8, 16):
-        raise ValueError('Output depth must be 8 or 16')
+    if bits not in (8, 16, 32):
+        raise ValueError('Output depth must be 8, 16 or float32')
     if arr.dtype != np.float32:
         raise ValueError('调色输入必须是 float32 线性 RGB 数据')
-    dtype, scale = (np.uint8, 255) if bits == 8 else (np.uint16, 65535)
+    dtype, scale = (np.uint8, 255) if bits == 8 else (np.uint16, 65535) if bits==16 else (np.float32,1)
     output = np.empty(arr.shape, dtype=dtype)
     radius=max(2,round(min(arr.shape[:2])*.006))
     halo = (max(radius if p.get('clarity') else 0,2 if p.get('texture') else 0) + (2 if p['sharpen'] else 0))
@@ -166,7 +165,8 @@ def render_array(arr, p, bits=8, chunk_rows=128):
         if p['sharpen']:
             rgb = sharpen_float(rgb, p['sharpen'])
         rgb = rgb[start - low:end - low]
-        rgb *= scale
-        np.rint(rgb, out=rgb)
+        if bits!=32:
+            rgb *= scale
+            np.rint(rgb, out=rgb)
         output[start:end] = rgb
     return output

@@ -1,7 +1,7 @@
 'use strict';
 const $ = id => document.getElementById(id);
 let aiProvider=null;
-var libraryWorkflow=null,localTools=null,lensControls=null,overlayVisible=false,overlayRevision=0,retouchTool=null,cloneDonor=null;
+var libraryWorkflow=null,localTools=null,lensControls=null,colourControls=null,outputControls=null,overlayVisible=false,overlayRevision=0,retouchTool=null,cloneDonor=null;
 var draftSaver=null,draftsReady=false,darkroomPanel=null,wbPicking=false,gridVisible=false;
 let clientId;
 try{clientId=sessionStorage.getItem('z30-client');if(!/^[a-f0-9]{32}$/.test(clientId||'')){clientId=crypto.randomUUID().replaceAll('-','');sessionStorage.setItem('z30-client',clientId);}}
@@ -17,7 +17,7 @@ function persistWorkspace(){
  if(draftsReady&&draftSaver)draftSaver.schedule();
 }
 
-const defaults = {exposure:0,contrast:0,highlights:0,shadows:0,temperature:0,tint:0,saturation:0,vibrance:0,sharpen:0,rotation:0,crop:'original',wb:'camera',denoise_luma:0,denoise_chroma:0,lens_k1:0,lens_k2:0,lens_red:0,lens_blue:0,vignette:0,lens_profile:'手动 / 未校准',masks:[],repairs:[],skin_smooth:0,skin_mask:'',lens_auto:false,lens_calibration:null,lens_tca:true,lens_fill:true,lens_vignette:false,...structuredClone(DARKROOM_DEFAULTS)};
+const defaults = {...COLOUR_DEFAULTS,exposure:0,contrast:0,highlights:0,shadows:0,temperature:0,tint:0,saturation:0,vibrance:0,sharpen:0,rotation:0,crop:'original',wb:'camera',denoise_luma:0,denoise_chroma:0,lens_k1:0,lens_k2:0,lens_red:0,lens_blue:0,vignette:0,lens_profile:'手动 / 未校准',masks:[],repairs:[],skin_smooth:0,skin_mask:'',lens_auto:false,lens_calibration:null,lens_tca:true,lens_fill:true,lens_vignette:false,...structuredClone(DARKROOM_DEFAULTS)};
 const presets = {neutral:{},portrait:{exposure:.15,contrast:-12,highlights:-22,shadows:12,temperature:7,vibrance:10},travel:{contrast:12,highlights:-20,shadows:15,vibrance:25,sharpen:18},film:{contrast:-9,highlights:-25,shadows:18,temperature:20,tint:6,saturation:-12},mono:{contrast:22,highlights:-15,shadows:8,saturation:-100,sharpen:20}};
 const files = [];
 let autoGrader=null,autoContext=null,batchGrader=null;
@@ -55,8 +55,8 @@ sliderSpecs.forEach(([parent,id,label,min,max,step,suffix]) => {
 
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,5500);}
 function busy(show,message='正在更新预览…'){$('busy').hidden=!show;$('busyText').textContent=message;}
-function setEnabled(){const yes=!!current,locked=exportBusy||importBusy; $('controls').disabled=!yes||locked;$('wb').disabled=!yes||!current.raw||locked; ['compare','rotate','zoom','reset','saveRecipe','loadRecipe'].forEach(id=>$(id).disabled=!yes||locked);$('exportTop').disabled=!yes||locked;document.querySelectorAll('.advanced-panel input,.advanced-panel button,.advanced-panel select').forEach(el=>el.disabled=!yes||locked);document.querySelectorAll('[data-preset]').forEach(b=>b.disabled=!yes||locked);syncAssistantControls();syncMaskUI();syncHistory();localTools?.sync();lensControls?.sync();}
-function syncLabels(){syncHistory();localTools?.sync();lensControls?.sync();darkroomPanel?.sync(current?.settings||defaults,!current||importBusy||exportBusy);const p=current?current.settings:defaults;sliderSpecs.forEach(([,id,,,,step,suffix])=>{const n=p[id];$(id).value=n;$(id+'Value').textContent=(n>0?'+':'')+(step<1?n.toFixed(step<.01?3:2):n)+suffix;});$('wb').value=p.wb;$('crop').value=p.crop;$('lensProfileName').value=p.lens_profile||'手动 / 未校准';syncMaskUI();document.querySelectorAll('[data-preset]').forEach(b=>b.classList.toggle('selected',b.dataset.preset===(current?.preset||'neutral')));}
+function setEnabled(){const yes=!!current,locked=exportBusy||importBusy; $('controls').disabled=!yes||locked;$('wb').disabled=!yes||!current.raw||locked; ['compare','rotate','zoom','reset','saveRecipe','loadRecipe'].forEach(id=>$(id).disabled=!yes||locked);$('exportTop').disabled=!yes||locked;document.querySelectorAll('.advanced-panel input,.advanced-panel button,.advanced-panel select').forEach(el=>el.disabled=!yes||locked);document.querySelectorAll('[data-preset]').forEach(b=>b.disabled=!yes||locked);syncAssistantControls();syncMaskUI();syncHistory();localTools?.sync();lensControls?.sync();colourControls?.sync();}
+function syncLabels(){syncHistory();localTools?.sync();lensControls?.sync();colourControls?.sync();darkroomPanel?.sync(current?.settings||defaults,!current||importBusy||exportBusy);const p=current?current.settings:defaults;sliderSpecs.forEach(([,id,,,,step,suffix])=>{const n=p[id];$(id).value=n;$(id+'Value').textContent=(n>0?'+':'')+(step<1?n.toFixed(step<.01?3:2):n)+suffix;});$('wb').value=p.wb;$('crop').value=p.crop;$('lensProfileName').value=p.lens_profile||'手动 / 未校准';syncMaskUI();document.querySelectorAll('[data-preset]').forEach(b=>b.classList.toggle('selected',b.dataset.preset===(current?.preset||'neutral')));}
 async function api(path,data,binary=false,extra={},options={}){if(['/api/codex/suggest','/api/codex/auto'].includes(path))data={...data,backend_revision:data.backend_revision??aiProvider?.revision};const r=await localFetch(path,{method:'POST',headers:{'Content-Type':binary?'application/octet-stream':'application/json','X-Z30-Request':'1',...extra},body:binary?data:JSON.stringify(data),...options});if(!r.ok){let message;try{message=(await r.json()).error;}catch{message=`处理失败 (${r.status})`;}throw Object.assign(Error(message),{status:r.status,retryable:r.status>=500||r.status===408||r.status===429});}return r;}
 function histogram(hist){const c=$('histogram'),ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#2b2d2f';ctx.lineWidth=1;[.25,.5,.75].forEach(t=>{ctx.beginPath();ctx.moveTo(t*c.width,0);ctx.lineTo(t*c.width,c.height);ctx.stroke();});if(!hist)return;const peak=Math.max(1,...hist.flat());ctx.globalCompositeOperation='screen';['#b65e56','#599173','#5c83ae'].forEach((color,ch)=>{ctx.beginPath();ctx.moveTo(0,c.height);hist[ch].forEach((n,i)=>ctx.lineTo(i*c.width/127,c.height-(Math.log1p(n)/Math.log1p(peak))*c.height*.92));ctx.lineTo(c.width,c.height);ctx.closePath();ctx.fillStyle=color+'90';ctx.fill();});ctx.globalCompositeOperation='source-over';}
 function drawLibrary(){const visible=libraryWorkflow?libraryWorkflow.visible(files):files;$('fileList').replaceChildren();visible.forEach(f=>{const card=document.createElement('div');card.className='filecard'+(current===f?' selected':'');const b=document.createElement('button');b.className='selectfile';b.title=f.name;const img=new Image();img.src=f.thumb;img.alt=f.name;const name=document.createElement('strong');name.textContent=f.name;const sub=document.createElement('small');sub.textContent=`${f.raw?'NEF RAW':'IMAGE'} · ${(f.bytes/1024/1024).toFixed(1)} MB`;b.append(img,name,sub);b.onclick=()=>selectFile(f);const remove=document.createElement('button');remove.className='remove';remove.textContent='×';remove.setAttribute('aria-label','移除 '+f.name);remove.onclick=()=>removeFile(f);card.append(b,remove);libraryWorkflow?.decorate(card,f);$('fileList').append(card);});$('count').textContent=String(files.length).padStart(2,'0');$('libraryHint').hidden=files.length>0;libraryWorkflow?.sync();}
@@ -279,7 +279,7 @@ $('jobsClose').onclick=()=>$('jobsDialog').close();
 $('exportConfirm').onclick=async()=>{
  if(!current||exportBusy)return;
  const sources=$('exportScope').value==='all'?[...files]:$('exportScope').value==='selected'?files.filter(f=>f.multiSelected):[current];if(!sources.length){toast('请先多选需要导出的照片');return;}
- const body={ids:sources.map(f=>f.id),settings:cloneEdit(current.settings),format:$('exportFormat').value,
+ const body={ids:sources.map(f=>f.id),settings:cloneEdit(current.settings),recipes:Object.fromEntries(sources.map(f=>[f.id,cloneEdit(f.settings)])),options:outputControls.options(),format:$('exportFormat').value,
              quality:Number($('quality').value),protect:$('exportProtect').checked};
  exportBusy=true;setEnabled();$('exportConfirm').disabled=true;
  try{
@@ -705,3 +705,8 @@ lensControls=new LensControls({current:()=>current,locked:()=>importBusy||export
  apply:async(f,options)=>(await api('/api/lens/apply',{id:f.id,settings:f.settings,options})).json(),
  estimate:async f=>(await api('/api/lens/tca',{id:f.id,settings:f.settings})).json(),
  change:delta=>{if(!current||importBusy||exportBusy)return;current.settings={...current.settings,...delta};current.preset='custom';syncLabels();schedulePreview(0);}});lensControls.init();
+
+colourControls=new ColourControls({current:()=>current,locked:()=>importBusy||exportBusy,error:toast,
+ list:async()=>await(await localFetch('/api/colour/profiles')).json(),upload:file=>api('/api/colour/profiles',file,true),
+ change:delta=>{if(!current||importBusy||exportBusy)return;current.settings={...current.settings,...delta};current.preset='custom';syncLabels();schedulePreview(0);}});colourControls.init();
+outputControls=new OutputControls();

@@ -8,6 +8,8 @@ from codex_assist import RANGES
 
 
 def pixels(image):
+    from colour_management import as_srgb
+    image=as_srgb(image)
     scale = min(1, 384 / max(image.size))
     size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
     return np.asarray(image.resize(size, Image.Resampling.BILINEAR), dtype=np.float32) / 255

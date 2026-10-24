@@ -13,6 +13,7 @@ import shutil
 import threading
 import time
 import zipfile
+import export_tools
 
 FORMATS = {'JPEG': 'jpg', 'PNG': 'png', 'TIFF16': 'tif'}
 INPUTS = {'.nef', '.jpg', '.jpeg', '.png'}
@@ -165,9 +166,12 @@ class ExportQueue:
                 pass  # An atomic manifest replacement may race this snapshot.
         return total
 
-    def submit(self, sources, settings, fmt, quality, protect):
+    def submit(self, sources, settings, fmt, quality, protect, options=None, per_photo=None):
         if fmt not in FORMATS or not 1 <= len(sources) <= 256:
             raise ValueError('导出格式或批量数量无效（1–256 张）')
+        if options is not None:options=export_tools.normalize(options)
+        if per_photo is not None and len(per_photo)!=len(sources):raise ValueError('逐张参数数量无效')
+        settings=copy.deepcopy(settings);per_photo=copy.deepcopy(per_photo)
         total = sum(Path(x['path']).stat().st_size for x in sources)
         with self.lock:
             if self.stopped:
@@ -178,6 +182,8 @@ class ExportQueue:
             folder.mkdir()
             job = dict(id=key, state='queued', created=time.time(), format=fmt, quality=quality,
                        protect=bool(protect), settings=dict(settings), items=[])
+            if options is not None:job['options']=copy.deepcopy(options)
+            export_names=export_tools.names(sources,options or {},FORMATS[fmt],job['created'])
             self.preparing[key] = total
         try:
             for i, source in enumerate(sources):
@@ -195,6 +201,8 @@ class ExportQueue:
                 name = source['name'].replace('\\', '/').split('/')[-1].replace('\x00', '')[:200]
                 job['items'].append(dict(index=i, name=name, extension=extension,
                                         raw=extension == '.nef', state='pending', sha256=digest.hexdigest()))
+                if options is not None:job['items'][-1]['export_name']=export_names[i]
+                if per_photo is not None:job['items'][-1]['settings']=copy.deepcopy(per_photo[i])
             with self.lock:
                 if self.stopped:
                     raise ValueError('服务正在停止，未提交未完成的快照')
@@ -269,8 +277,10 @@ class ExportQueue:
                 if not path.is_file():
                     raise ValueError('导出文件已丢失，请重新导出')
                 stem = Path(item['name']).stem or 'photo'
-                entries.append((path, f"{item['index'] + 1:02d}-{stem}-Z30.{FORMATS[job['format']]}"))
-            report = dict(settings=job['settings'], items=job['items'])
+                name=item.get('export_name',f"{item['index']+1:02d}-{stem}-Z30.{FORMATS[job['format']]}")
+                if export_tools.safe_name(name)!=name:raise ValueError('导出文件名无效')
+                entries.append((path,name))
+            report = dict(settings=job['settings'],options=job.get('options'),items=job['items'])
             self.readers[key] = self.readers.get(key, 0) + 1
         try:
             yield entries, report
@@ -301,10 +311,11 @@ class ExportQueue:
                     with source.open('rb') as file:
                         if hashlib.file_digest(file, 'sha256').hexdigest() != item['sha256']:
                             raise ValueError('导出输入快照校验失败；未处理可能已改变的文件')
-                    params = dict(job['settings'])
+                    params = copy.deepcopy(item.get('settings',job['settings']))
                     if not item['raw']:
                         params['wb'] = 'camera'
-                    data, applied, quality = self.exporter(source, item['raw'], params, job['format'], job['quality'], job['protect'])
+                    args=(source,item['raw'],params,job['format'],job['quality'],job['protect'])
+                    data, applied, quality = self.exporter(*args,job['options']) if 'options' in job else self.exporter(*args)
                     if self.disk_bytes() + len(data) > self.max_bytes:
                         raise ValueError('本机任务空间不足，请删除旧任务后重试')
                     output_digest = hashlib.sha256(data).hexdigest()
