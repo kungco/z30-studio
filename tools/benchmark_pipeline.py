@@ -39,6 +39,8 @@ def worker(args):
     p = m.DEFAULTS.copy()
     p.update(exposure=.75, highlights=-35, shadows=20, temperature=14, tint=-3,
              saturation=10, contrast=7, sharpen=15)
+    if args.single_stage:
+        return isolated_stage(args, m, session, p)
     stages = {}
     def measure(name, f):
         start = time.perf_counter(); out = f()
@@ -67,6 +69,48 @@ def worker(args):
     print(json.dumps(result))
 
 
+def isolated_stage(args, m, session, p):
+    import numpy as np
+    stage = args.single_stage
+    result = {'supported': True}
+    if stage == 'export_tiff16' and not hasattr(m, 'export_bytes'):
+        print(json.dumps({'supported': False})); return
+    if stage in ('develop_full', 'encode_jpeg'):
+        arr = m.decode(session, 'camera', False)
+    if stage == 'encode_jpeg':
+        image = m.develop(arr, p)
+    if stage in ('decode_preview_cached', 'preview_pipeline_cached'):
+        m.decode(session, 'camera', True)
+    if stage == 'preview_pipeline_repeat':
+        m.preview_result(session, p, True)
+    operations = {
+        'decode_full': lambda: m.decode(session, 'camera', False),
+        'decode_preview': lambda: m.decode(session, 'camera', True),
+        'decode_preview_cached': lambda: m.decode(session, 'camera', True),
+        'develop_full': lambda: m.develop(arr, p),
+        'encode_jpeg': lambda: m.image_bytes(image),
+        'preview_pipeline_cached': lambda: m.preview_result(session, p, True),
+        'preview_pipeline_repeat': lambda: m.preview_result(session, p, True),
+        'export_tiff16': lambda: m.export_bytes(session, p, 'TIFF16', 95),
+    }
+    start = time.perf_counter(); out = operations[stage]()
+    result.update(seconds=time.perf_counter() - start, peak_rss_mib=peak_rss())
+    if stage == 'develop_full':
+        a = np.asarray(out)
+        result.update(dimensions=list(out.size), dtype=str(arr.dtype),
+                      channel_means=a.mean(axis=(0, 1)).tolist(),
+                      channel_clip_fraction=np.mean(a >= 255, axis=(0, 1)).tolist())
+        if args.artifacts:
+            args.artifacts.mkdir(parents=True, exist_ok=True)
+            out.resize((round(out.width * 600 / max(out.size)), round(out.height * 600 / max(out.size)))).save(
+                args.artifacts / (args.sample.stem + '.png'))
+    elif stage == 'decode_preview':
+        result['dimensions'] = [out.shape[1], out.shape[0]]
+    elif stage in ('encode_jpeg', 'export_tiff16'):
+        result['bytes'] = len(out)
+    print(json.dumps(result))
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--source', type=Path, default=Path(__file__).resolve().parents[1])
@@ -76,6 +120,8 @@ def main():
     p.add_argument('--artifacts', type=Path)
     p.add_argument('--repeat', type=int, default=2)
     p.add_argument('--worker', action='store_true')
+    p.add_argument('--single-stage')
+    p.add_argument('--isolated', action='store_true')
     args = p.parse_args()
     if args.worker:
         return worker(args)
@@ -87,8 +133,19 @@ def main():
                    '--sample', str(sample.resolve())]
             if args.artifacts:
                 cmd += ['--artifacts', str(args.artifacts.resolve())]
-            r = subprocess.run(cmd, check=True, capture_output=True, encoding='utf8', timeout=240)
-            runs.append(json.loads(r.stdout))
+            if args.isolated:
+                stages = {}
+                for stage in ('decode_full', 'decode_preview', 'decode_preview_cached', 'develop_full',
+                              'encode_jpeg', 'preview_pipeline_cached', 'preview_pipeline_repeat', 'export_tiff16'):
+                    r = subprocess.run(cmd + ['--single-stage', stage], check=True, capture_output=True,
+                                       encoding='utf8', timeout=240)
+                    data = json.loads(r.stdout)
+                    if data.pop('supported'):
+                        stages[stage] = data
+                runs.append(dict(sample=sample.name, sha256=hashlib.sha256(sample.read_bytes()).hexdigest(), stages=stages))
+            else:
+                r = subprocess.run(cmd, check=True, capture_output=True, encoding='utf8', timeout=240)
+                runs.append(json.loads(r.stdout))
         item = runs[0]
         for stage, metrics in item['stages'].items():
             metrics.update(seconds=statistics.median(x['stages'][stage]['seconds'] for x in runs),
@@ -96,7 +153,8 @@ def main():
         results.append(item)
         print(sample.name, json.dumps(item['stages']), flush=True)
     report = dict(platform=platform.platform(), python=platform.python_version(),
-                  repeats=args.repeat, memory='OS process high-water RSS; stages cumulative within each isolated process',
+                  repeats=args.repeat, memory=('Fresh process per stage including prerequisite decode/render' if args.isolated else
+                                               'OS process high-water RSS; stages cumulative within each isolated process'),
                   samples=results)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(report, indent=2), encoding='utf8')

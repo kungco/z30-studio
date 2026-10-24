@@ -13,6 +13,7 @@ import urllib.parse
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import codex_assist
+from processing import render_array
 from imaging import raw_crop, raw_pixels, raster_linear, resize_linear, srgb_to_linear
 
 os.environ.setdefault('OMP_NUM_THREADS', '4')
@@ -98,31 +99,7 @@ def geometry(arr, p):
 
 
 def develop(arr, p):
-    """32-bit operations, row chunks for full-resolution exports; sRGB output."""
-    arr = geometry(arr, p)
-    out = np.empty(arr.shape, dtype=np.uint8)
-    gains = np.array([2 ** (p['temperature'] / 180),
-                      2 ** (-p['tint'] / 220), 2 ** (-p['temperature'] / 180)], dtype=np.float32)
-    for start in range(0, arr.shape[0], 256):
-        x = arr[start:start + 256].astype(np.float32, copy=True)
-        x *= (2 ** p['exposure']) * gains
-        # Reduce brightness of highlight range before the display transform.
-        lum = x @ np.array([.2126, .7152, .0722], dtype=np.float32)
-        x *= np.exp2((p['highlights'] / 100) * np.clip(lum, 0, 1) ** 2)[..., None]
-        x = np.maximum(x, 0)
-        x = np.where(x <= .0031308, 12.92 * x, 1.055 * x ** (1 / 2.4) - .055)
-        lum = x @ np.array([.2126, .7152, .0722], dtype=np.float32)
-        x += (p['shadows'] / 100 * .32 * np.clip(1 - lum, 0, 1) ** 3)[..., None]
-        x = (x - .5) * (1 + p['contrast'] / 125) + .5
-        lum = x @ np.array([.2126, .7152, .0722], dtype=np.float32)
-        chroma = x.max(axis=2) - x.min(axis=2)
-        sat = (1 + p['saturation'] / 100) * (1 + p['vibrance'] / 100 * (1 - np.clip(chroma, 0, 1)))
-        x = lum[..., None] + (x - lum[..., None]) * sat[..., None]
-        out[start:start + 256] = np.rint(np.clip(x, 0, 1) * 255).astype(np.uint8)
-    im = Image.fromarray(out)
-    if p['sharpen']:
-        im = im.filter(ImageFilter.UnsharpMask(radius=1.2, percent=round(p['sharpen'] * 2), threshold=3))
-    return im
+    return Image.fromarray(render_array(geometry(arr, p), p, bits=8))
 
 
 def image_bytes(im, fmt='JPEG', quality=93):
@@ -130,6 +107,20 @@ def image_bytes(im, fmt='JPEG', quality=93):
     opts = {'quality': quality, 'subsampling': 0} if fmt == 'JPEG' else {}
     im.save(b, format=fmt, icc_profile=ICC, **opts)
     return b.getvalue()
+
+
+def export_bytes(session, p, fmt='JPEG', quality=95):
+    if fmt not in ('JPEG', 'PNG', 'TIFF16'):
+        raise ValueError('不支持的导出格式')
+    arr = decode(session, p['wb'], False)
+    if fmt == 'TIFF16':
+        import tifffile
+        pixels = render_array(geometry(arr, p), p, bits=16)
+        out = io.BytesIO()
+        tifffile.imwrite(out, pixels, photometric='rgb', iccprofile=ICC,
+                         metadata=None, compression='deflate', maxworkers=1)
+        return out.getvalue()
+    return image_bytes(develop(arr, p), fmt, quality)
 
 
 def data_url(im):
@@ -230,7 +221,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(codex_assist.status())
         if route.startswith('/api/codex/jobs/'):
             try:
-                return self.json(ADVISOR.get(route.rsplit('/', 1)[-1]))
+                with LOCK:
+                    job = ADVISOR.get(route.rsplit('/', 1)[-1])
+                    if job['source_id'] not in SESSIONS:
+                        ADVISOR.cancel_source(job['source_id'])
+                        return self.json({'error': '照片会话已关闭，辅助任务已取消'}, 410)
+                return self.json(job)
             except KeyError:
                 return self.json({'error': '建议任务不存在，请重新生成'}, 404)
         files = {'/': ('index.html', 'text/html; charset=utf-8'),
@@ -267,6 +263,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({'error': '照片会话已结束，请重新导入'}, 404)
                 s = SESSIONS[key]
                 if route == '/api/close':
+                    ADVISOR.cancel_source(key)
                     s['path'].unlink(missing_ok=True)
                     del SESSIONS[key]
                     return self.json({'ok': True})
@@ -287,15 +284,13 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json(preview_result(s, p, data.get('before', False)))
                 if route == '/api/export':
                     fmt = data.get('format', 'JPEG')
-                    if fmt not in ('JPEG', 'PNG'):
+                    if fmt not in ('JPEG', 'PNG', 'TIFF16'):
                         raise ValueError('不支持的导出格式')
                     quality = max(60, min(100, int(data.get('quality', 95))))
-                    arr = decode(s, p['wb'], False)
-                    im = develop(arr, p)
-                    content = image_bytes(im, fmt, quality)
-                    ext = 'jpg' if fmt == 'JPEG' else 'png'
+                    content = export_bytes(s, p, fmt, quality)
+                    ext = {'JPEG': 'jpg', 'PNG': 'png', 'TIFF16': 'tif'}[fmt]
                     name = urllib.parse.quote(Path(s['name']).stem + '-Z30.' + ext)
-                    return self.send(content, 'image/jpeg' if fmt == 'JPEG' else 'image/png',
+                    return self.send(content, {'JPEG': 'image/jpeg', 'PNG': 'image/png', 'TIFF16': 'image/tiff'}[fmt],
                                      headers={'Content-Disposition': "attachment; filename*=UTF-8''" + name})
                 return self.json({'error': '接口不存在'}, 404)
         except (ValueError, TypeError, KeyError) as exc:
@@ -329,6 +324,7 @@ def main():
         pass
     finally:
         server.server_close()
+        ADVISOR.shutdown()
         TEMP.cleanup()
 
 

@@ -103,6 +103,8 @@ def _exif_space(im):
     try:
         nested = exif.get_ifd(34665)
         interop = nested.get(40965, {})
+        if isinstance(interop, int):
+            interop = exif.get_ifd(40965)
     except (KeyError, TypeError, ValueError):
         nested, interop = {}, {}
     space = nested.get(40961, exif.get(40961))

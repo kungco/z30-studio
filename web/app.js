@@ -61,7 +61,7 @@ $('recipeInput').onchange=async e=>{try{if(!current||!e.target.files[0])return;c
 $('exportTop').onclick=()=>$('exportDialog').showModal();
 $('quality').oninput=()=>$('qualityValue').textContent=$('quality').value;
 $('exportFormat').onchange=()=>$('qualityRow').hidden=$('exportFormat').value!=='JPEG';
-$('exportConfirm').onclick=async()=>{if(!current||exportBusy)return;const f=current,p={...f.settings},fmt=$('exportFormat').value;exportBusy=true;setEnabled();$('controls').disabled=true;$('exportDialog').close();busy(true,'正在从原片进行全尺寸导出…');$('renderState').textContent='导出中…';try{const r=await api('/api/export',{id:f.id,settings:p,format:fmt,quality:Number($('quality').value)});download(await r.blob(),f.name.replace(/\.[^.]+$/,'')+'-Z30.'+(fmt==='JPEG'?'jpg':'png'));toast('已导出，请查看浏览器下载文件夹');$('renderState').textContent='导出完成';}catch(e){toast(e.message);$('renderState').textContent='导出失败';}finally{exportBusy=false;setEnabled();busy(false);if(previewWanted)runPreview();}};
+$('exportConfirm').onclick=async()=>{if(!current||exportBusy)return;const f=current,p={...f.settings},fmt=$('exportFormat').value;exportBusy=true;setEnabled();$('controls').disabled=true;$('exportDialog').close();busy(true,'正在从原片进行全尺寸导出…');$('renderState').textContent='导出中…';try{const r=await api('/api/export',{id:f.id,settings:p,format:fmt,quality:Number($('quality').value)});download(await r.blob(),f.name.replace(/\.[^.]+$/,'')+'-Z30.'+({JPEG:'jpg',PNG:'png',TIFF16:'tif'}[fmt]));toast('已导出，请查看浏览器下载文件夹');$('renderState').textContent='导出完成';}catch(e){toast(e.message);$('renderState').textContent='导出失败';}finally{exportBusy=false;setEnabled();busy(false);if(previewWanted)runPreview();}};
 fetch('/api/health').then(r=>{if(!r.ok)throw Error();return r.json();}).then(d=>{$('engine').textContent='LibRaw '+d.libraw+' · 就绪';}).catch(()=>{$('engine').textContent='解码服务连接失败';toast('请通过 start.bat 启动本地服务，再打开网页');});
 function syncAssistantControls(){
  const locked=importBusy||exportBusy;
@@ -148,9 +148,9 @@ async function generateAdvice(){
    if(Date.now()-start>210000)throw Error('等待建议超时，请稍后重新检测 Codex 后再试');
    await new Promise(resolve=>setTimeout(resolve,1100));
    const response=await fetch('/api/codex/jobs/'+encodeURIComponent(d.job));
-   if(!response.ok)throw Error('无法读取建议任务，请重新生成');job=await response.json();
+   if(!response.ok){const error=await response.json();throw Error(error.error||'无法读取建议任务，请重新生成');}job=await response.json();
    if(job.state==='done')break;
-   if(job.state==='error')throw Error(job.error);
+   if(job.state==='error'||job.state==='cancelled')throw Error(job.error||'照片会话已关闭');
    $('aiProgress').textContent=`Codex 正在看图与分析… ${Math.round((Date.now()-start)/1000)} 秒。关闭面板后任务仍会继续。`;
   }
   if(job.source_id!==source.id)throw Error('建议与当前照片不匹配，请重新生成');

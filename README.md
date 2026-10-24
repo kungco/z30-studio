@@ -9,7 +9,7 @@
 - 使用 rawpy / LibRaw 解码 NEF，支持相机、自动和日光白平衡。
 - 调整曝光、对比度、高光、阴影、色温偏移、色调、饱和度、自然饱和度和锐化。
 - RGB 直方图、原片对比、自定义风格预设、旋转及居中比例裁剪。
-- 导出全尺寸 JPEG / 8 位 PNG，附带 sRGB ICC；保存和载入 JSON 调色参数。
+- 导出全尺寸 JPEG / 8 位 PNG / 16 位 RGB TIFF，附带 sRGB ICC；保存和载入 JSON 调色参数。
 - 让 Codex 根据预览和文字目标提出调色建议，先看试片、调整强度，再应用或恢复应用前参数。
 
 ## Windows 启动
@@ -51,10 +51,12 @@ python -m venv .venv
 运行本地接口契约测试，不会调用 Codex 或消耗模型额度：
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest -v test_codex_assist
+.\.venv\Scripts\python.exe -m unittest discover -v
 ```
 
-当前只实现全局调色，不含局部蒙版、AI 降噪、镜头配置校正、自由裁剪框、批量导出或 16 位 TIFF。色温 / 色调是相对偏移，不是精确 Kelvin 校准。RAW 外观不会完全复现尼康 Picture Control；预览与全尺寸导出的细节可能有差异。建议效果需逐张评估。
+当前只实现全局调色，不含局部蒙版、AI 降噪、镜头配置校正或自由裁剪框。色温 / 色调是相对偏移，不是精确 Kelvin 校准。RAW 外观不会完全复现尼康 Picture Control；预览与全尺寸导出的细节可能有差异。建议效果需逐张评估。
+
+修改阶段、测试范围、实机验证限制及耗时 / 内存比较见 [分阶段修复报告](docs/reports/staged-repair.md)。
 
 ## 文档与依赖
 

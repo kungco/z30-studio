@@ -1,12 +1,20 @@
 """Original synthetic matrix/TRC ICC fixture, generated without binary assets."""
 import struct
 import numpy as np
-from imaging import rgb_matrix, ADOBE_XY
+# Independent W3C CSS Color 4 reference matrices, not the production xy solver.
+# https://www.w3.org/TR/css-color-4/#color-conversion-code
+A98_XYZ = np.array([[573536 / 994567, 263643 / 1420810, 187206 / 994567],
+                    [591459 / 1989134, 6239551 / 9945670, 374412 / 4972835],
+                    [53769 / 1989134, 351524 / 4972835, 4929758 / 4972835]])
+SRGB_XYZ = np.array([[.4123907992659595, .35758433938387796, .1804807884018343],
+                     [.21263900587151036, .7151686787677559, .07219231536073371],
+                     [.01933081871559185, .11919477979462599, .9505321522496607]])
+A98_TO_SRGB = np.linalg.solve(SRGB_XYZ, A98_XYZ)
 
 
 def wide_rgb_profile():
     # ICC v2 D50 PCS; Bradford-adapt the synthetic D65 RGB matrix to D50.
-    matrix = rgb_matrix(ADOBE_XY)
+    matrix = A98_XYZ
     bradford = np.array([[.8951, .2664, -.1614], [-.7502, 1.7135, .0367], [.0389, -.0685, 1.0296]])
     d65, d50 = np.array([.9504559, 1, 1.0890578]), np.array([.9642, 1, .8249])
     matrix = np.linalg.solve(bradford, np.diag((bradford @ d50) / (bradford @ d65)) @ bradford) @ matrix

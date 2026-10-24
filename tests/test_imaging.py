@@ -11,7 +11,7 @@ from PIL import Image, ImageCms, PngImagePlugin
 
 import imaging
 import server
-from tests.color_profiles import wide_rgb_profile
+from tests.color_profiles import wide_rgb_profile, A98_TO_SRGB
 
 
 def sizes(**kw):
@@ -83,7 +83,7 @@ class RasterColorTests(unittest.TestCase):
         color = tuple(np.rint(encoded * 255).astype(int))
         a, _, _ = self.decode(Image.new('RGB', (2, 2), color), icc_profile=wide_rgb_profile())
         reference = (np.array(color) / 255) ** (563 / 256)
-        reference = np.linalg.solve(imaging.SRGB_TO_XYZ, imaging.rgb_matrix(imaging.ADOBE_XY)) @ reference
+        reference = A98_TO_SRGB @ reference
         np.testing.assert_allclose(a[0, 0], reference, atol=.004)
         self.assertGreater(abs(float(a[0, 0, 0]) - float(imaging.srgb_to_linear(encoded)[0])), .025)
 
@@ -122,6 +122,14 @@ class RasterColorTests(unittest.TestCase):
         np.testing.assert_allclose(a[0, 0], np.array([128, 64, 32]) / 255, atol=1e-6)
         self.assertIn('gAMA', policy)
 
+    def test_exif_adobe_rgb_interop_is_not_assumed_srgb(self):
+        exif = Image.Exif(); exif[34665] = {40961: 65535, 40965: {1: 'R03'}}
+        a, policy, warnings = self.decode(Image.new('RGB', (2, 2), (128, 80, 40)), exif=exif)
+        self.assertIn('Adobe RGB', policy)
+        reference = A98_TO_SRGB @ (
+            np.array([128, 80, 40]) / 255) ** (563 / 256)
+        np.testing.assert_allclose(a[0, 0], reference, atol=1e-6)
+
     def test_all_exif_orientations(self):
         image = Image.fromarray(np.arange(18, dtype=np.uint8).reshape(2, 3, 3) * 12)
         expected = {1: image, 2: image.transpose(Image.Transpose.FLIP_LEFT_RIGHT),
@@ -147,6 +155,20 @@ class RealNefTests(unittest.TestCase):
             self.assertLess(float(np.mean(abs(small - b))), .02)
             self.assertEqual(a.dtype, np.float32)
             self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), before)
+
+    def test_real_14bit_nef_exports_as_rgb16_tiff(self):
+        import tifffile
+        path = Path(os.environ['Z30_RAW_SAMPLES']) / 'Z30-14bit.NEF'
+        before = hashlib.sha256(path.read_bytes()).hexdigest()
+        data = server.export_bytes(dict(path=path, raw=True, cache={}), server.DEFAULTS, 'TIFF16')
+        with tifffile.TiffFile(io.BytesIO(data)) as tiff:
+            pixels = tiff.asarray()
+            self.assertEqual(pixels.shape, (5568, 3712, 3))
+            self.assertEqual(pixels.dtype, np.uint16)
+            self.assertEqual(tiff.pages[0].bitspersample, 16)
+            self.assertGreater(np.unique(pixels[::16, ::16]).size, 256)
+            self.assertFalse(np.all(pixels[::16, ::16] % 257 == 0))
+        self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), before)
 
 
 if __name__ == '__main__':

@@ -15,4 +15,8 @@ python -m unittest discover -v
 
 The integration check verifies both bit depths, original-file hashes, portrait dimensions and linear preview/full alignment. Mirrored/odd-boundary directions are synthetic tests; only orientation flip=5 has been verified against the two real Z30 samples.
 
-Benchmarks use `tools/benchmark_pipeline.py`. Each repeat runs in a fresh child process; the OS peak RSS is a process high-water mark including earlier stages in that child, not a per-function allocation measurement. Timing is wall-clock median. Compare runs on the same machine and do not infer universal speedups from these samples.
+Benchmarks use `tools/benchmark_pipeline.py --isolated`. Each stage and repeat runs in a fresh child process; the OS peak RSS includes that stage's prerequisite decode/render, not a Python-only allocation count. The earlier P0 JSON files explicitly retain the original cumulative-process method. Timing is wall-clock median. Compare paired reports with the same methodology and do not infer universal speedups from these samples.
+
+P1 adds monotonicity, black anchoring, shoulder continuity, tone-table approximation error, warm-hue preservation, gamut mapping, chunk-boundary sharpening, RGB16 TIFF tags / ICC / unique levels, real 14-bit RAW TIFF readback, HTTP export and session-expiry tests. Advisor lifecycle races use blocked fake processes and late-result publication checks, preserving all original CLI tests without spending quota.
+
+The GitHub Actions matrix runs generated-fixture tests on Windows and Linux. Actual RAW checks are explicitly skipped in CI unless `Z30_RAW_SAMPLES` is supplied; no CI pass claims those files were tested there.
