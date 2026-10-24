@@ -21,6 +21,7 @@ from export_jobs import ExportQueue, FORMATS, write_zip
 import shutil
 import projects
 import automation
+import spatial
 import zipfile
 from imaging import raw_crop, raw_pixels, raster_linear, resize_linear, srgb_to_linear
 
@@ -44,10 +45,10 @@ EXPORTS = None
 EXPORTS_LOCK = threading.RLock()
 DEFAULTS = dict(exposure=0, contrast=0, highlights=0, shadows=0,
                 temperature=0, tint=0, saturation=0, vibrance=0,
-                sharpen=0, rotation=0, crop='original', wb='camera')
+                sharpen=0, rotation=0, crop='original', wb='camera') | spatial.DEFAULTS | {'lens_profile':'手动 / 未校准'}
 LIMITS = dict(exposure=(-4, 4), contrast=(-100, 100), highlights=(-100, 100),
               shadows=(-100, 100), temperature=(-100, 100), tint=(-100, 100),
-              saturation=(-100, 100), vibrance=(-100, 100), sharpen=(0, 100))
+              saturation=(-100, 100), vibrance=(-100, 100), sharpen=(0, 100)) | spatial.LIMITS
 
 
 def settings(data):
@@ -64,6 +65,8 @@ def settings(data):
         raise ValueError('无效裁剪比例')
     if p['wb'] not in ('camera', 'auto', 'daylight'):
         raise ValueError('无效白平衡')
+    p['masks'] = spatial.masks(data.get('masks', []))
+    p['lens_profile'] = str(data.get('lens_profile', '手动 / 未校准'))[:100]
     return p
 
 
@@ -118,7 +121,7 @@ def geometry(arr, p):
 
 
 def develop(arr, p):
-    return Image.fromarray(render_array(geometry(arr, p), p, bits=8))
+    return Image.fromarray(render_array(geometry(spatial.prepare(arr, p), p), p, bits=8))
 
 
 def image_bytes(im, fmt='JPEG', quality=93):
@@ -134,7 +137,7 @@ def export_bytes(session, p, fmt='JPEG', quality=95):
     arr = decode(session, p['wb'], False)
     if fmt == 'TIFF16':
         import tifffile
-        pixels = render_array(geometry(arr, p), p, bits=16)
+        pixels = render_array(geometry(spatial.prepare(arr, p), p), p, bits=16)
         out = io.BytesIO()
         tifffile.imwrite(out, pixels, photometric='rgb', iccprofile=ICC,
                          metadata=None, compression='deflate', maxworkers=1)
@@ -148,7 +151,7 @@ def export_snapshot(path, is_raw, params, fmt, quality, protect):
     metrics = None
     try:
         if protect:
-            base = DEFAULTS | {k: p[k] for k in ('wb', 'rotation', 'crop')}
+            base = p | {k: DEFAULTS[k] for k in codex_assist.RANGES}
             p, metrics = quality_checks.guard(decode(session, p['wb'], True), base, p, develop)
         return export_bytes(session, p, fmt, quality), p, metrics
     finally:
@@ -571,6 +574,8 @@ class Handler(BaseHTTPRequestHandler):
                     release_photo(key)
                     return self.json({'ok': True})
                 p = settings(data.get('settings', {}))
+                if route == '/api/settings':
+                    return self.json({'settings':p})
                 if route == '/api/inspect':
                     cx, cy = float(data.get('cx', .5)), float(data.get('cy', .5))
                     if not math.isfinite(cx) or not math.isfinite(cy) or not 0 <= cx <= 1 or not 0 <= cy <= 1:

@@ -86,7 +86,7 @@ class HttpTests(unittest.TestCase):
     def test_inspection_is_an_exact_crop_of_native_render_with_geometry(self):
         import base64
         import numpy as np
-        key=self.open_photo(); p=server.settings(dict(rotation=1,crop='1:1',exposure=.5))
+        key=self.open_photo(); p=server.settings(dict(rotation=1,crop='1:1',exposure=.5,denoise_chroma=20,lens_k1=.01,masks=[dict(type='radial',exposure=.3)]))
         try:
             expected=np.asarray(server.develop(server.decode(server.SESSIONS[key],'camera',False),p))
             with self.post('/api/inspect',dict(id=key,settings=p,cx=.8,cy=.3)) as response:data=json.load(response)
@@ -95,6 +95,16 @@ class HttpTests(unittest.TestCase):
             np.testing.assert_array_equal(actual,expected)
             with patch.object(server,'decode',side_effect=AssertionError('native render cache missed')):
                 self.post('/api/inspect',dict(id=key,settings=p)).close()
+        finally:self.post('/api/close',{'id':key}).close()
+
+    def test_protected_export_does_not_drop_manual_masks_or_optical_parameters(self):
+        key=self.open_photo();p=server.settings(dict(exposure=.2,lens_red=2,masks=[dict(type='linear',exposure=.3)]))
+        try:
+            data,applied,metrics=server.export_snapshot(server.SESSIONS[key]['path'],False,p,'TIFF16',95,True)
+            self.assertEqual(applied['masks'],p['masks']);self.assertEqual(applied['lens_red'],2)
+            with tifffile.TiffFile(io.BytesIO(data)) as t:
+                self.assertEqual(t.asarray().dtype.name,'uint16');self.assertEqual(t.pages[0].bitspersample,16)
+            self.assertTrue(metrics['native_preview_checked'])
         finally:self.post('/api/close',{'id':key}).close()
 
     def test_refresh_restores_eight_photos_and_parameters_instead_of_leaking_slots(self):

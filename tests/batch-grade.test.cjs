@@ -8,3 +8,9 @@ test('edits to a queued photo skip it and an uncertain network result stops late
  let calls=0;const b=new BatchGrader({isCurrent:x=>!x.changed,make:()=>({start:async()=>{calls++;return {state:'error',pending:true};}}),onItem:()=>{},onFinish:()=>{}});
  const results=await b.run([{changed:true},{},{}],3);assert.equal(calls,1);assert.equal(results[0].state,'stale');assert.equal(results[2].state,'not-started');
 });
+test('stopping an active batch cancels the current item and starts no later photo',async()=>{
+ let release;let calls=0;const wait=new Promise(resolve=>release=resolve);
+ const b=new BatchGrader({isCurrent:()=>true,make:()=>({start:async()=>{calls++;await wait;return {state:'cancelled'};},cancel:async()=>release()}),onItem:()=>{},onFinish:()=>{}});
+ const task=b.run([{},{}],2);await new Promise(resolve=>setImmediate(resolve));await b.cancel();
+ const results=await task;assert.equal(calls,1);assert.equal(results[1].state,'not-started');assert.equal(b.busy,false);
+});

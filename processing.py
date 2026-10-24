@@ -1,6 +1,7 @@
 """Float32 luminance tone mapping and hue-preserving perceptual colour controls."""
 from functools import lru_cache
 import math
+from spatial import local_chunk
 
 import numpy as np
 
@@ -153,7 +154,8 @@ def render_array(arr, p, bits=8, chunk_rows=128):
         low, high = max(0, start - halo), min(arr.shape[0], end + halo)
         if not np.isfinite(arr[low:high]).all():
             raise ValueError('调色输入包含非有限数据')
-        rgb = display_chunk(arr[low:high], p)
+        local = local_chunk(arr[low:high], p, arr.shape[1], arr.shape[0], low, high)
+        rgb = display_chunk(local, p)
         if halo:
             rgb = sharpen_float(rgb, p['sharpen'])
         rgb = rgb[start - low:end - low]
