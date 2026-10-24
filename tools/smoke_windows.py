@@ -36,9 +36,10 @@ def main():
     p.add_argument('--zip',type=Path,required=True)
     p.add_argument('--samples',type=Path)
     p.add_argument('--deepseek-network-check',action='store_true',help='GET official models with a deliberately invalid key; no images/inference')
+    p.add_argument('--shutdown-timeout',type=float,default=30,help='Maximum seconds to wait for each graceful exit')
     p.add_argument('--out',type=Path,required=True)
     args=p.parse_args()
-    report={'model_requests':0,'raw':[]}
+    report={'model_requests':0,'raw':[],'shutdowns':[],'shutdown_timeout_seconds':args.shutdown_timeout}
     with tempfile.TemporaryDirectory(prefix='z30-便携 验收-') as folder:
         root=Path(folder)
         with zipfile.ZipFile(args.zip) as archive:archive.extractall(root)
@@ -58,11 +59,17 @@ def main():
                 if time.monotonic()>deadline:raise TimeoutError('EXE startup timed out')
                 time.sleep(.1)
             url=json.loads(ready.read_text(encoding='utf8'))['url']
-        def end():
+        def end(index=None):
             if process and process.poll() is None:
                 stop.write_text('stop',encoding='ascii')
-                try:assert process.wait(timeout=30)==0
-                except subprocess.TimeoutExpired:process.kill();process.wait();raise
+                started=time.monotonic()
+                try:
+                    rc=process.wait(timeout=args.shutdown_timeout)
+                    report['shutdowns'].append(dict(cycle=index,seconds=round(time.monotonic()-started,3),exit_code=rc))
+                    assert rc==0
+                except subprocess.TimeoutExpired:
+                    report['shutdowns'].append(dict(cycle=index,seconds=round(time.monotonic()-started,3),timeout=True))
+                    process.kill();process.wait();raise
         def get(route):
             request=urllib.request.Request(url+route,headers={'X-Z30-Client':owner})
             with urllib.request.urlopen(request,timeout=120) as response:return response.read()
@@ -146,13 +153,13 @@ def main():
                 assert opened['photos'][0]['undo']['settings']['exposure']==0
                 assert len(opened['photos'][0]['settings']['masks'])==1
                 report['project_roundtrip']=True
-            end();report['graceful_exit']=True
+            end(1);report['graceful_exit']=True
             start(2)
             assert not json.loads(get('/api/ai/config'))['has_key'];report['key_not_persisted_after_restart']=True
             assert json.loads(get('/api/exports/'+job))['state']=='done'
             assert get('/api/exports/'+job+'/files/0').startswith(b'\x89PNG')
             report['durable_export_after_restart']=True
-            end()
+            end(2)
             report['python_removed_from_PATH']=True
             report['unicode_and_space_paths']=True
             report['exe_sha256']=hashlib.sha256(exe.read_bytes()).hexdigest()

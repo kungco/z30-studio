@@ -1,7 +1,7 @@
 {
   "date": "2026-10-24",
   "platform": "Windows-11-10.0.22631-SP0",
-  "python_tests": 101,
+  "python_tests": 102,
   "node_tests": 25,
   "full_exe_cycles": 3,
   "exe_sha256": "f776108af41ec8b613bdb55c7bfeb2b310dbf8aed100b8480db2862f2178d927",
@@ -118,5 +118,34 @@
   "early_timeout_cause": "Not identified; not reproduced in three consecutive current-build full cycles",
   "clean_virtual_machine_tested": false,
   "real_deepseek_inference_tested": false,
-  "further_shutdown_investigation": "Open for continued investigation; user revoked the earlier deferral"
+  "further_shutdown_investigation": "Open. Eight more full EXE cycles and 30 idle exits passed; original 30s timeout not reproduced; diagnostics added but not yet in the packaged EXE.",
+  "additional_full_exe_cycles": 8,
+  "total_full_exe_cycles_observed": 11,
+  "continued_shutdown_investigation": {
+    "date": "2026-10-24",
+    "additional_full_exe_cycles": 8,
+    "timed_full_cycle_shutdown_seconds": {
+      "min": 0.295,
+      "max": 0.537
+    },
+    "idle_start_stop_samples": 30,
+    "idle_shutdown_seconds": {
+      "min": 0.426,
+      "max": 0.534
+    },
+    "inflight_request_stop_samples": 5,
+    "inflight_request_shutdown_seconds": {
+      "min": 0.574,
+      "max": 0.593
+    },
+    "background_raw_export_stop_seconds": [
+      18.14,
+      19.32,
+      19.92
+    ],
+    "background_export_measured_from": "source launcher, not packaged EXE",
+    "root_cause_identified": false,
+    "regression_test": "tests/test_shutdown.py",
+    "diagnostics_in_current_exe": false
+  }
 }

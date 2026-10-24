@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import sys
 import threading
+import time
 import tkinter as tk
 from tkinter import messagebox
 import webbrowser
@@ -71,8 +72,9 @@ def write_ready(path, url):
 
 
 class LauncherWindow:
-    def __init__(self, url, http, worker, log):
+    def __init__(self, url, http, worker, log, begin_shutdown=None):
         self.http, self.worker = http, worker
+        self.begin_shutdown = begin_shutdown
         self.stopping = False
         self.root = tk.Tk()
         self.root.title('Z30 Studio · 本地 RAW 暗房')
@@ -101,6 +103,8 @@ class LauncherWindow:
         self.status.set('正在停止服务并保存后台任务状态…')
         self.open.configure(state='disabled')
         self.quit.configure(state='disabled')
+        if self.begin_shutdown:
+            self.begin_shutdown('launcher window')
         threading.Thread(target=self.http.shutdown, daemon=True).start()
 
     def poll(self):
@@ -122,7 +126,21 @@ def main(argv=None):
     lock = None
     worker = http = None
     trace_file = None
+    shutdown_started = None
+    started = time.monotonic()
     instance = directory / 'instance.json'
+
+    def begin_shutdown(reason):
+        nonlocal trace_file, shutdown_started
+        if shutdown_started is not None:
+            return
+        shutdown_started = time.monotonic()
+        logging.info('Shutdown requested (%s), uptime %.1fs', reason, shutdown_started - started)
+        try:
+            trace_file = (directory/'logs'/'shutdown-stacks.log').open('w', encoding='utf8')
+            faulthandler.dump_traceback_later(10, repeat=True, file=trace_file)
+        except OSError:
+            logging.exception('Could not open shutdown diagnostics')
     try:
         directory.mkdir(parents=True, exist_ok=True)
         try:
@@ -146,7 +164,7 @@ def main(argv=None):
                 logging.exception('Local service failed')
         worker = threading.Thread(target=run, name='z30-service')
         worker.start()
-        window = None if args.headless else LauncherWindow(url, http, worker, log)
+        window = None if args.headless else LauncherWindow(url, http, worker, log, begin_shutdown)
         # Native imaging/Tk libraries have loaded before restoring child DLL lookup.
         prepare_external_programs()
         write_ready(instance, url)
@@ -168,10 +186,7 @@ def main(argv=None):
             while worker.is_alive():
                 worker.join(.2)
                 if args.stop_file and args.stop_file.exists():
-                    if trace_file is None:
-                        trace_file = (directory/'logs'/'shutdown-stacks.log').open('w', encoding='utf8')
-                        faulthandler.dump_traceback_later(10, file=trace_file)
-                        logging.info('Shutdown signal received')
+                    begin_shutdown('stop file')
                     http.shutdown()
     except KeyboardInterrupt:
         pass
@@ -194,6 +209,8 @@ def main(argv=None):
         if trace_file:
             faulthandler.cancel_dump_traceback_later()
             trace_file.close()
+        if shutdown_started is not None:
+            logging.info('Shutdown finished in %.2fs', time.monotonic() - shutdown_started)
         logging.info('Launcher stopped')
         logging.shutdown()
     return 0

@@ -689,18 +689,25 @@ def serve(server):
     except KeyboardInterrupt:
         pass
     finally:
-        logging.info('Stopping session maintenance')
+        shutdown_started = time.monotonic()
+        def note(message):
+            logging.info('%s (shutdown %.2fs)', message, time.monotonic() - shutdown_started)
+        note('Stopping session maintenance')
         stop_reaper.set(); reaper.join(timeout=2)
-        logging.info('Closing HTTP listener')
+        note('Closing HTTP listener')
         server.server_close()
-        logging.info('Stopping Codex workers')
+        note('Stopping Codex workers')
         ADVISOR.shutdown()
         if EXPORTS is not None:
-            logging.info('Stopping export workers')
+            note('Stopping export workers')
+            export_started = time.monotonic()
             EXPORTS.shutdown()
-        logging.info('Removing temporary photo copies')
+            waited = time.monotonic() - export_started
+            if waited > 2:
+                logging.warning('Export shutdown waited %.2fs for an in-flight item', waited)
+        note('Removing temporary photo copies')
         TEMP.cleanup()
-        logging.info('Local service stopped')
+        note('Local service stopped')
 
 
 def main():
