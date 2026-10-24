@@ -1,0 +1,32 @@
+# Local runtimes and Python caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Credentials, local settings and logs
+.env
+.env.*
+!.env.example
+auth.json
+*.log
+.DS_Store
+Thumbs.db
+
+# User photos, generated exports and scratch files
+photos/
+uploads/
+exports/
+work/
+*.nef
+*.NEF
+*.raw
+*.RAW
+*.jpg
+*.jpeg
+*.png
+*.tif
+*.tiff
+*.zip
+!docs/images/*.png
