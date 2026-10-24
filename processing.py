@@ -4,6 +4,7 @@ import math
 from spatial import local_chunk
 
 import numpy as np
+import darkroom
 
 LUMA = np.array([.2126, .7152, .0722], np.float32)
 RGB_LMS = np.array([[.4122214708, .5363325363, .0514459929],
@@ -96,7 +97,11 @@ def display_chunk(arr, p):
     gains = np.array([2 ** (p['temperature'] / 180), 2 ** (-p['tint'] / 220),
                       2 ** (-p['temperature'] / 180)], np.float32)
     gains /= gains @ LUMA  # WB offsets do not silently change neutral exposure.
+    gains *= darkroom.wb_gains(p)
     x = np.multiply(arr, gains * np.float32(2 ** p['exposure']), dtype=np.float32)
+    if p.get('dehaze'):
+        veil=np.float32(p['dehaze']/100*.08)
+        x=np.maximum((x-veil)/(1-veil),0)
     y = x @ LUMA
     mapped = fast_tone(y, p)
     ratio = np.divide(mapped, y, out=np.zeros_like(y), where=y > 1e-12)
@@ -121,7 +126,7 @@ def display_chunk(arr, p):
     encoded *= 1.055; encoded -= .055
     low = x <= .0031308
     encoded[low] = x[low] * 12.92
-    return np.clip(encoded, 0, 1, out=encoded)
+    return darkroom.color(np.clip(encoded, 0, 1, out=encoded),p)
 
 
 def sharpen_float(rgb, amount):
@@ -148,7 +153,8 @@ def render_array(arr, p, bits=8, chunk_rows=128):
         raise ValueError('调色输入必须是 float32 线性 RGB 数据')
     dtype, scale = (np.uint8, 255) if bits == 8 else (np.uint16, 65535)
     output = np.empty(arr.shape, dtype=dtype)
-    halo = 2 if p['sharpen'] else 0
+    radius=max(2,round(min(arr.shape[:2])*.006))
+    halo = (max(radius if p.get('clarity') else 0,2 if p.get('texture') else 0) + (2 if p['sharpen'] else 0))
     for start in range(0, arr.shape[0], chunk_rows):
         end = min(start + chunk_rows, arr.shape[0])
         low, high = max(0, start - halo), min(arr.shape[0], end + halo)
@@ -156,7 +162,8 @@ def render_array(arr, p, bits=8, chunk_rows=128):
             raise ValueError('调色输入包含非有限数据')
         local = local_chunk(arr[low:high], p, arr.shape[1], arr.shape[0], low, high)
         rgb = display_chunk(local, p)
-        if halo:
+        rgb = darkroom.detail(rgb,p,radius)
+        if p['sharpen']:
             rgb = sharpen_float(rgb, p['sharpen'])
         rgb = rgb[start - low:end - low]
         rgb *= scale

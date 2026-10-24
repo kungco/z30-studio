@@ -28,6 +28,7 @@ import spatial
 import zipfile
 import diagnostics
 import drafts
+import darkroom
 from app_runtime import APP_VERSION, resource_root, data_root
 from imaging import raw_crop, raw_pixels, raster_linear, resize_linear, srgb_to_linear
 
@@ -54,7 +55,7 @@ STORES_LOCK = threading.RLock()
 STORES = {}
 DEFAULTS = dict(exposure=0, contrast=0, highlights=0, shadows=0,
                 temperature=0, tint=0, saturation=0, vibrance=0,
-                sharpen=0, rotation=0, crop='original', wb='camera') | spatial.DEFAULTS | {'lens_profile':'手动 / 未校准'}
+                sharpen=0, rotation=0, crop='original', wb='camera') | spatial.DEFAULTS | darkroom.DEFAULTS | {'lens_profile':'手动 / 未校准'}
 LIMITS = dict(exposure=(-4, 4), contrast=(-100, 100), highlights=(-100, 100),
               shadows=(-100, 100), temperature=(-100, 100), tint=(-100, 100),
               saturation=(-100, 100), vibrance=(-100, 100), sharpen=(0, 100)) | spatial.LIMITS
@@ -70,13 +71,22 @@ def settings(data):
     p['rotation'] = int(data.get('rotation', 0)) % 4
     p['crop'] = data.get('crop', 'original')
     p['wb'] = data.get('wb', 'camera')
-    if p['crop'] not in ('original', '3:2', '4:3', '1:1', '16:9'):
+    if p['crop'] not in ('original', 'free', '3:2', '4:3', '1:1', '16:9'):
         raise ValueError('无效裁剪比例')
     if p['wb'] not in ('camera', 'auto', 'daylight'):
         raise ValueError('无效白平衡')
     p['masks'] = spatial.masks(data.get('masks', []))
     p['lens_profile'] = str(data.get('lens_profile', '手动 / 未校准'))[:100]
+    p.update(darkroom.normalize(data))
     return p
+
+
+def source_wb(session,p):
+    return 'daylight' if session.get('raw') and p.get('wb_mode','legacy')!='legacy' else p['wb']
+
+
+def baseline_settings(p):
+    return DEFAULTS | {k:p[k] for k in ('rotation','crop','crop_rect','straighten') if k in p}
 
 
 def decode(session, wb, preview):
@@ -121,7 +131,8 @@ def decode(session, wb, preview):
 def geometry(arr, p):
     if p['rotation']:
         arr = np.rot90(arr, -p['rotation'])
-    if p['crop'] != 'original':
+    arr = darkroom.geometry(arr,p)
+    if p['crop'] not in ('original','free'):
         a, b = map(int, p['crop'].split(':'))
         ratio = a / b
         h, w = arr.shape[:2]
@@ -148,7 +159,7 @@ def image_bytes(im, fmt='JPEG', quality=93):
 def export_bytes(session, p, fmt='JPEG', quality=95):
     if fmt not in ('JPEG', 'PNG', 'TIFF16'):
         raise ValueError('不支持的导出格式')
-    arr = decode(session, p['wb'], False)
+    arr = decode(session, source_wb(session,p), False)
     if fmt == 'TIFF16':
         import tifffile
         pixels = render_array(geometry(spatial.prepare(arr, p), p), p, bits=16)
@@ -166,7 +177,7 @@ def export_snapshot(path, is_raw, params, fmt, quality, protect):
     try:
         if protect:
             base = p | {k: DEFAULTS[k] for k in codex_assist.RANGES}
-            p, metrics = quality_checks.guard(decode(session, p['wb'], True), base, p, develop)
+            p, metrics = quality_checks.guard(decode(session, source_wb(session,p), True), base, p, develop)
         return export_bytes(session, p, fmt, quality), p, metrics
     finally:
         if session.get('_cache_id'):
@@ -259,7 +270,7 @@ def preview_result(session, p, include_before=False):
     cached = CACHE.get(cache_key)
     if cached is not None:
         return dict(cached)
-    arr = decode(session, p['wb'], True)
+    arr = decode(session, source_wb(session,p), True)
     im = develop(arr, p)
     if not session.get('thumbnail'):
         thumb = im.copy(); thumb.thumbnail((240, 240)); session['thumbnail'] = data_url(thumb)
@@ -268,8 +279,8 @@ def preview_result(session, p, include_before=False):
     result = dict(image=data_url(im), histogram=hist, width=im.width, height=im.height, thumbnail=session['thumbnail'])
     result['quality'] = quality_checks.measure(im)
     if include_before:
-        base = DEFAULTS | {'rotation': p['rotation'], 'crop': p['crop']}
-        before_key = (token, 'baseline', p['rotation'], p['crop'])
+        base = baseline_settings(p)
+        before_key = (token, 'baseline', json.dumps({k:base[k] for k in ('rotation','crop','crop_rect','straighten')},sort_keys=True))
         before = CACHE.get(before_key)
         if before is None:
             before = result['image'] if p == base else data_url(develop(decode(session, 'camera', True), base))
@@ -284,7 +295,7 @@ def filter_advice(source_id, base, result):
         if source_id not in SESSIONS:
             raise ValueError('照片会话已关闭，无法检查辅助建议')
         session = SESSIONS[source_id]
-        linear = decode(session, base['wb'], True)
+        linear = decode(session, source_wb(session,base), True)
         checked, metrics = quality_checks.guard(linear, base, result['settings'], develop)
     return {**result, 'settings': checked, 'quality': metrics}
 
@@ -528,6 +539,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({'error': '建议任务不存在，请重新生成'}, 404)
         files = {'/': ('index.html', 'text/html; charset=utf-8'),
                  '/app.js': ('app.js', 'application/javascript; charset=utf-8'),
+                 '/darkroom-controls.js': ('darkroom-controls.js', 'application/javascript; charset=utf-8'),
                  '/draft-save.js': ('draft-save.js', 'application/javascript; charset=utf-8'),
                  '/model-settings.js': ('model-settings.js', 'application/javascript; charset=utf-8'),
                  '/batch-grade.js': ('batch-grade.js', 'application/javascript; charset=utf-8'),
@@ -722,6 +734,12 @@ class Handler(BaseHTTPRequestHandler):
                     release_photo(key)
                     return self.json({'ok': True})
                 p = settings(data.get('settings', {}))
+                if route == '/api/wb/sample':
+                    x,y=float(data.get('x',.5)),float(data.get('y',.5))
+                    if not math.isfinite(x) or not math.isfinite(y) or not 0<=x<=1 or not 0<=y<=1:
+                        raise ValueError('白平衡取样坐标无效')
+                    arr=geometry(spatial.prepare(decode(s,'daylight' if s['raw'] else 'camera',True),p),p)
+                    return self.json({'wb_gains':darkroom.sample_neutral(arr,x,y),'reference':'daylight' if s['raw'] else 'encoded image'})
                 if route == '/api/settings':
                     return self.json({'settings':p})
                 if route == '/api/inspect':
@@ -732,7 +750,7 @@ class Handler(BaseHTTPRequestHandler):
                     cache_key = (token, 'native-rgb8', json.dumps(p, sort_keys=True, allow_nan=False))
                     pixels = CACHE.get(cache_key)
                     if pixels is None:
-                        pixels = np.asarray(develop(decode(s, p['wb'], False), p))
+                        pixels = np.asarray(develop(decode(s, source_wb(s,p), False), p))
                         pixels.setflags(write=False); CACHE.put(cache_key, pixels)
                     full_h, full_w = pixels.shape[:2]
                     w = min(full_w, max(64, min(1024, int(data.get('width', 640)))))
@@ -757,9 +775,9 @@ class Handler(BaseHTTPRequestHandler):
                     goal = (codex_assist.AUTO_GOAL+' '+automation.goal(auto_options)) if automatic else data.get('goal', '')
                     if not isinstance(goal, str) or not goal.strip() or len(goal) > 1200:
                         raise ValueError('请输入 1 到 1200 字的调色目标')
-                    base = DEFAULTS | {'rotation': p['rotation'], 'crop': p['crop']}
+                    base = baseline_settings(p)
                     before = image_bytes(develop(decode(s, 'camera', True), base), quality=88)
-                    current = image_bytes(develop(decode(s, p['wb'], True), p), quality=88)
+                    current = image_bytes(develop(decode(s, source_wb(s,p), True), p), quality=88)
                     job = ADVISOR.submit(key, before, current, p, goal, s['raw'],
                                          mode='auto' if automatic else 'suggest', request_id=data.get('request_id'), auto_options=auto_options, backend=backend)
                     return self.json({'job': job,
