@@ -20,6 +20,7 @@ import quality as quality_checks
 from export_jobs import ExportQueue, FORMATS, write_zip
 import shutil
 import projects
+import automation
 import zipfile
 from imaging import raw_crop, raw_pixels, raster_linear, resize_linear, srgb_to_linear
 
@@ -416,6 +417,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({'error': '建议任务不存在，请重新生成'}, 404)
         files = {'/': ('index.html', 'text/html; charset=utf-8'),
                  '/app.js': ('app.js', 'application/javascript; charset=utf-8'),
+                 '/batch-grade.js': ('batch-grade.js', 'application/javascript; charset=utf-8'),
                  '/history.js': ('history.js', 'application/javascript; charset=utf-8'),
                  '/auto-grade.js': ('auto-grade.js', 'application/javascript; charset=utf-8'),
                  '/style.css': ('style.css', 'text/css; charset=utf-8'),
@@ -595,14 +597,15 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({'ok': True})
                 if route in ('/api/codex/suggest', '/api/codex/auto'):
                     automatic = route == '/api/codex/auto'
-                    goal = codex_assist.AUTO_GOAL if automatic else data.get('goal', '')
+                    auto_options = automation.options(data.get('auto_options')) if automatic else None
+                    goal = (codex_assist.AUTO_GOAL+' '+automation.goal(auto_options)) if automatic else data.get('goal', '')
                     if not isinstance(goal, str) or not goal.strip() or len(goal) > 1200:
                         raise ValueError('请输入 1 到 1200 字的调色目标')
                     base = DEFAULTS | {'rotation': p['rotation'], 'crop': p['crop']}
                     before = image_bytes(develop(decode(s, 'camera', True), base), quality=88)
                     current = image_bytes(develop(decode(s, p['wb'], True), p), quality=88)
                     job = ADVISOR.submit(key, before, current, p, goal, s['raw'],
-                                         mode='auto' if automatic else 'suggest', request_id=data.get('request_id'))
+                                         mode='auto' if automatic else 'suggest', request_id=data.get('request_id'), auto_options=auto_options)
                     return self.json({'job': job,
                                       'current_image': 'data:image/jpeg;base64,' + base64.b64encode(current).decode()}, 202)
                 if route == '/api/codex/preview':

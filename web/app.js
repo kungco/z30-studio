@@ -16,7 +16,7 @@ function persistWorkspace(){
 const defaults = {exposure:0,contrast:0,highlights:0,shadows:0,temperature:0,tint:0,saturation:0,vibrance:0,sharpen:0,rotation:0,crop:'original',wb:'camera'};
 const presets = {neutral:{},portrait:{exposure:.15,contrast:-12,highlights:-22,shadows:12,temperature:7,vibrance:10},travel:{contrast:12,highlights:-20,shadows:15,vibrance:25,sharpen:18},film:{contrast:-9,highlights:-25,shadows:18,temperature:20,tint:6,saturation:-12},mono:{contrast:22,highlights:-15,shadows:8,saturation:-100,sharpen:20}};
 const files = [];
-let autoGrader=null,autoContext=null;
+let autoGrader=null,autoContext=null,batchGrader=null;
 let current = null, importBusy = false, exportBusy = false, previewRunning = false, previewTimer, previewWanted = false, toastTimer, showingBefore = false, revision = 0;
 const assistant = {connection:null, checking:false, running:false, source:null, base:null, result:null, image:null, strength:100, trialRevision:0, trialRunning:false, trialWanted:false, trialTimer:null, previewSignature:null, currentImage:null};
 const sliderSpecs = [
@@ -77,10 +77,11 @@ $('quality').oninput=()=>$('qualityValue').textContent=$('quality').value;
 $('exportFormat').onchange=()=>$('qualityRow').hidden=$('exportFormat').value!=='JPEG';
 localFetch('/api/health').then(r=>{if(!r.ok)throw Error();return r.json();}).then(d=>{$('engine').textContent='LibRaw '+d.libraw+' · 就绪';}).catch(()=>{$('engine').textContent='解码服务连接失败';toast('请通过 start.bat 启动本地服务，再打开网页');});
 function syncAssistantControls(){
- const locked=importBusy||exportBusy||!!autoGrader?.busy;
+ const locked=importBusy||exportBusy||!!autoGrader?.busy||!!batchGrader?.busy;
  $('autoGrade').disabled=!current||locked||assistant.running;
  $('autoGrade').textContent=autoGrader?.busy?'正在自动调色…':current?.autoPending?'重新连接分析任务':'一键 GPT 调色';
- $('autoCancel').hidden=!autoGrader?.busy;
+ $('autoCancel').hidden=!autoGrader?.busy&&!batchGrader?.busy;
+ $('batchOpen').disabled=!files.length||locked||assistant.running;
  $('autoUndo').disabled=!current?.aiUndo||locked||assistant.running;
  $('autoDetails').disabled=!current?.autoResult||locked||assistant.running;
  if(current&&!assistant.running&&!assistant.result&&$('aiProgress').textContent.startsWith('请先导入'))$('aiProgress').textContent='描述目标后，发送预览生成建议。';
@@ -153,7 +154,7 @@ async function runAssistantTrial(){
  finally{assistant.trialRunning=false;syncAssistantControls();if(assistant.trialWanted)runAssistantTrial();}
 }
 async function generateAdvice(){
- if(!current||assistant.running||autoGrader?.busy||!assistant.connection?.ready)return;
+ if(!current||assistant.running||(autoGrader?.busy||batchGrader?.busy)||!assistant.connection?.ready)return;
  const source=current,base={...current.settings},goal=$('aiGoal').value.trim();
  if(!goal){toast('请先输入调色目标');return;}
  assistant.running=true;assistant.source=source;assistant.base=base;assistant.result=null;assistant.strength=100;assistant.previewSignature=null;
@@ -266,10 +267,10 @@ $('exportConfirm').onclick=async()=>{
 refreshExportJobs();
 
 const autoPost=(path,data)=>api(path,data,false,{}, {signal:AbortSignal.timeout(25000)});
-autoGrader=new AutoGrader({
+const gradeIO={
  submit:async context=>{
   assistant.trialRevision++;assistant.trialWanted=false;clearTimeout(assistant.trialTimer);
-  const data=await(await autoPost('/api/codex/auto',{id:context.source.id,settings:context.base,request_id:context.requestId})).json();
+  const data=await(await autoPost('/api/codex/auto',{id:context.source.id,settings:context.base,request_id:context.requestId,auto_options:context.autoOptions||autoOptions()})).json();
   context.currentImage=data.current_image;return data;
  },
  recover:async context=>{
@@ -290,6 +291,8 @@ autoGrader=new AutoGrader({
   const f=context.source;
   f.aiUndo={settings:{...f.settings},preset:f.preset};
   f.settings=cloneEdit(result.settings);f.preset='custom';recordEdit(f,'GPT 自动调色');
+  Object.assign(f,{image:preview.image,before:preview.before,histogram:preview.histogram,quality:preview.quality,thumb:preview.image});
+  if(current!==f){drawLibrary();persistWorkspace();return;}
   // Invalidate a pending old preview before publishing the verified new image.
   revision++;clearTimeout(previewTimer);previewWanted=false;showingBefore=false;
   Object.assign(f,{image:preview.image,before:preview.before,histogram:preview.histogram,quality:preview.quality});
@@ -313,14 +316,15 @@ autoGrader=new AutoGrader({
   persistWorkspace();syncAssistantControls();
   if(['done','stale','error','cancelled'].includes(state.state))toast(message);
  }
-});
+};
+autoGrader=new AutoGrader(gradeIO);
 $('autoGrade').onclick=()=>{
- if(!current||autoGrader.busy||assistant.running||importBusy||exportBusy)return;
- autoContext=current.autoPending?{...current.autoPending,recoverOnly:true}:{source:current,base:{...current.settings},revision,requestId:crypto.randomUUID().replaceAll('-','')};
+ if(!current||autoGrader.busy||batchGrader?.busy||assistant.running||importBusy||exportBusy)return;
+ autoContext=current.autoPending?{...current.autoPending,recoverOnly:true}:{source:current,base:{...current.settings},revision,autoOptions:autoOptions(),requestId:crypto.randomUUID().replaceAll('-','')};
  current.autoPending=autoContext;persistWorkspace();
  autoGrader.start(autoContext).catch(e=>toast(e.message));
 };
-$('autoCancel').onclick=()=>autoGrader.cancel();
+$('autoCancel').onclick=()=>batchGrader?.busy?batchGrader.cancel():autoGrader.cancel();
 $('autoDetails').onclick=()=>{
  if(!current?.autoResult||autoGrader.busy||assistant.running)return;
  const saved=current.autoResult;
@@ -418,3 +422,31 @@ document.querySelectorAll('[data-pan]').forEach(button=>button.onclick=()=>{
  inspector.cx=Math.max(0,Math.min(1,inspector.cx+dx*inspector.width/inspector.full_width*.7));
  inspector.cy=Math.max(0,Math.min(1,inspector.cy+dy*inspector.height/inspector.full_height*.7));loadInspection();
 });
+
+function autoOptions(){return {style:$('autoStyle').value,strength:Number($('autoMaxStrength').value),exposure_limit:Number($('autoExposureLimit').value),color_limit:Number($('autoColorLimit').value),goal:$('autoGoalExtra').value,reference:''};}
+try{const saved=JSON.parse(localStorage.getItem('z30-auto-preferences')||'null');if(saved){$('autoStyle').value=saved.style;$('autoMaxStrength').value=saved.strength;$('autoExposureLimit').value=saved.exposure_limit;$('autoColorLimit').value=saved.color_limit;$('autoGoalExtra').value=saved.goal||'';}}catch{}
+['autoStyle','autoMaxStrength','autoExposureLimit','autoColorLimit','autoGoalExtra'].forEach(id=>$(id).addEventListener('change',()=>{try{localStorage.setItem('z30-auto-preferences',JSON.stringify(autoOptions()));}catch{}}));
+function batchStillCurrent(context){return files.includes(context.source)&&(!context.source.autoPending||context.source.autoPending.requestId===context.requestId)&&(context.source.editVersion||0)===context.fileRevision&&JSON.stringify(context.source.settings)===JSON.stringify(context.base);}
+let batchItems=[];
+function drawBatch(){
+ $('batchItems').replaceChildren(...batchItems.map(item=>{const li=document.createElement('li');li.textContent=item.name+' · '+item.state;return li;}));
+ $('batchStart').disabled=!!batchGrader?.busy||!!autoGrader?.busy||assistant.running||!files.length;
+ $('batchStop').disabled=!batchGrader?.busy;
+}
+batchGrader=new BatchGrader({
+ isCurrent:batchStillCurrent,
+ make:(context,index)=>{context.source.autoPending=context;persistWorkspace();return new AutoGrader({...gradeIO,isCurrent:batchStillCurrent,onState:state=>{
+  gradeIO.onState({...state,context});batchItems[index].state=state.state==='done'?'已应用':state.state==='stale'?'编辑已改变，跳过':state.message||state.state;drawBatch();
+ }});},
+ onItem:(index,outcome)=>{batchItems[index].state=({done:'已应用',stale:'编辑已改变，跳过',error:'失败：'+outcome.message,cancelled:'已取消'})[outcome.state]||outcome.state;drawBatch();},
+ onFinish:(outcomes,spent)=>{outcomes.forEach((o,i)=>{if(o.state==='not-started')batchItems[i].state='未开始（上限或已停止）';});$('batchStatus').textContent=`本次已启动 ${spent} 次分析，成功应用 ${outcomes.filter(x=>x.state==='done').length} 张。`;drawBatch();syncAssistantControls();}
+});
+$('batchOpen').onclick=()=>{$('batchBudget').value=Math.max(1,files.length);$('batchDialog').showModal();drawBatch();};
+$('batchClose').onclick=()=>$('batchDialog').close();
+$('batchStop').onclick=()=>batchGrader.cancel();
+$('batchStart').onclick=async()=>{
+ if(batchGrader.busy||autoGrader.busy||assistant.running)return;
+ const options=autoOptions();const contexts=files.map(f=>({source:f,base:cloneEdit(f.settings),fileRevision:f.editVersion||0,autoOptions:options,requestId:crypto.randomUUID().replaceAll('-','')}));
+ batchItems=contexts.map(c=>({name:c.source.name,state:'等待'}));$('batchStatus').textContent='顺序逐张分析，可停止；编辑中的照片若有变化会跳过。';drawBatch();
+ try{await batchGrader.run(contexts,Number($('batchBudget').value));}catch(e){toast(e.message);}
+};
