@@ -14,6 +14,10 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import codex_assist
 from processing import render_array
+from cache import ByteLRU
+import quality as quality_checks
+from export_jobs import ExportQueue, FORMATS
+import shutil
 from imaging import raw_crop, raw_pixels, raster_linear, resize_linear, srgb_to_linear
 
 os.environ.setdefault('OMP_NUM_THREADS', '4')
@@ -24,10 +28,13 @@ from PIL import Image, ImageCms, ImageFilter, ImageOps
 ROOT = Path(__file__).resolve().parent
 TEMP = tempfile.TemporaryDirectory(prefix='z30-studio-')
 SESSIONS = {}
-LOCK = threading.RLock()  # Serialize LibRaw work and cap peak export memory.
+LOCK = threading.RLock()  # Serialize interactive work; background exports have one worker.
 MAX_UPLOAD = 150 * 1024 * 1024
 ICC = ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes()
 ADVISOR = codex_assist.Advisor()
+CACHE = ByteLRU(128 * 1024 * 1024)
+EXPORTS = None
+EXPORTS_LOCK = threading.RLock()
 DEFAULTS = dict(exposure=0, contrast=0, highlights=0, shadows=0,
                 temperature=0, tint=0, saturation=0, vibrance=0,
                 sharpen=0, rotation=0, crop='original', wb='camera')
@@ -54,8 +61,12 @@ def settings(data):
 
 
 def decode(session, wb, preview):
-    if preview and wb in session['cache']:
-        return session['cache'][wb]
+    token = session.setdefault('_cache_id', session.get('meta', {}).get('id') or secrets.token_hex(16))
+    cache_key = (token, 'linear', wb)
+    if preview:
+        cached = CACHE.get(cache_key)
+        if cached is not None:
+            return cached
     if session['raw']:
         with rawpy.imread(str(session['path'])) as raw:
             # postprocess mutates LibRaw sizes/flip, especially in half-size mode.
@@ -78,7 +89,8 @@ def decode(session, wb, preview):
         if scale < 1:
             size = (max(1, round(w * scale)), max(1, round(h * scale)))
             arr = resize_linear(arr, size)
-        session['cache'][wb] = arr
+        arr.setflags(write=False)
+        CACHE.put(cache_key, arr)
     return arr
 
 
@@ -123,20 +135,67 @@ def export_bytes(session, p, fmt='JPEG', quality=95):
     return image_bytes(develop(arr, p), fmt, quality)
 
 
+def export_snapshot(path, is_raw, params, fmt, quality, protect):
+    session = dict(path=path, raw=is_raw, cache={})
+    p = settings(params)
+    metrics = None
+    try:
+        if protect:
+            base = DEFAULTS | {k: p[k] for k in ('wb', 'rotation', 'crop')}
+            p, metrics = quality_checks.guard(decode(session, p['wb'], True), base, p, develop)
+        return export_bytes(session, p, fmt, quality), p, metrics
+    finally:
+        if session.get('_cache_id'):
+            CACHE.remove_source(session['_cache_id'])
+
+
+def get_exports():
+    global EXPORTS
+    with EXPORTS_LOCK:
+        if EXPORTS is None:
+            EXPORTS = ExportQueue(ROOT / '.data' / 'exports', export_snapshot)
+        return EXPORTS
+
+
 def data_url(im):
     return 'data:image/jpeg;base64,' + base64.b64encode(image_bytes(im, quality=90)).decode()
 
 
 def preview_result(session, p, include_before=False):
+    token = session.setdefault('_cache_id', session.get('meta', {}).get('id') or secrets.token_hex(16))
+    cache_key = (token, 'render', tuple(sorted(p.items())), bool(include_before))
+    cached = CACHE.get(cache_key)
+    if cached is not None:
+        return dict(cached)
     arr = decode(session, p['wb'], True)
     im = develop(arr, p)
     a = np.asarray(im)
     hist = [np.histogram(a[:, :, c], bins=128, range=(0, 256))[0].tolist() for c in range(3)]
     result = dict(image=data_url(im), histogram=hist, width=im.width, height=im.height)
+    result['quality'] = quality_checks.measure(im)
     if include_before:
         base = DEFAULTS | {'rotation': p['rotation'], 'crop': p['crop']}
-        result['before'] = data_url(develop(decode(session, 'camera', True), base))
+        before_key = (token, 'baseline', p['rotation'], p['crop'])
+        before = CACHE.get(before_key)
+        if before is None:
+            before = result['image'] if p == base else data_url(develop(decode(session, 'camera', True), base))
+            CACHE.put(before_key, before)
+        result['before'] = before
+    CACHE.put(cache_key, result)
     return result
+
+
+def filter_advice(source_id, base, result):
+    with LOCK:
+        if source_id not in SESSIONS:
+            raise ValueError('照片会话已关闭，无法检查辅助建议')
+        session = SESSIONS[source_id]
+        linear = decode(session, base['wb'], True)
+        checked, metrics = quality_checks.guard(linear, base, result['settings'], develop)
+    return {**result, 'settings': checked, 'quality': metrics}
+
+
+ADVISOR.result_filter = filter_advice
 
 
 def import_image(body, name):
@@ -199,6 +258,18 @@ class Handler(BaseHTTPRequestHandler):
     def json(self, obj, status=200):
         self.send(json.dumps(obj, ensure_ascii=False).encode('utf8'), status=status)
 
+    def stream(self, path, filename, mime):
+        # Open before sending headers; deletion after open cannot serve a wrong path.
+        with path.open('rb') as source:
+            self.send_response(200)
+            self.send_header('Content-Type', mime)
+            self.send_header('Content-Length', str(path.stat().st_size))
+            self.send_header('Content-Disposition', "attachment; filename*=UTF-8''" + urllib.parse.quote(filename))
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.end_headers()
+            shutil.copyfileobj(source, self.wfile, length=1024 * 1024)
+
     def local_request(self):
         allowed = {f'127.0.0.1:{self.server.server_port}', f'localhost:{self.server.server_port}'}
         if self.headers.get('Host') not in allowed:
@@ -215,10 +286,38 @@ class Handler(BaseHTTPRequestHandler):
             return
         route = urllib.parse.urlsplit(self.path).path
         if route == '/api/health':
-            return self.json(dict(app='Z30 Studio', version='1.1', rawpy=rawpy.__version__,
-                                  libraw='.'.join(map(str, rawpy.libraw_version))))
+            return self.json(dict(app='Z30 Studio', version='1.2', rawpy=rawpy.__version__,
+                                  libraw='.'.join(map(str, rawpy.libraw_version)), cache=CACHE.stats()))
         if route == '/api/codex/status':
             return self.json(codex_assist.status())
+        if route == '/api/exports' or route.startswith('/api/exports/'):
+            try:
+                queue = get_exports()
+                if route == '/api/exports':
+                    return self.json({'jobs': queue.list(), 'storage_bytes': queue.disk_bytes(), 'limit_bytes': queue.max_bytes})
+                parts = route.split('/')
+                key = parts[3]
+                job = queue.get(key)
+                if len(parts) == 5 and parts[4] == 'download':
+                    with queue.lock:
+                        return self.stream(queue.download(key), 'Z30-export-' + key[:8] + '.zip', 'application/zip')
+                if len(parts) == 5 and parts[4] == 'file':
+                    if job['state'] != 'done' or len(job['items']) != 1:
+                        raise ValueError('单张导出尚未完成')
+                    item = job['items'][0]
+                    path = queue._folder(key) / item['output']
+                    name = Path(item['name']).stem + '-Z30.' + FORMATS[job['format']]
+                    with queue.lock:
+                        return self.stream(path, name, {'JPEG': 'image/jpeg', 'PNG': 'image/png', 'TIFF16': 'image/tiff'}[job['format']])
+                if len(parts) != 4:
+                    raise ValueError('导出接口不存在')
+                return self.json(job)
+            except KeyError:
+                return self.json({'error': '导出任务不存在'}, 404)
+            except ValueError as exc:
+                return self.json({'error': str(exc)}, 409)
+            except OSError:
+                return self.json({'error': '导出快照或结果无法访问，请检查本机存储'}, 500)
         if route.startswith('/api/codex/jobs/'):
             try:
                 with LOCK:
@@ -252,6 +351,33 @@ class Handler(BaseHTTPRequestHandler):
             if len(body) != size:
                 raise ValueError('文件传输不完整')
             route = urllib.parse.urlsplit(self.path).path
+            if route.startswith('/api/exports/'):
+                data = json.loads(body)
+                queue = get_exports()
+                if route == '/api/exports/create':
+                    ids = data.get('ids')
+                    if (not isinstance(ids, list) or not 1 <= len(ids) <= 8 or
+                            any(not isinstance(x, str) for x in ids) or len(set(ids)) != len(ids)):
+                        raise ValueError('请选择 1 到 8 张不同照片')
+                    p = settings(data.get('settings', {}))
+                    fmt = data.get('format', 'JPEG')
+                    if fmt not in FORMATS:
+                        raise ValueError('不支持的导出格式')
+                    protect = data.get('protect', False)
+                    if not isinstance(protect, bool):
+                        raise ValueError('画质保护选项无效')
+                    with LOCK:
+                        if any(key not in SESSIONS for key in ids):
+                            return self.json({'error': '部分照片会话已关闭，请重新选择'}, 410)
+                        sources = [SESSIONS[key] for key in ids]
+                        key = queue.submit(sources, p, fmt, max(60, min(100, int(data.get('quality', 95)))), protect)
+                    return self.json({'job': key}, 202)
+                action = {'/api/exports/retry': queue.retry, '/api/exports/cancel': queue.cancel,
+                          '/api/exports/delete': queue.delete}.get(route)
+                if not action:
+                    raise ValueError('导出接口不存在')
+                action(data.get('job'))
+                return self.json({'ok': True})
             with LOCK:
                 if route == '/api/open':
                     name = urllib.parse.unquote(self.headers.get('X-Filename', 'image.nef'))
@@ -264,6 +390,8 @@ class Handler(BaseHTTPRequestHandler):
                 s = SESSIONS[key]
                 if route == '/api/close':
                     ADVISOR.cancel_source(key)
+                    CACHE.remove_source(key)
+                    s['cache'].clear()
                     s['path'].unlink(missing_ok=True)
                     del SESSIONS[key]
                     return self.json({'ok': True})
@@ -325,6 +453,8 @@ def main():
     finally:
         server.server_close()
         ADVISOR.shutdown()
+        if EXPORTS is not None:
+            EXPORTS.shutdown()
         TEMP.cleanup()
 
 

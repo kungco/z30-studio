@@ -14,6 +14,22 @@ def advice():
 
 
 class AdvisorLifecycleTests(unittest.TestCase):
+    def test_quality_filter_runs_before_publishing_the_advice(self):
+        result_filter = Mock(side_effect=lambda source, base, result: {
+            **result, 'settings': {**result['settings'], 'exposure': .4}, 'quality': {'strength': .5}})
+        advisor = ai.Advisor(result_filter)
+        advisor.jobs['job'] = dict(state='running', source_id='photo')
+        def start(cmd, **kwargs):
+            Path(cmd[cmd.index('--output-last-message') + 1]).write_text(json.dumps(advice()), encoding='utf8')
+            return Mock(returncode=0)
+        with patch.object(ai.subprocess, 'Popen', side_effect=start):
+            advisor._run('job', ['codex'], b'a', b'b', {'wb': 'camera'}, 'goal', True)
+        result_filter.assert_called_once()
+        self.assertEqual(result_filter.call_args.args[0], 'photo')
+        self.assertEqual(advisor.get('job')['state'], 'done')
+        self.assertEqual(advisor.get('job')['result']['settings']['exposure'], .4)
+        self.assertEqual(advisor.get('job')['result']['quality']['strength'], .5)
+
     def test_closed_photo_kills_running_process_and_never_publishes_late_result(self):
         advisor = ai.Advisor(); advisor.jobs['job'] = dict(state='running', source_id='photo')
         started, finish = threading.Event(), threading.Event()

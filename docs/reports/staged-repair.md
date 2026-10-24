@@ -21,9 +21,9 @@ P0 residual risks / unverified cases:
 - Full-resolution and half-size demosaicing may differ in fine detail. The real-RAW check uses an explicit linear-light mean absolute error threshold, not a claim of bit-identical demosaicing.
 - Untagged RGB is necessarily ambiguous: the app warns and assumes sRGB. Valid PNG gAMA/cHRM or explicit EXIF Adobe RGB is honored. ICC profiles take priority over those hints.
 
-All source images remain read-only inputs. Local temporary copies and generated comparison images are kept outside the Git repository.
+All source images remain read-only inputs. Source NEFs and local snapshots are excluded from Git. Only small derived CC0 comparison thumbnails and an interface screenshot are included for review.
 
-## P1 — tone, high-depth export, task lifecycle and performance
+## P1 — tone, high-depth export, task lifecycle and performance (`8ac2b4d`)
 
 | Requirement | Changed files | Verification |
 | --- | --- | --- |
@@ -82,3 +82,55 @@ Under the same stress settings, 14-bit sample red-channel export-maximum inciden
 RGB output means changed from [80.51275424299568, 58.87389730301538, 53.30851386966471] to [73.17891821027794, 52.561851087185396, 47.875210853120045]; the shoulder/WB/colour changes intentionally alter appearance and are not a claim of measured camera colour accuracy.
 
 Two repeats per stage. Performance is host-specific. Both RAW file hashes are recorded in the JSON reports.
+
+
+### P0 follow-up — mirrored import metadata (`b653ee0`)
+
+Final integration review caught a remaining metadata branch that swapped width and height only for flips 5/6, despite the pixel transform supporting all eight directions. `server.py` now also reports swapped dimensions for mirrored transpose flips 4/7. `tests/test_imaging.py` imports all eight synthetic RAW metadata fixtures and independently checks the reported dimensions. The committed follow-up snapshot passed 45 tests, with both real NEFs supplied. Actual camera samples still cover only flip=5.
+
+## P2 — quality checks, cache and durable batch exports
+
+| Requirement | Changed files | Verification |
+| --- | --- | --- |
+| Automatic quality checks and fallback | `quality.py`, `server.py`, `codex_assist.py`, `web/app.js`, `tests/test_quality_cache.py`, `tests/test_lifecycle.py` | Output clipping/white area, tone span, chroma and warm-hue drift compared with the prior preview; try 100/75/50/25/0% strength; preserve composition and categorical WB; filter runs before publishing advice |
+| Bounded preview caching | `cache.py`, `server.py`, `tests/test_quality_cache.py` | Byte-accounted LRU (128 MiB), read-only decoded arrays, rendered results and baseline reuse; distinct parameters miss; closing a source purges it |
+| Batch/background/recovery | `export_jobs.py`, `server.py`, `web/index.html`, `web/app.js`, `web/assistant.css`, `.gitignore`, `tests/test_export_jobs.py`, `tests/test_http.py` | One worker; immutable local input snapshots and SHA256 checks; atomic manifests/output publication; failed-item-only retry after restart; cancellation prevents late output; ZIP downloads, root ownership/path/storage limits |
+| CI execution | `.github/workflows/tests.yml` | Fixed a real YAML parse failure in the initial P1 workflow by using a block scalar for the pip command. CI results must be read from actual checks, not inferred from adding the workflow |
+
+Final local verification: **63 tests passed**, including all 11 original tests and the two real-RAW integration methods. `node --check web/app.js`, Python compilation and `git diff --check` also pass. No original CLI tests were removed or weakened; this repair did not invoke a model, change CLI login or introduce paid API dependencies.
+
+Browser verification imported both public Z30 NEFs, queued a protected JPEG batch, removed the 12-bit photo while the queue worked, and downloaded two valid 3712×5568 JPEGs with ICC profiles. Queue test snapshots were deleted afterward through the local API. Automated HTTP tests also close both source sessions before downloading two valid PNGs. The real 14-bit TIFF test checks uint16 RGB, 16 bits/sample and levels inconsistent with an 8-bit-to-16-bit expansion.
+
+![Completed real-RAW batch](../images/export-queue.png)
+
+P2 residual risks / unverified cases:
+
+- Detection is a heuristic over a reduced preview (guard up to 512 px, metrics up to 384 px), not an aesthetic score or a guarantee about every full-resolution pixel. Detail/noise values are texture proxies and cannot separate real detail from noise. Warm-hue checks do not identify faces.
+- No real skin target, calibrated display/printer comparison, or wider set of camera orientations was supplied. Those limits remain explicitly unverified. No new live Codex call was made; its result filtering/cancellation is verified with deterministic processes and local images.
+- Durable jobs retain originals' local copies and exports until deleted. They are excluded from Git/source archives, limited to 20 jobs and about 1 GiB in total, with a 512 MiB input limit per batch. Missing or corrupted input snapshots require a new import, not a promise of recovery from lost data.
+- Recovery requires clicking retry. Completed items are retained; batch processing applies one chosen parameter set to all selected photos, with per-photo fallback only if requested. It is not independent AI analysis for every photo.
+- Native decode/encode cannot be interrupted at arbitrary instructions; cancellation stops publication at safe points. Active cancellation must finish before retry/delete. A single background worker limits export concurrency; simultaneous editor work can raise process RSS above the isolated benchmark figures.
+- Cache-hit numbers measure the server function only, excluding HTTP JSON transfer, base64 decoding, browser layout and painting. New settings still incur a render. TIFF compression remains the largest measured export memory peak.
+
+### P2 paired isolated benchmark (actual 14-bit sample)
+
+| Stage | Baseline seconds / peak MiB | P2 seconds / peak MiB |
+| --- | --- | --- |
+| decode_full | 1.165799 / 632.5 | 1.088228 / 401.2 |
+| decode_preview | 0.520098 / 187.9 | 0.460712 / 155.1 |
+| decode_preview_cached | 0.000006 / 187.9 | 0.000032 / 155.6 |
+| develop_full | 4.720089 / 632.6 | 4.438923 / 431.3 |
+| encode_jpeg | 0.122497 / 632.5 | 0.106403 / 431.7 |
+| preview_pipeline_cached | 0.694901 / 187.9 | 0.552783 / 155.3 |
+| preview_pipeline_repeat | 0.671283 / 187.8 | 0.000024 / 155.6 |
+| export_tiff16 | not implemented | 8.433948 / 632.8 |
+
+Two fresh-process repeats per stage, median wall time and maximum OS peak RSS including prerequisite decode/render. Both sample hashes and all measurements are recorded in `p2-isolated.json`. This is a same-host comparison, not a universal speed claim. The preview cache hit is about 0.024 ms for the 14-bit sample, excluding transport and browser work.
+
+The P2 full-development thumbnail is pixel-identical to P1 for both supplied NEFs. Under the same stress settings (exposure +0.75, highlights -35, shadows +20, temperature +14, tint -3, saturation +10, contrast +7, sharpening +15), the actual 14-bit sample's red output-maximum incidence changes from 1.7394% at baseline to 0.3595%. This is an 8-bit output metric, not sensor highlight recovery or camera colour calibration.
+
+| Baseline (`4a5c38e`) | Repaired renderer (P1/P2) |
+| --- | --- |
+| ![Baseline real NEF development](../images/raw14-before.png) | ![Repaired real NEF development](../images/raw14-after.png) |
+
+Source: public [raw.pixls.us](https://raw.pixls.us/) CC0 Nikon Z30 12/14-bit files (IDs 5812/5813); these small 14-bit output thumbnails are for visual review, not a calibrated colour reference. The source NEFs are not included.

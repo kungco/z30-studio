@@ -127,12 +127,13 @@ def make_command(cmd, folder, image_paths):
 
 
 class Advisor:
-    def __init__(self):
+    def __init__(self, result_filter=None):
         self.jobs = {}
         self.lock = threading.RLock()
         self.processes = {}
         self.workers = {}
         self.stopped = False
+        self.result_filter = result_filter
 
     def submit(self, source_id, before, current_image, current_settings, goal, is_raw):
         if not isinstance(goal, str) or not goal.strip() or len(goal) > 1200:
@@ -231,6 +232,8 @@ class Advisor:
                     raise ValueError('Codex 返回的 JSON 无法读取，请重试')
                 result['adjustments']['wb'] = p['wb'] if is_raw else 'camera'
                 result['settings'] = {**p, **result.pop('adjustments')}
+                if self.result_filter:
+                    result = self.result_filter(self.jobs[key]['source_id'], p, result)
                 with self.lock:
                     if self.jobs[key]['state'] == 'running' and not self.stopped:
                         self.jobs[key].update(state='done', result=result)
