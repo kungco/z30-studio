@@ -39,6 +39,9 @@ def worker(args):
     p = m.DEFAULTS.copy()
     p.update(exposure=.75, highlights=-35, shadows=20, temperature=14, tint=-3,
              saturation=10, contrast=7, sharpen=15)
+    if args.workbench:
+        p = m.settings(p | dict(denoise_luma=35, denoise_chroma=40, lens_k1=.015,
+             lens_red=1, lens_blue=-1, vignette=20, masks=[dict(type='radial', exposure=.3)]))
     if args.single_stage:
         return isolated_stage(args, m, session, p)
     stages = {}
@@ -122,6 +125,7 @@ def main():
     p.add_argument('--worker', action='store_true')
     p.add_argument('--single-stage')
     p.add_argument('--isolated', action='store_true')
+    p.add_argument('--workbench', action='store_true', help='Enable a radial mask, denoise and manual optics')
     args = p.parse_args()
     if args.worker:
         return worker(args)
@@ -131,6 +135,8 @@ def main():
         for _ in range(args.repeat):
             cmd = [sys.executable, str(Path(__file__).resolve()), '--worker', '--source', str(args.source.resolve()),
                    '--sample', str(sample.resolve())]
+            if args.workbench:
+                cmd += ['--workbench']
             if args.artifacts:
                 cmd += ['--artifacts', str(args.artifacts.resolve())]
             if args.isolated:
@@ -153,6 +159,7 @@ def main():
         results.append(item)
         print(sample.name, json.dumps(item['stages']), flush=True)
     report = dict(platform=platform.platform(), python=platform.python_version(),
+                  variant='radial mask + denoise + manual optics' if args.workbench else 'global controls only',
                   repeats=args.repeat, memory=('Fresh process per stage including prerequisite decode/render' if args.isolated else
                                                'OS process high-water RSS; stages cumulative within each isolated process'),
                   samples=results)

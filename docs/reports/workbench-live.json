@@ -1,0 +1,87 @@
+{
+  "date": "2026-10-24",
+  "live_model_calls": 2,
+  "request_budget": 2,
+  "policy": {
+    "style": "product",
+    "strength": 50,
+    "exposure_limit": 0.5,
+    "color_limit": 10
+  },
+  "photos": [
+    {
+      "name": "Z30-12bit.NEF",
+      "source_sha256": "75249c11a3a845367c7a322a1c4e7076f33c785ec2518fc6594c34c185b41161",
+      "settings": {
+        "exposure": 0.175,
+        "contrast": 2.5,
+        "highlights": -4.0,
+        "shadows": 2.5,
+        "temperature": -1.5,
+        "tint": 0.0,
+        "saturation": 0.0,
+        "vibrance": 0.0,
+        "sharpen": 6.0
+      },
+      "native_preview_checked": true
+    },
+    {
+      "name": "Z30-14bit.NEF",
+      "source_sha256": "03d94c1f184c4236ea8f890ab0fe30e91b65965e8b09cebecc397fba081a607f",
+      "settings": {
+        "exposure": 0.225,
+        "contrast": 2.5,
+        "highlights": -5.0,
+        "shadows": 4.0,
+        "temperature": -2.0,
+        "tint": 0.0,
+        "saturation": 0.0,
+        "vibrance": 0.0,
+        "sharpen": 6.0
+      },
+      "native_preview_checked": true
+    }
+  ],
+  "portable_project": {
+    "bytes": 44446872,
+    "photos": 3,
+    "source_hashes_verified": true,
+    "reopened_after_actual_server_restart": true,
+    "history_cursor_restored": 7,
+    "undo_redo_verified": true
+  },
+  "manual_fixture": {
+    "mask_types": [
+      "radial",
+      "brush"
+    ],
+    "brush_points": 19,
+    "brush_breaks": [
+      9,
+      14
+    ],
+    "denoise_chroma": 100,
+    "lens_k1": 0.005,
+    "profile_roundtrip_verified": true,
+    "restored_masks_editable": true
+  },
+  "native_inspector": {
+    "full_dimensions": [
+      3712,
+      5568
+    ],
+    "crop_dimensions": [
+      640,
+      480
+    ],
+    "client_css_dimensions": [
+      640,
+      480
+    ]
+  },
+  "unverified": [
+    "Real portrait/colour-chart quality",
+    "Real lens/grid calibration",
+    "Other cameras and RAW orientations beyond the two flip=5 samples"
+  ]
+}
