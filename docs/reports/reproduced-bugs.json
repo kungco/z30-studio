@@ -1,0 +1,32 @@
+{
+  "black_margin_inset": {
+    "before": [
+      4,
+      4,
+      8,
+      6
+    ],
+    "expected": [
+      2,
+      2,
+      8,
+      6
+    ]
+  },
+  "alpha_over_white_linear": {
+    "before": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "expected": [
+      0.4980392156862745,
+      0.4980392156862745,
+      0.4980392156862745
+    ]
+  },
+  "untagged_cmyk": {
+    "before": "silently accepted without ICC",
+    "expected": "reject ambiguous CMYK"
+  }
+}

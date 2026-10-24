@@ -13,6 +13,7 @@ import urllib.parse
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import codex_assist
+from imaging import raw_crop, raw_pixels, raster_linear, resize_linear, srgb_to_linear
 
 os.environ.setdefault('OMP_NUM_THREADS', '4')
 import numpy as np
@@ -51,54 +52,31 @@ def settings(data):
     return p
 
 
-def srgb_to_linear(x):
-    return np.where(x <= .04045, x / 12.92, ((x + .055) / 1.055) ** 2.4)
-
-
-def raw_crop(sizes):
-    x, y, w, h = (sizes.crop_left_margin, sizes.crop_top_margin,
-                   sizes.crop_width, sizes.crop_height)
-    if w > 0 and h > 0 and x >= 0 and y >= 0 and x + w <= sizes.width and y + h <= sizes.height:
-        return x, y, w, h
-    return 0, 0, sizes.width, sizes.height
-
-
 def decode(session, wb, preview):
     if preview and wb in session['cache']:
         return session['cache'][wb]
     if session['raw']:
         with rawpy.imread(str(session['path'])) as raw:
             # postprocess mutates LibRaw sizes/flip, especially in half-size mode.
-            x, y, w, h = raw_crop(raw.sizes)
-            turns = {3: 2, 5: 1, 6: -1}.get(raw.sizes.flip, 0)
+            sizes = raw.sizes
+            if sizes.pixel_aspect != 1:
+                raise ValueError('非方形像素 RAW 尚未验证，暂不支持')
             rgb = raw.postprocess(output_bps=16, gamma=(1, 1),
                                   no_auto_bright=True, use_camera_wb=wb == 'camera',
                                   use_auto_wb=wb == 'auto', half_size=preview,
                                   output_color=rawpy.ColorSpace.sRGB, user_flip=0)
-            factor = 2 if preview else 1
-            rgb = rgb[y // factor:(y + h) // factor, x // factor:(x + w) // factor]
-            if turns:
-                rgb = np.rot90(rgb, turns)
-        arr = rgb.astype(np.float32) / 65535
+        arr = raw_pixels(rgb, sizes, preview)
         del rgb
     else:
         with Image.open(session['path']) as source:
-            im = ImageOps.exif_transpose(source)
-            profile = im.info.get('icc_profile')
-            if profile:
-                im = ImageCms.profileToProfile(im, ImageCms.ImageCmsProfile(io.BytesIO(profile)),
-                                               ImageCms.createProfile('sRGB'), outputMode='RGB')
-            im = im.convert('RGB')
-            if preview:
-                im.thumbnail((1600, 1600), Image.Resampling.LANCZOS)
-            arr = srgb_to_linear(np.asarray(im, dtype=np.float32) / 255)
+            arr, policy, warnings = raster_linear(source)
+            session['color_policy'], session['color_warnings'] = policy, warnings
     if preview:
         h, w = arr.shape[:2]
         scale = min(1, 1600 / max(w, h))
         if scale < 1:
             size = (max(1, round(w * scale)), max(1, round(h * scale)))
-            arr = np.stack([np.asarray(Image.fromarray(arr[:, :, c]).resize(size, Image.Resampling.BILINEAR))
-                            for c in range(3)], axis=2)
+            arr = resize_linear(arr, size)
         session['cache'][wb] = arr
     return arr
 
@@ -200,6 +178,8 @@ def import_image(body, name):
         session['meta'] = dict(id=key, name=name, width=w, height=h, camera=model,
                                raw=session['raw'], bytes=len(body))
         result = preview_result(session, DEFAULTS, True)
+        session['meta'].update(color_policy=session.get('color_policy', 'RAW → linear sRGB'),
+                               warnings=session.get('color_warnings', []))
         SESSIONS[key] = session
         return result | session['meta']
     except Exception:
