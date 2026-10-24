@@ -37,6 +37,7 @@ import lens_tools
 import colour_management as colour
 import export_tools
 import native_cache
+import ai_preflight
 from app_runtime import APP_VERSION, resource_root, data_root
 from imaging import raw_crop, raw_pixels, raster_linear, resize_linear, srgb_to_linear
 
@@ -62,6 +63,7 @@ EXPORTS_LOCK = threading.RLock()
 STORES_LOCK = threading.RLock()
 STORES = {}
 VISIONS = {}
+AI_TICKETS=ai_preflight.Tickets()
 DEFAULTS = dict(exposure=0, contrast=0, highlights=0, shadows=0,
                 temperature=0, tint=0, saturation=0, vibrance=0,
                 sharpen=0, rotation=0, crop='original', wb='camera') | spatial.DEFAULTS | darkroom.DEFAULTS | lens_tools.DEFAULTS | colour.DEFAULTS | {'lens_profile':'手动 / 未校准'}
@@ -411,6 +413,7 @@ def release_photo(key):
         raise ValueError('项目正在准备或下载，请稍后移除照片')
     session = SESSIONS.pop(key)
     ADVISOR.cancel_source(key)
+    AI_TICKETS.drop_source(key)
     CACHE.remove_source(key)
     session['cache'].clear()
     if not session.get('persistent'):
@@ -597,6 +600,7 @@ class Handler(BaseHTTPRequestHandler):
         if route == '/api/codex/status':
             config=AI_SETTINGS.public()
             if config['provider']=='codex':return self.json(codex_assist.status() | {'provider':'codex'})
+            if config['provider']=='local':return self.json(dict(provider='local',available=True,ready=True,message='本机接口已配置；请测试连接，实际视觉推理尚未验证。不使用 API Key'))
             return self.json(dict(provider=config['provider'],available=True,ready=config['has_key'],message=('接口已配置，点击分析才发送图片并使用服务商额度' if config['has_key'] else '请在模型设置中填写当前运行使用的 API Key')))
         if route.startswith('/api/codex/requests/'):
             try:
@@ -655,6 +659,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({'error': '建议任务不存在，请重新生成'}, 404)
         files = {'/': ('index.html', 'text/html; charset=utf-8'),
                  '/app.js': ('app.js', 'application/javascript; charset=utf-8'),
+                 '/ai-controls.js': ('ai-controls.js','application/javascript; charset=utf-8'),
                  '/output-controls.js': ('output-controls.js','application/javascript; charset=utf-8'),
                  '/lens-controls.js': ('lens-controls.js','application/javascript; charset=utf-8'),
                  '/local-tools.js': ('local-tools.js','application/javascript; charset=utf-8'),
@@ -939,18 +944,30 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError('任务不属于这张照片')
                     ADVISOR.cancel(data['job'])
                     return self.json({'ok': True})
-                if route in ('/api/codex/suggest', '/api/codex/auto'):
-                    backend=AI_SETTINGS.snapshot(data.get('backend_revision'))
+                if route in ('/api/codex/suggest', '/api/codex/auto','/api/ai/preflight'):
+                    preview_only=route=='/api/ai/preflight'
+                    config=AI_SETTINGS.public()
+                    if preview_only and data.get('backend_revision')!=config['revision']:raise ValueError('模型设置已改变，请重新打开设置后再预览')
+                    backend=None if preview_only else AI_SETTINGS.snapshot(data.get('backend_revision'))
                     if backend is not None and data.get('backend_revision') is None:
                         raise ValueError('请刷新页面并确认当前模型后端；旧页面不会向新接口发送照片')
-                    automatic = route == '/api/codex/auto'
+                    automatic = route == '/api/codex/auto' or preview_only and data.get('mode','auto')=='auto'
                     auto_options = automation.options(data.get('auto_options')) if automatic else None
                     goal = (codex_assist.AUTO_GOAL+' '+automation.goal(auto_options)) if automatic else data.get('goal', '')
                     if not isinstance(goal, str) or not goal.strip() or len(goal) > 1200:
                         raise ValueError('请输入 1 到 1200 字的调色目标')
+                    goal=goal.strip()
                     base = baseline_settings(p)
-                    before = image_bytes(colour.as_srgb(develop(decode_settings(s,base,True), base)), quality=88)
-                    current = image_bytes(colour.as_srgb(develop(decode_settings(s,p,True), p)), quality=88)
+                    mode='auto' if automatic else 'suggest'
+                    if data.get('preview_token') and not preview_only:
+                        before,current=AI_TICKETS.get(data['preview_token'],key,owner,p,goal,mode,auto_options,config['revision'])
+                    else:
+                        before = image_bytes(colour.as_srgb(develop(decode_settings(s,base,True), base)), quality=88)
+                        current = image_bytes(colour.as_srgb(develop(decode_settings(s,p,True), p)), quality=88)
+                    if preview_only:
+                        tag=api_backend.backend_tag(config)
+                        with ADVISOR.lock:timings=[j['seconds'] for j in ADVISOR.jobs.values() if j.get('backend_tag')==tag and j['state']=='done' and 'seconds' in j]
+                        return self.json(AI_TICKETS.issue(key,owner,p,goal,mode,auto_options,config|{'_is_raw':s['raw']},before,current,timings))
                     job = ADVISOR.submit(key, before, current, p, goal, s['raw'],
                                          mode='auto' if automatic else 'suggest', request_id=data.get('request_id'), auto_options=auto_options, backend=backend)
                     return self.json({'job': job,

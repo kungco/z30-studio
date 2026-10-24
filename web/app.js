@@ -1,7 +1,7 @@
 'use strict';
 const $ = id => document.getElementById(id);
 let aiProvider=null;
-var libraryWorkflow=null,localTools=null,lensControls=null,colourControls=null,outputControls=null,overlayVisible=false,overlayRevision=0,retouchTool=null,cloneDonor=null;
+var libraryWorkflow=null,localTools=null,lensControls=null,colourControls=null,aiControls=null,outputControls=null,overlayVisible=false,overlayRevision=0,retouchTool=null,cloneDonor=null;
 var draftSaver=null,draftsReady=false,darkroomPanel=null,wbPicking=false,gridVisible=false;
 let clientId;
 try{clientId=sessionStorage.getItem('z30-client');if(!/^[a-f0-9]{32}$/.test(clientId||'')){clientId=crypto.randomUUID().replaceAll('-','');sessionStorage.setItem('z30-client',clientId);}}
@@ -96,6 +96,7 @@ $('quality').oninput=()=>$('qualityValue').textContent=$('quality').value;
 $('exportFormat').onchange=()=>$('qualityRow').hidden=$('exportFormat').value!=='JPEG';
 localFetch('/api/health').then(r=>{if(!r.ok)throw Error();return r.json();}).then(d=>{$('engine').textContent='LibRaw '+d.libraw+' · 就绪';}).catch(()=>{$('engine').textContent='解码服务连接失败';toast('请通过 start.bat 启动本地服务，再打开网页');});
 function syncAssistantControls(){
+ aiControls?.sync();
  const locked=importBusy||exportBusy||!!autoGrader?.busy||!!batchGrader?.busy;$('providerOpen').disabled=locked||assistant.running;
  $('autoGrade').disabled=!current||locked||assistant.running;
  $('autoGrade').textContent=autoGrader?.busy?'正在自动调色…':current?.autoPending?'重新连接分析任务':'一键 AI 调色';
@@ -181,7 +182,7 @@ async function generateAdvice(){
  assistant.trialRevision++;assistant.trialWanted=false;clearTimeout(assistant.trialTimer);
  $('aiResult').hidden=true;$('aiEmpty').hidden=false;$('aiProgress').textContent='正在准备预览并发送给当前模型后端…';syncAssistantControls();
  try{
-  const d=await(await api('/api/codex/suggest',{id:source.id,settings:base,goal})).json();
+  const d=await(await api('/api/codex/suggest',{id:source.id,settings:base,goal,preview_token:aiControls?.tokenFor(source,base,'suggest',null,goal,aiProvider?.revision)})).json();
   assistant.currentImage=d.current_image;
   const start=Date.now();let job;
   while(true){
@@ -296,7 +297,7 @@ const autoPost=(path,data)=>api(path,data,false,{}, {signal:AbortSignal.timeout(
 const gradeIO={
  submit:async context=>{
   assistant.trialRevision++;assistant.trialWanted=false;clearTimeout(assistant.trialTimer);
-  const data=await(await autoPost('/api/codex/auto',{id:context.source.id,settings:context.base,request_id:context.requestId,auto_options:context.autoOptions||autoOptions(),backend_revision:context.providerRevision})).json();
+  const data=await(await autoPost('/api/codex/auto',{id:context.source.id,settings:context.base,request_id:context.requestId,auto_options:context.autoOptions||autoOptions(),backend_revision:context.providerRevision,preview_token:aiControls?.tokenFor(context.source,context.base,'auto',context.autoOptions||autoOptions(),'',context.providerRevision)})).json();
   context.currentImage=data.current_image;return data;
  },
  recover:async context=>{
@@ -331,6 +332,8 @@ const gradeIO={
   const labels={preparing:'正在准备预览…',analyzing:'AI 正在分析画面与调色…',checking:'正在检查通道、层次和色彩…',rendering:'正在验证本地调色预览…',cancelling:'正在取消；不会自动应用结果。',reconnecting:'连接暂时中断，正在取回原分析任务，不会重新调用模型…'};
   const context=state.context||autoContext;
   if(state.result&&files.includes(context.source))context.source.autoResult={base:context.base,result:state.result,currentImage:context.currentImage};
+  if(context&&state.state==='error'&&!state.pending)context.source.autoFailed=true;
+  if(context&&state.state==='done')context.source.autoFailed=false;
   if(['done','stale','error','cancelled'].includes(state.state)&&context){
    if(state.pending)context.source.autoPending=context;else delete context.source.autoPending;
   }
@@ -468,7 +471,7 @@ batchGrader=new BatchGrader({
  onItem:(index,outcome)=>{batchItems[index].state=({done:'已应用',stale:'编辑已改变，跳过',error:'失败：'+outcome.message,cancelled:'已取消'})[outcome.state]||outcome.state;drawBatch();},
  onFinish:(outcomes,spent)=>{outcomes.forEach((o,i)=>{if(o.state==='not-started')batchItems[i].state='未开始（上限或已停止）';});$('batchStatus').textContent=`本次已启动 ${spent} 次分析，成功应用 ${outcomes.filter(x=>x.state==='done').length} 张。`;drawBatch();syncAssistantControls();}
 });
-$('batchOpen').onclick=()=>{if(!batchItems.length)$('batchBudget').value=Math.max(1,files.length);$('batchDialog').showModal();drawBatch();};
+$('batchOpen').onclick=()=>{if(!batchItems.length)$('batchBudget').value=Math.max(1,Math.min(8,files.length));$('batchDialog').showModal();drawBatch();};
 $('batchClose').onclick=()=>$('batchDialog').close();
 $('batchStop').onclick=()=>batchGrader.cancel();
 $('batchStart').onclick=async()=>{
@@ -550,9 +553,9 @@ setEnabled();syncMaskUI();
 
 const modelSettings=new ModelSettings({read:()=>localFetch('/api/ai/config'),post:(path,data)=>api(path,data),busy:()=>importBusy||exportBusy||!!autoGrader?.busy||!!batchGrader?.busy||assistant.running,changed:config=>{
  aiProvider=config;assistant.connection=null;
- const label=config.provider==='codex'?'Codex CLI':config.provider==='deepseek'?'DeepSeek · '+config.model:'兼容接口 · '+config.model;
+ const label=config.provider==='codex'?'Codex CLI':config.provider==='deepseek'?'DeepSeek · '+config.model:config.provider==='local'?'本机模型 · '+config.model:'兼容接口 · '+config.model;
  $('providerSummary').textContent=label;$('modelBadge').textContent=label;
- const privacy=config.provider==='codex'?'点击分析会发送两张去除 EXIF/GPS 的缩小预览至 Codex，使用现有 CLI 登录与额度。':`点击分析会发送两张去除 EXIF/GPS 的缩小预览至 ${config.base_url}（${config.model}），可能使用该服务商的付费额度。`;
+ const privacy=config.provider==='codex'?'点击分析会发送两张去除 EXIF/GPS 的缩小预览至 Codex，使用现有 CLI 登录与额度。':config.provider==='local'?`点击分析会发送两张去除 EXIF/GPS 的预览至本机 ${config.base_url}。该服务须配置本机视觉权重并禁用云模式；软件不发送任何 API Key。`:`点击分析会发送两张去除 EXIF/GPS 的缩小预览至 ${config.base_url}（${config.model}），可能使用该服务商的付费额度。`;
  $('modelPrivacy').textContent=privacy+' 原片留在本机，不自动重试。';document.querySelector('.ai-privacy').textContent=privacy+' 原片留在本机。';$('batchPrivacy').textContent=privacy+' 每张照片独立分析，次数由下方上限约束。';syncAssistantControls();
 }});modelSettings.init();
 
@@ -714,3 +717,7 @@ colourControls=new ColourControls({current:()=>current,locked:()=>importBusy||ex
 outputControls=new OutputControls();
 
 $('clearNativeCache').onclick=async()=>{try{await api('/api/cache/clear',{});await refreshExportJobs();toast('已清理闲置缓存；原片、草稿和导出结果不变');}catch(e){toast(e.message);}};
+
+aiControls=new AIControls({current:()=>current,provider:()=>aiProvider,options:autoOptions,goal:()=>$('aiGoal').value,
+ busy:()=>importBusy||exportBusy||!!autoGrader?.busy||!!batchGrader?.busy||assistant.running,error:toast,
+ prepare:async body=>await(await api('/api/ai/preflight',body)).json(),retry:()=>$('autoGrade').click()});

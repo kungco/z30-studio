@@ -3,7 +3,7 @@ class BatchGrader {
  constructor(io){this.io=io;this.busy=false;this.active=null;this.cancelled=false;}
  async run(items,budget){
   if(this.busy)throw Error('批量调色正在进行');
-  if(!Number.isInteger(budget)||budget<1||budget>8)throw Error('批量次数上限无效');
+  if(!Number.isInteger(budget)||budget<1||budget>256)throw Error('批量次数上限无效');
   this.busy=true;this.cancelled=false;const outcomes=[];let spent=0,reference='';
   try{
    for(let i=0;i<items.length;i++){

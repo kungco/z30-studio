@@ -16,3 +16,5 @@
 #lensAutoMount label{display:block;font-size:11px;line-height:1.8;margin:8px 0}#lensAutoMount input[type=number],#lensAutoMount select{max-width:100%;width:100%;padding:6px;background:#252a24;color:#ddd;border:1px solid #4b5745}#lensAutoMount button{border:1px solid #56614c;padding:7px;font-size:11px;border-radius:4px;margin:6px 0}
 
 #exportDialog{max-height:90vh;overflow:auto}.output-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.output-grid input{width:100%;min-width:0}#exportDialog details{margin:12px 0}#exportDialog input[type="text"],#outputName,#outputWatermark{width:100%}
+
+.send-dialog{max-height:90vh;overflow:auto;max-width:900px}.send-images{display:grid;grid-template-columns:1fr 1fr;gap:16px}.send-images figure{margin:0}.send-images img{max-width:100%;max-height:300px;object-fit:contain}.send-images figcaption{font-size:11px;overflow-wrap:anywhere}.send-dialog textarea{width:100%;resize:vertical}#aiControlMount{display:grid;gap:8px}

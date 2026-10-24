@@ -24,3 +24,10 @@ Key 在软件的密码框填写，不必发送到聊天。软件仅在当前运�
 官方依据：[首次调用与地址](https://api-docs.deepseek.com/api/responses)、[视觉输入](https://api-docs.deepseek.com/guides/vision/)、[JSON 输出](https://api-docs.deepseek.com/guides/json_mode/)、[Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/)。
 
 ![DeepSeek 模型设置](images/deepseek-settings.png)
+
+
+## 本机模型、选择与发送预览（2026-10-25）
+
+顶部模型设置新增本机视觉服务：默认 http://127.0.0.1:11434/v1，可填已有本机视觉模型名，读取模型列表后选择。仅允许回环主机，连接时核对 peer，不接受/发送 API Key；本机服务须自行使用本地权重并禁用云推理。此设备没有真实 Ollama 验证，协议只用模拟 HTTP 服务验收。Codex 继续沿用 CLI 当前模型与登录。
+
+编辑栏“查看发送内容”可看两张真实 sRGB JPEG、目的服务/模型、实际提示/JSON，准备过程不调用模型。未变化时提交冻结的相同图片；参数、来源、目标或后端改变即拒绝旧票据，10 分钟失效。可填写输入/输出单价得到 token 情景费用，未知则显示未知；不是实际账单。历史成功样本用于耗时范围，无样本仅显示 180 秒推理超时。显式重试可能再次计费，不自动重试。批量默认 8 次，可显式提高到 256。

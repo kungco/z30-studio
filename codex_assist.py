@@ -184,7 +184,7 @@ class Advisor:
             key = secrets.token_hex(16)
             self.jobs[key] = {'state': 'running', 'source_id': source_id, 'started': time.time(),
                               'mode': mode, 'phase': 'analyzing', 'request_id': request_id,
-                              'fingerprint': fingerprint, 'base_settings': dict(current_settings), 'auto_options': policy}
+                              'fingerprint': fingerprint, 'backend_tag':api_backend.backend_tag(backend), 'base_settings': dict(current_settings), 'auto_options': policy}
         worker = threading.Thread(target=self._run if backend is None else self._run_remote,
                                   args=(key, cmd, before, current_image, dict(current_settings), goal.strip(), is_raw),
                                   daemon=True)
@@ -234,7 +234,7 @@ class Advisor:
     def _fail(self, key, message):
         with self.lock:
             if self.jobs[key]['state'] == 'running':
-                self.jobs[key].update(state='error', error=message)
+                self.jobs[key].update(state='error',error=message,seconds=max(0,time.time()-self.jobs[key].get('started',time.time())))
 
     def get(self, key):
         with self.lock:
@@ -306,7 +306,7 @@ class Advisor:
             result = self.result_filter(self.jobs[key]['source_id'], p, result)
         with self.lock:
             if self.jobs[key]['state'] == 'running' and not self.stopped:
-                self.jobs[key].update(state='done', phase='ready', result=result)
+                self.jobs[key].update(state='done', phase='ready', result=result,seconds=max(0,time.time()-self.jobs[key].get('started',time.time())))
 
     def _run_remote(self,key,backend,before,current_image,p,goal,is_raw):
         try:
