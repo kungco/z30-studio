@@ -62,3 +62,13 @@ class SpatialTests(unittest.TestCase):
         out=processing.render_array(spatial.prepare(a,p),p,bits=16)
         self.assertEqual(out.dtype,np.uint16);self.assertGreater(np.unique(out).size,256)
         self.assertFalse(np.all(out%257==0))
+
+    def test_separate_brush_strokes_do_not_paint_a_connector(self):
+        m=spatial.masks([dict(type='brush',points=[[.2,.2],[.8,.8]],breaks=[1],exposure=.5)])[0]
+        field=spatial.mask_field(m,100,100,0,100)
+        self.assertGreater(field[20,20],.9);self.assertGreater(field[79,79],.9)
+        self.assertEqual(field[50,50],0)
+        joined=spatial.mask_field(m|{'breaks':[]},100,100,0,100)
+        self.assertGreater(joined[50,50],.9)
+        for bad in ([0],[2],[1,1],[True],['1']):
+            with self.assertRaises(ValueError):spatial.masks([m|{'breaks':bad}])

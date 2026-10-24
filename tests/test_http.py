@@ -86,15 +86,21 @@ class HttpTests(unittest.TestCase):
     def test_inspection_is_an_exact_crop_of_native_render_with_geometry(self):
         import base64
         import numpy as np
-        key=self.open_photo(); p=server.settings(dict(rotation=1,crop='1:1',exposure=.5,denoise_chroma=20,lens_k1=.01,masks=[dict(type='radial',exposure=.3)]))
+        yy,xx=np.indices((300,420));pixels=np.stack((xx%256,yy%256,(xx+yy)%256),axis=2).astype(np.uint8)
+        b=io.BytesIO();Image.fromarray(pixels).save(b,'PNG',icc_profile=server.ICC)
+        with self.post('/api/open',b.getvalue(),True) as response:key=json.load(response)['id']
+        p=server.settings(dict(rotation=1,crop='1:1',exposure=.5,denoise_chroma=20,lens_k1=.01,masks=[dict(type='radial',exposure=.3)]))
         try:
             expected=np.asarray(server.develop(server.decode(server.SESSIONS[key],'camera',False),p))
-            with self.post('/api/inspect',dict(id=key,settings=p,cx=.8,cy=.3)) as response:data=json.load(response)
+            with self.post('/api/inspect',dict(id=key,settings=p,cx=.8,cy=.3,width=96,height=80)) as response:data=json.load(response)
             actual=np.asarray(Image.open(io.BytesIO(base64.b64decode(data['image'].split(',')[1]))))
-            self.assertEqual((data['full_width'],data['full_height']),(8,8))
-            np.testing.assert_array_equal(actual,expected)
+            self.assertEqual((data['full_width'],data['full_height']),(300,300))
+            self.assertEqual((data['x'],data['y'],data['width'],data['height']),(192,50,96,80))
+            np.testing.assert_array_equal(actual,expected[50:130,192:288])
             with patch.object(server,'decode',side_effect=AssertionError('native render cache missed')):
-                self.post('/api/inspect',dict(id=key,settings=p)).close()
+                with self.post('/api/inspect',dict(id=key,settings=p,cx=.1,cy=.9,width=96,height=80)) as response:edge=json.load(response)
+                tile=np.asarray(Image.open(io.BytesIO(base64.b64decode(edge['image'].split(',')[1]))))
+                self.assertEqual((edge['x'],edge['y']),(0,220));np.testing.assert_array_equal(tile,expected[220:300,:96])
         finally:self.post('/api/close',{'id':key}).close()
 
     def test_protected_export_does_not_drop_manual_masks_or_optical_parameters(self):

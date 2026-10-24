@@ -33,7 +33,10 @@ def masks(value):
             clean.append([round(float(v),5) for v in point])
         total_points+=len(clean)
         if total_points>512:raise ValueError('画笔轨迹最多 512 个点，请分组编辑')
-        item['points']=clean;result.append(item)
+        breaks=m.get('breaks',[])
+        if not isinstance(breaks,list) or any(isinstance(i,bool) or not isinstance(i,int) or not 0<i<len(clean) for i in breaks) or breaks!=sorted(set(breaks)):
+            raise ValueError('画笔分段索引无效')
+        item['points']=clean;item['breaks']=list(breaks);result.append(item)
     return result
 
 
@@ -51,7 +54,9 @@ def mask_field(m,w,h,top,bottom):
     else:
         field=np.zeros((bottom-top,w),np.float32)
         points=m['points'];radius=m['radius']*min(w,h)
-        for a,b in zip(points,points[1:] or points):
+        starts={0,*m.get('breaks',[])}
+        segments=[(p,p) for i,p in enumerate(points) if i in starts]+[(points[i-1],p) for i,p in enumerate(points) if i and i not in starts]
+        for a,b in segments:
             ax,ay=a[0]*w,a[1]*h;bx,by=b[0]*w,b[1]*h
             left=max(0,int(min(ax,bx)-radius));right=min(w,int(max(ax,bx)+radius)+1)
             low=max(top,int(min(ay,by)-radius));high=min(bottom,int(max(ay,by)+radius)+1)
