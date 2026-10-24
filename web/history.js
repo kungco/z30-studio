@@ -39,4 +39,9 @@ function boundedWorkspace(document,maxChars=1800000){
  }
  return text;
 }
-if(typeof module!=='undefined')module.exports={EditHistory,boundedWorkspace};
+function applyGlobalPreset(settings,defaults,preset){
+ const result=cloneEdit(settings);
+ for(const key of ['exposure','contrast','highlights','shadows','temperature','tint','saturation','vibrance','sharpen'])result[key]=preset[key]??defaults[key];
+ return result;
+}
+if(typeof module!=='undefined')module.exports={EditHistory,boundedWorkspace,cloneEdit,applyGlobalPreset};

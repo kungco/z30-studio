@@ -64,7 +64,7 @@ async function runPreview(){if(previewRunning||importBusy||exportBusy||!current)
 function compare(on){if(!current)return;showingBefore=on;$('preview').src=on?current.before:current.image;$('beforeLabel').hidden=!on;$('compare').classList.toggle('on',on);}
 ['importTop','importSide','importEmpty'].forEach(id=>$(id).onclick=()=>$('fileInput').click());
 $('fileInput').onchange=e=>importFiles(e.target.files);
-document.querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>{if(!current)return;const geometry={rotation:current.settings.rotation,crop:current.settings.crop};current.settings={...cloneEdit(defaults),...presets[b.dataset.preset],...geometry};current.preset=b.dataset.preset;syncLabels();schedulePreview(0);});
+document.querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>{if(!current)return;current.settings=applyGlobalPreset(current.settings,defaults,presets[b.dataset.preset]);current.preset=b.dataset.preset;syncLabels();schedulePreview(0);});
 ['wb','crop'].forEach(id=>$(id).onchange=()=>{if(!current)return;current.settings[id]=$(id).value;current.preset='custom';syncLabels();schedulePreview(0);});
 $('rotate').onclick=()=>{current.settings.rotation=(current.settings.rotation+1)%4;schedulePreview(0);};
 $('reset').onclick=()=>{if(!current)return;current.settings=cloneEdit(defaults);current.preset='neutral';syncLabels();schedulePreview(0);};
@@ -79,9 +79,11 @@ function download(blob,name){const u=URL.createObjectURL(blob),a=document.create
 $('saveRecipe').onclick=()=>{if(!current)return;download(new Blob([JSON.stringify({app:'Z30 Studio',version:1,source:current.name,settings:current.settings},null,2)],{type:'application/json'}),current.name.replace(/\.[^.]+$/,'')+'-z30.json');toast('参数已下载，可在下次导入照片后载入');};
 $('loadRecipe').onclick=()=>$('recipeInput').click();
 $('recipeInput').onchange=async e=>{
- try{if(!current||!e.target.files[0])return;const file=e.target.files[0];if(file.size>100000)throw Error('参数文件过大');
+ try{if(!current||!e.target.files[0])return;const source=current,rev=revision;const file=e.target.files[0];if(file.size>100000)throw Error('参数文件过大');
   const data=JSON.parse(await file.text());if(data.app!=='Z30 Studio'||data.version!==1||!data.settings)throw Error('参数文件无效');
-  current.settings=(await(await api('/api/settings',{id:current.id,settings:data.settings})).json()).settings;
+  const validated=(await(await api('/api/settings',{id:source.id,settings:data.settings})).json()).settings;
+  if(current!==source||revision!==rev||!files.includes(source))throw Error('照片或参数已改变，未载入旧参数');
+  source.settings=validated;
   current.preset='custom';syncLabels();schedulePreview(0);toast('参数、蒙版和镜头修正已载入');
  }catch(error){toast(error.message);}finally{e.target.value='';}
 };
@@ -121,7 +123,7 @@ async function checkCodex(){
  finally{assistant.checking=false;syncAssistantControls();}
 }
 function assistantCandidate(){
- const t=assistant.strength/100,p={...assistant.base};
+ const t=assistant.strength/100,p=cloneEdit(assistant.base);
  if(t===0)return p;
  sliderSpecs.forEach(([,id,,min,max,step])=>{
   if(!['exposure','contrast','highlights','shadows','temperature','tint','saturation','vibrance','sharpen'].includes(id))return;
@@ -169,7 +171,7 @@ async function runAssistantTrial(){
 }
 async function generateAdvice(){
  if(!current||assistant.running||(autoGrader?.busy||batchGrader?.busy)||!assistant.connection?.ready)return;
- const source=current,base={...current.settings},goal=$('aiGoal').value.trim();
+ const source=current,base=cloneEdit(current.settings),goal=$('aiGoal').value.trim();
  if(!goal){toast('请先输入调色目标');return;}
  assistant.running=true;assistant.source=source;assistant.base=base;assistant.result=null;assistant.strength=100;assistant.previewSignature=null;
  assistant.trialRevision++;assistant.trialWanted=false;clearTimeout(assistant.trialTimer);
@@ -188,7 +190,9 @@ async function generateAdvice(){
    $('aiProgress').textContent=`Codex 正在看图与分析… ${Math.round((Date.now()-start)/1000)} 秒。关闭面板后任务仍会继续。`;
   }
   if(job.source_id!==source.id)throw Error('建议与当前照片不匹配，请重新生成');
-  assistant.result=job.result;showAdvice();
+  assistant.result=job.result;
+  if(files.includes(source)){source.autoResult={base:cloneEdit(base),result:cloneEdit(job.result),currentImage:assistant.currentImage};persistWorkspace();}
+  showAdvice();
   $('aiProgress').textContent='建议已就绪。调整强度、查看试片，再决定是否应用。';
   if(!$('assistantDialog').open)toast('Codex 建议已就绪，点击“Codex 辅助”查看');
  }catch(e){$('aiProgress').textContent=e.message;toast(e.message);}
@@ -207,13 +211,13 @@ $('aiStrength').oninput=updateAdviceStrength;
 document.querySelectorAll('[data-goal]').forEach(b=>b.onclick=()=>{if(!assistant.running)$('aiGoal').value=b.dataset.goal;});
 $('aiApply').onclick=()=>{
  if($('aiApply').disabled||assistant.source!==current)return;
- current.aiUndo={settings:{...current.settings},preset:current.preset};
+ current.aiUndo={settings:cloneEdit(current.settings),preset:current.preset};
  current.settings=assistantCandidate();current.preset='custom';syncLabels();schedulePreview(0);syncAssistantControls();
  $('assistantDialog').close();toast('已应用 Codex 建议，可在辅助面板恢复应用前参数');
 };
 function undoAI(){
  if(!current?.aiUndo||importBusy||exportBusy||autoGrader?.busy||assistant.running)return;
- current.settings={...current.aiUndo.settings};current.preset=current.aiUndo.preset;delete current.aiUndo;
+ current.settings=cloneEdit(current.aiUndo.settings);current.preset=current.aiUndo.preset;delete current.aiUndo;
  syncLabels();schedulePreview(0);syncAssistantControls();toast('已恢复应用前参数');
  $('autoStatus').textContent='已恢复上次 AI 调色前的参数。';
 }
@@ -269,7 +273,7 @@ $('jobsClose').onclick=()=>$('jobsDialog').close();
 $('exportConfirm').onclick=async()=>{
  if(!current||exportBusy)return;
  const sources=$('exportScope').value==='all'?[...files]:[current];
- const body={ids:sources.map(f=>f.id),settings:{...current.settings},format:$('exportFormat').value,
+ const body={ids:sources.map(f=>f.id),settings:cloneEdit(current.settings),format:$('exportFormat').value,
              quality:Number($('quality').value),protect:$('exportProtect').checked};
  exportBusy=true;setEnabled();$('exportConfirm').disabled=true;
  try{
@@ -303,7 +307,7 @@ const gradeIO={
  isCurrent:context=>canApplyAuto(context,current,files,revision),
  apply:(context,result,preview)=>{
   const f=context.source;
-  f.aiUndo={settings:{...f.settings},preset:f.preset};
+  f.aiUndo={settings:cloneEdit(f.settings),preset:f.preset};
   f.settings=cloneEdit(result.settings);f.preset='custom';recordEdit(f,'GPT 自动调色');
   Object.assign(f,{image:preview.image,before:preview.before,histogram:preview.histogram,quality:preview.quality,thumb:preview.image});
   if(current!==f){drawLibrary();persistWorkspace();return;}
@@ -334,7 +338,7 @@ const gradeIO={
 autoGrader=new AutoGrader(gradeIO);
 $('autoGrade').onclick=()=>{
  if(!current||autoGrader.busy||batchGrader?.busy||assistant.running||importBusy||exportBusy)return;
- autoContext=current.autoPending?{...current.autoPending,recoverOnly:true}:{source:current,base:{...current.settings},revision,autoOptions:autoOptions(),requestId:crypto.randomUUID().replaceAll('-','')};
+ autoContext=current.autoPending?{...current.autoPending,recoverOnly:true}:{source:current,base:cloneEdit(current.settings),revision,autoOptions:autoOptions(),requestId:crypto.randomUUID().replaceAll('-','')};
  current.autoPending=autoContext;persistWorkspace();
  autoGrader.start(autoContext).catch(e=>toast(e.message));
 };
@@ -401,7 +405,7 @@ window.addEventListener('keydown',e=>{
 });
 $('saveProject').onclick=async()=>{
  if(!files.length||importBusy||exportBusy)return;
- recordEdit();const recipes={};for(const f of files)recipes[f.id]={settings:f.settings,preset:f.preset,history:f.history?.snapshot(),analysis:f.autoResult?{base:f.autoResult.base,result:f.autoResult.result}:null};
+ recordEdit();const recipes={};for(const f of files)recipes[f.id]={settings:f.settings,preset:f.preset,undo:f.aiUndo||null,history:f.history?.snapshot(),analysis:f.autoResult?{base:f.autoResult.base,result:f.autoResult.result}:null};
  try{const data=await(await api('/api/projects/prepare',{ids:files.map(f=>f.id),recipes,selected:files.indexOf(current)})).json();
   const link=document.createElement('a');link.href=data.url;link.download='Z30-Project.z30proj';document.body.append(link);link.click();link.remove();
   toast('项目含原片副本，请保管本机下载文件；下载完成前勿移除照片');
@@ -413,7 +417,7 @@ $('projectInput').onchange=async e=>{
  if(file.size>512*1024*1024){toast('项目超过 512 MiB');return;}
  importBusy=true;setEnabled();
  try{const data=await(await api('/api/projects/open',file,true)).json();const added=[];
-  for(const photo of data.photos){const f={...photo,thumb:photo.image};f.history=new EditHistory(f.settings,f.preset,photo.history);
+  for(const photo of data.photos){const f={...photo,thumb:photo.image};f.history=new EditHistory(f.settings,f.preset,photo.history);if(photo.undo)f.aiUndo=photo.undo;
    if(photo.analysis?.result)f.autoResult={base:photo.analysis.base,result:photo.analysis.result,currentImage:photo.image};
    files.push(f);added.push(f);
   }selectFile(added[data.selected]||added[0]);toast('项目原片、参数与历史已恢复');
@@ -530,5 +534,5 @@ $('preview').addEventListener('load',paintMasks);window.addEventListener('resize
 $('lensProfileName').onchange=()=>{if(current){current.settings.lens_profile=$('lensProfileName').value;schedulePreview();}};
 $('saveLens').onclick=()=>{if(!current)return;const settings={};for(const key of ['lens_k1','lens_k2','lens_red','lens_blue','vignette','lens_profile'])settings[key]=current.settings[key];download(new Blob([JSON.stringify({app:'Z30 Manual Optics',version:1,model:'centered-radial-v1',settings},null,2)],{type:'application/json'}),'Z30-manual-lens.json');};
 $('loadLens').onclick=()=>$('lensInput').click();
-$('lensInput').onchange=async e=>{try{if(!current||!e.target.files[0])return;const file=e.target.files[0];if(file.size>20000)throw Error('配置过大');const data=JSON.parse(await file.text());if(data.app!=='Z30 Manual Optics'||data.version!==1||data.model!=='centered-radial-v1')throw Error('不是兼容的手动镜头配置');const update={...current.settings};for(const key of ['lens_k1','lens_k2','lens_red','lens_blue','vignette','lens_profile'])if(key in data.settings)update[key]=data.settings[key];current.settings=(await(await api('/api/settings',{id:current.id,settings:update})).json()).settings;syncLabels();schedulePreview(0);toast('已载入手动镜头参数，请检查网格和边缘');}catch(error){toast(error.message);}finally{e.target.value='';}};
+$('lensInput').onchange=async e=>{try{if(!current||!e.target.files[0])return;const source=current,rev=revision;const update=cloneEdit(source.settings);const file=e.target.files[0];if(file.size>20000)throw Error('配置过大');const data=JSON.parse(await file.text());if(data.app!=='Z30 Manual Optics'||data.version!==1||data.model!=='centered-radial-v1')throw Error('不是兼容的手动镜头配置');for(const key of ['lens_k1','lens_k2','lens_red','lens_blue','vignette','lens_profile'])if(key in data.settings)update[key]=data.settings[key];const validated=(await(await api('/api/settings',{id:source.id,settings:update})).json()).settings;if(current!==source||revision!==rev||!files.includes(source))throw Error('照片或参数已改变，未载入旧镜头配置');source.settings=validated;syncLabels();schedulePreview(0);toast('已载入手动镜头参数，请检查网格和边缘');}catch(error){toast(error.message);}finally{e.target.value='';}};
 setEnabled();syncMaskUI();

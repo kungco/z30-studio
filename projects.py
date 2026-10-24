@@ -47,6 +47,12 @@ def history(value, normalize):
     return dict(states=states, index=index)
 
 
+def undo(value, normalize):
+    if value is None:
+        return None
+    return dict(settings=normalize(value['settings']), preset=str(value.get('preset','custom'))[:32])
+
+
 def manifest(sources, recipes, selected, normalize):
     photos = []
     for i, source in enumerate(sources):
@@ -57,7 +63,7 @@ def manifest(sources, recipes, selected, normalize):
             digest = hashlib.file_digest(file, 'sha256').hexdigest()
         photos.append(dict(name=source['name'], file=f'sources/{i}{path.suffix.lower()}',
                            sha256=digest, size=path.stat().st_size, settings=p,
-                           preset=str(recipe.get('preset', 'custom'))[:32], history=h,
+                           preset=str(recipe.get('preset', 'custom'))[:32], history=h, undo=undo(recipe.get('undo'),normalize),
                            analysis=analysis(recipe.get('analysis'), normalize)))
     result = dict(app='Z30 Studio', version=1, selected=max(0, min(len(photos)-1, selected)), photos=photos)
     encoded = json.dumps(result, ensure_ascii=False, allow_nan=False).encode('utf8')
@@ -102,6 +108,7 @@ def read_project(path, parent, normalize):
             photo['settings'] = normalize(photo['settings'])
             photo['history'] = history(photo.get('history'), normalize)
             photo['analysis'] = analysis(photo.get('analysis'), normalize)
+            photo['undo'] = undo(photo.get('undo'), normalize)
             # The selected history node must describe the actual saved edit.
             if photo['history'] and photo['history']['states'][photo['history']['index']]['settings'] != photo['settings']:
                 raise ValueError('项目参数与历史位置不一致')

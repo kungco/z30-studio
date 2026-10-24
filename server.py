@@ -457,7 +457,7 @@ class Handler(BaseHTTPRequestHandler):
                     key = result['id']; imported.append(key)
                     preview = preview_result(SESSIONS[key], photo['settings'], True)
                     photos.append(preview | SESSIONS[key]['meta'] | dict(settings=photo['settings'], history=photo.get('history'),
-                                  preset=photo.get('preset','custom'), analysis=photo.get('analysis')))
+                                  preset=photo.get('preset','custom'), analysis=photo.get('analysis'), undo=photo.get('undo')))
                 return self.json({'photos': photos, 'selected': max(0,min(len(photos)-1,int(document.get('selected',0))))})
         except Exception:
             with LOCK:

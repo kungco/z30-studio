@@ -69,7 +69,7 @@ class HttpTests(unittest.TestCase):
         original=server.SESSIONS[key]['path'].read_bytes()
         history=dict(index=1,states=[dict(settings=server.DEFAULTS,preset='neutral'),
             dict(settings=server.DEFAULTS|dict(exposure=.5),preset='custom')])
-        with self.post('/api/projects/prepare',dict(ids=[key],recipes={key:dict(settings={'exposure':.5},history=history)})) as r:
+        with self.post('/api/projects/prepare',dict(ids=[key],recipes={key:dict(settings={'exposure':.5},history=history,undo=dict(settings={'exposure':0},preset='neutral'))})) as r:
             url=json.load(r)['url']
         with self.assertRaises(urllib.error.HTTPError) as cm:self.post('/api/close',{'id':key})
         self.assertEqual(cm.exception.code,400);cm.exception.close()
@@ -80,6 +80,7 @@ class HttpTests(unittest.TestCase):
         try:
             self.assertEqual(opened['settings']['exposure'],.5)
             self.assertEqual(opened['history']['index'],1)
+            self.assertEqual(opened['undo']['settings']['exposure'],0);self.assertEqual(opened['undo']['preset'],'neutral')
             self.assertEqual(server.SESSIONS[opened['id']]['path'].read_bytes(),original)
         finally:self.post('/api/close',{'id':opened['id']}).close()
 
