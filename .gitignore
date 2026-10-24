@@ -31,3 +31,5 @@ work/
 *.tiff
 *.zip
 !docs/images/*.png
+
+*.z30proj

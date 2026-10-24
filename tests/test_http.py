@@ -64,6 +64,25 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(image.shape, (12, 8, 3))
         self.post('/api/close', {'id': key}).close()
 
+    def test_project_download_reopen_restores_original_and_history(self):
+        self.owner='d'*32; key=self.open_photo()
+        original=server.SESSIONS[key]['path'].read_bytes()
+        history=dict(index=1,states=[dict(settings=server.DEFAULTS,preset='neutral'),
+            dict(settings=server.DEFAULTS|dict(exposure=.5),preset='custom')])
+        with self.post('/api/projects/prepare',dict(ids=[key],recipes={key:dict(settings={'exposure':.5},history=history)})) as r:
+            url=json.load(r)['url']
+        with self.assertRaises(urllib.error.HTTPError) as cm:self.post('/api/close',{'id':key})
+        self.assertEqual(cm.exception.code,400);cm.exception.close()
+        with urllib.request.urlopen(self.base+url) as response:blob=response.read()
+        self.assertFalse(server.PROJECT_READERS)
+        self.post('/api/close',{'id':key}).close()
+        with self.post('/api/projects/open',blob,True) as response:opened=json.load(response)['photos'][0]
+        try:
+            self.assertEqual(opened['settings']['exposure'],.5)
+            self.assertEqual(opened['history']['index'],1)
+            self.assertEqual(server.SESSIONS[opened['id']]['path'].read_bytes(),original)
+        finally:self.post('/api/close',{'id':opened['id']}).close()
+
     def test_refresh_restores_eight_photos_and_parameters_instead_of_leaking_slots(self):
         self.owner = 'b' * 32
         keys = [self.open_photo() for _ in range(8)]

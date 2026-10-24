@@ -19,6 +19,8 @@ from cache import ByteLRU
 import quality as quality_checks
 from export_jobs import ExportQueue, FORMATS, write_zip
 import shutil
+import projects
+import zipfile
 from imaging import raw_crop, raw_pixels, raster_linear, resize_linear, srgb_to_linear
 
 os.environ.setdefault('OMP_NUM_THREADS', '4')
@@ -30,6 +32,8 @@ ROOT = Path(__file__).resolve().parent
 TEMP = tempfile.TemporaryDirectory(prefix='z30-studio-')
 SESSIONS = {}
 LOCK = threading.RLock()  # Serialize interactive work; background exports have one worker.
+PROJECT_TICKETS = {}
+PROJECT_READERS = {}
 SESSION_TTL = 30 * 60
 MAX_UPLOAD = 150 * 1024 * 1024
 ICC = ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes()
@@ -201,6 +205,8 @@ ADVISOR.result_filter = filter_advice
 
 
 def release_photo(key):
+    if PROJECT_READERS.get(key):
+        raise ValueError('项目正在准备或下载，请稍后移除照片')
     session = SESSIONS.pop(key)
     ADVISOR.cancel_source(key)
     CACHE.remove_source(key)
@@ -211,9 +217,21 @@ def release_photo(key):
 def reap_sessions(now=None):
     now = time.monotonic() if now is None else now
     with LOCK:
+        for ticket, data in list(PROJECT_TICKETS.items()):
+            if now >= data['expires']:
+                release_project(ticket)
         for key, session in list(SESSIONS.items()):
-            if now - session.setdefault('last_seen', now) >= SESSION_TTL:
+            if not PROJECT_READERS.get(key) and now - session.setdefault('last_seen', now) >= SESSION_TTL:
                 release_photo(key)
+
+
+def release_project(ticket):
+    data = PROJECT_TICKETS.pop(ticket, None)
+    if data:
+        for key in data['ids']:
+            PROJECT_READERS[key] -= 1
+            if not PROJECT_READERS[key]:
+                del PROJECT_READERS[key]
 
 
 def import_image(body, name, owner=None):
@@ -320,6 +338,30 @@ class Handler(BaseHTTPRequestHandler):
         if route == '/api/health':
             return self.json(dict(app='Z30 Studio', version='1.2', rawpy=rawpy.__version__,
                                   libraw='.'.join(map(str, rawpy.libraw_version)), cache=CACHE.stats()))
+        if route.startswith('/api/projects/download/'):
+            ticket = route.rsplit('/', 1)[-1]
+            with LOCK:
+                data = PROJECT_TICKETS.get(ticket)
+                if not data or data['expires'] < time.monotonic():
+                    release_project(ticket)
+                    return self.json({'error': '项目下载已过期，请重新保存'}, 410)
+                if data.get('active'):
+                    return self.json({'error': '项目正在下载'}, 409)
+                data['active'] = True; data['expires'] = float('inf')
+            try:
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/zip')
+                self.send_header('Content-Disposition', 'attachment; filename="Z30-Project.z30proj"')
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('Connection', 'close'); self.close_connection = True
+                self.end_headers()
+                projects.write_project(self.wfile, data['sources'], data['manifest'])
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                pass
+            finally:
+                with LOCK:
+                    release_project(ticket)
+            return
         if route == '/api/codex/status':
             return self.json(codex_assist.status())
         if route.startswith('/api/codex/requests/'):
@@ -374,6 +416,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({'error': '建议任务不存在，请重新生成'}, 404)
         files = {'/': ('index.html', 'text/html; charset=utf-8'),
                  '/app.js': ('app.js', 'application/javascript; charset=utf-8'),
+                 '/history.js': ('history.js', 'application/javascript; charset=utf-8'),
                  '/auto-grade.js': ('auto-grade.js', 'application/javascript; charset=utf-8'),
                  '/style.css': ('style.css', 'text/css; charset=utf-8'),
                  '/assistant.css': ('assistant.css', 'text/css; charset=utf-8')}
@@ -382,13 +425,53 @@ class Handler(BaseHTTPRequestHandler):
             return self.send((ROOT / 'web' / filename).read_bytes(), mime)
         return self.json({'error': '页面不存在'}, 404)
 
+    def open_project_upload(self, size):
+        owner = self.headers.get('X-Z30-Client')
+        if not owner or len(owner) != 32 or any(c not in '0123456789abcdef' for c in owner):
+            raise ValueError('页面会话编号无效')
+        if not 0 < size <= projects.PROJECT_LIMIT:
+            self.close_connection = True
+            return self.json({'error': '项目为空或超过 512 MiB'}, 413)
+        path = Path(TEMP.name) / (secrets.token_hex(16)+'.z30proj')
+        imported = []
+        try:
+            with path.open('wb') as out:
+                remaining = size
+                while remaining:
+                    chunk = self.rfile.read(min(1024*1024, remaining))
+                    if not chunk:
+                        raise ValueError('项目上传不完整')
+                    out.write(chunk); remaining -= len(chunk)
+            with projects.read_project(path, TEMP.name, settings) as document, LOCK:
+                if sum(x.get('owner') == owner for x in SESSIONS.values()) + len(document['photos']) > 8:
+                    raise ValueError('打开项目后超过 8 张，请先移除照片')
+                photos = []
+                for photo in document['photos']:
+                    name = str(photo['name']).replace('\\', '/').split('/')[-1][:200]
+                    result = import_image(photo['staged'].read_bytes(), name, owner)
+                    key = result['id']; imported.append(key)
+                    preview = preview_result(SESSIONS[key], photo['settings'], True)
+                    photos.append(preview | SESSIONS[key]['meta'] | dict(settings=photo['settings'], history=photo.get('history'),
+                                  preset=photo.get('preset','custom'), analysis=photo.get('analysis')))
+                return self.json({'photos': photos, 'selected': max(0,min(len(photos)-1,int(document.get('selected',0))))})
+        except Exception:
+            with LOCK:
+                for key in imported:
+                    if key in SESSIONS: release_photo(key)
+            raise ValueError('项目损坏、格式不支持或照片无法解码；未覆盖现有编辑')
+        finally:
+            path.unlink(missing_ok=True)
+
     def do_POST(self):
         if not self.local_request():
             return
         if self.headers.get('X-Z30-Request') != '1':
             return self.json({'error': '缺少请求标记'}, 403)
         try:
+            route = urllib.parse.urlsplit(self.path).path
             size = int(self.headers.get('Content-Length', '0'))
+            if route == '/api/projects/open':
+                return self.open_project_upload(size)
             if not 0 < size <= MAX_UPLOAD:
                 self.close_connection = True
                 return self.json({'error': '文件为空或超过 150 MB'}, 413)
@@ -399,6 +482,23 @@ class Handler(BaseHTTPRequestHandler):
             owner = self.headers.get('X-Z30-Client')
             if owner is not None and (len(owner) != 32 or any(c not in '0123456789abcdef' for c in owner)):
                 raise ValueError('无效的页面会话编号')
+            if route == '/api/projects/prepare':
+                data = json.loads(body); ids = data.get('ids')
+                if not isinstance(ids, list) or not 1 <= len(ids) <= 8 or len(set(ids)) != len(ids):
+                    raise ValueError('请选择 1–8 张不同照片')
+                with LOCK:
+                    reap_sessions()
+                    if len(PROJECT_TICKETS) >= 8:
+                        raise ValueError('项目下载任务较多，请等待已有下载完成')
+                    if any(k not in SESSIONS or SESSIONS[k].get('owner') != owner for k in ids):
+                        raise ValueError('项目照片会话已关闭')
+                    sources = [SESSIONS[k] for k in ids]
+                    document = projects.manifest(sources, data.get('recipes', {}), int(data.get('selected', 0)), settings)
+                    ticket = secrets.token_hex(16)
+                    for key in ids:
+                        PROJECT_READERS[key] = PROJECT_READERS.get(key, 0) + 1
+                    PROJECT_TICKETS[ticket] = dict(ids=ids, sources=sources, manifest=document, expires=time.monotonic()+60)
+                return self.json({'url': '/api/projects/download/'+ticket})
             if route in ('/api/sessions/restore', '/api/sessions/heartbeat'):
                 if owner is None:
                     raise ValueError('页面会话编号缺失')
@@ -421,6 +521,7 @@ class Handler(BaseHTTPRequestHandler):
                             p['wb'] = 'camera'
                         preview = preview_result(session, p, True)
                         item = preview | session['meta'] | {'settings': p, 'previewWidth': preview['width'], 'previewHeight': preview['height']}
+                        item['history'] = projects.history(recipe.get('history'), settings)
                         if recipe.get('undo'):
                             item['undo'] = {'settings': settings(recipe['undo'].get('settings', {})), 'preset': recipe['undo'].get('preset', 'custom')}
                         photos.append(item)

@@ -7,7 +7,7 @@ const localFetch=(path,options={})=>fetch(path,{...options,headers:{'X-Z30-Clien
 function savedWorkspace(){try{return JSON.parse(sessionStorage.getItem('z30-workspace')||'{}');}catch{return {};}}
 function persistWorkspace(){
  try{
-  const recipes={};for(const f of files)recipes[f.id]={settings:f.settings,preset:f.preset,undo:f.aiUndo,
+  const recipes={};for(const f of files)recipes[f.id]={settings:f.settings,preset:f.preset,undo:f.aiUndo,history:f.history?.snapshot(),
    pending:f.autoPending?{base:f.autoPending.base,requestId:f.autoPending.requestId}:null};
   sessionStorage.setItem('z30-workspace',JSON.stringify({selected:current?.id,recipes}));
  }catch{/* Manual recipe download remains available if browser storage is disabled. */}
@@ -45,14 +45,14 @@ sliderSpecs.forEach(([parent,id,label,min,max,step,suffix]) => {
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,5500);}
 function busy(show,message='正在更新预览…'){$('busy').hidden=!show;$('busyText').textContent=message;}
 function setEnabled(){const yes=!!current,locked=exportBusy||importBusy; $('controls').disabled=!yes||locked;$('wb').disabled=!yes||!current.raw||locked; ['compare','rotate','zoom','reset','saveRecipe','loadRecipe'].forEach(id=>$(id).disabled=!yes||locked);$('exportTop').disabled=!yes||locked;document.querySelectorAll('[data-preset]').forEach(b=>b.disabled=!yes||locked);syncAssistantControls();}
-function syncLabels(){const p=current?current.settings:defaults;sliderSpecs.forEach(([,id,,,,step,suffix])=>{const n=p[id];$(id).value=n;$(id+'Value').textContent=(n>0?'+':'')+(step<1?n.toFixed(2):n)+suffix;});$('wb').value=p.wb;$('crop').value=p.crop;document.querySelectorAll('[data-preset]').forEach(b=>b.classList.toggle('selected',b.dataset.preset===(current?.preset||'neutral')));}
+function syncLabels(){syncHistory();const p=current?current.settings:defaults;sliderSpecs.forEach(([,id,,,,step,suffix])=>{const n=p[id];$(id).value=n;$(id+'Value').textContent=(n>0?'+':'')+(step<1?n.toFixed(2):n)+suffix;});$('wb').value=p.wb;$('crop').value=p.crop;document.querySelectorAll('[data-preset]').forEach(b=>b.classList.toggle('selected',b.dataset.preset===(current?.preset||'neutral')));}
 async function api(path,data,binary=false,extra={},options={}){const r=await localFetch(path,{method:'POST',headers:{'Content-Type':binary?'application/octet-stream':'application/json','X-Z30-Request':'1',...extra},body:binary?data:JSON.stringify(data),...options});if(!r.ok){let message;try{message=(await r.json()).error;}catch{message=`处理失败 (${r.status})`;}throw Object.assign(Error(message),{status:r.status,retryable:r.status>=500||r.status===408||r.status===429});}return r;}
 function histogram(hist){const c=$('histogram'),ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#2b2d2f';ctx.lineWidth=1;[.25,.5,.75].forEach(t=>{ctx.beginPath();ctx.moveTo(t*c.width,0);ctx.lineTo(t*c.width,c.height);ctx.stroke();});if(!hist)return;const peak=Math.max(1,...hist.flat());ctx.globalCompositeOperation='screen';['#b65e56','#599173','#5c83ae'].forEach((color,ch)=>{ctx.beginPath();ctx.moveTo(0,c.height);hist[ch].forEach((n,i)=>ctx.lineTo(i*c.width/127,c.height-(Math.log1p(n)/Math.log1p(peak))*c.height*.92));ctx.lineTo(c.width,c.height);ctx.closePath();ctx.fillStyle=color+'90';ctx.fill();});ctx.globalCompositeOperation='source-over';}
 function drawLibrary(){$('fileList').replaceChildren();files.forEach(f=>{const card=document.createElement('div');card.className='filecard'+(current===f?' selected':'');const b=document.createElement('button');b.className='selectfile';b.title=f.name;const img=new Image();img.src=f.thumb;img.alt=f.name;const name=document.createElement('strong');name.textContent=f.name;const sub=document.createElement('small');sub.textContent=`${f.raw?'NEF RAW':'IMAGE'} · ${(f.bytes/1024/1024).toFixed(1)} MB`;b.append(img,name,sub);b.onclick=()=>selectFile(f);const remove=document.createElement('button');remove.className='remove';remove.textContent='×';remove.setAttribute('aria-label','移除 '+f.name);remove.onclick=()=>removeFile(f);card.append(b,remove);$('fileList').append(card);});$('count').textContent=String(files.length).padStart(2,'0');$('libraryHint').hidden=files.length>0;}
 function selectFile(f){current=f;revision++;showingBefore=false;$('beforeLabel').hidden=true;$('empty').hidden=!!f;$('imageWrap').hidden=!f;setEnabled();syncLabels();drawLibrary();if(!f){$('filename').textContent='尚未选择照片';$('filetype').textContent='RAW WORKSPACE';$('imageMeta').textContent='为 NEF 照片而设计';$('renderState').textContent='准备就绪';histogram();return;}$('filename').textContent=f.name;$('filetype').textContent=f.raw?'NEF RAW':'IMAGE';$('imageMeta').textContent=`${f.camera} · ${f.width} × ${f.height} · sRGB`;$('preview').src=f.image;histogram(f.histogram);$('qualityStatus').textContent=f.quality?.message||'等待画质检查';schedulePreview(0);}
 async function removeFile(f){if(exportBusy||importBusy)return;try{await api('/api/close',{id:f.id});files.splice(files.indexOf(f),1);if(current===f)selectFile(files[0]||null);else drawLibrary();persistWorkspace();}catch(e){toast(e.message);}}
-async function importFiles(list){if(importBusy||exportBusy){toast('请等待当前处理完成');return;}const incoming=Array.from(list);if(!incoming.length)return;importBusy=true;setEnabled();let succeeded=0;const colorWarnings=[];for(const file of incoming){if(files.length>=8){toast('最多同时打开 8 张照片，请先移除照片');break;}if(!/\.(nef|jpg|jpeg|png)$/i.test(file.name)){toast('不支持 '+file.name+'，请选择 NEF、JPG 或 PNG');continue;}if(file.size>150*1024*1024){toast(file.name+' 超过 150 MB');continue;}busy(true,'正在解码 '+file.name+'…');try{const r=await api('/api/open',file,true,{'X-Filename':encodeURIComponent(file.name)});const d=await r.json();colorWarnings.push(...(d.warnings||[]));const f={...d,settings:{...defaults},preset:'neutral',thumb:d.image};files.push(f);selectFile(f);succeeded++;}catch(e){toast(file.name+'：'+e.message);}}importBusy=false;setEnabled();busy(false);if(succeeded)toast(`已导入 ${succeeded} 张照片，原文件保持不变`+(colorWarnings.length?"；"+[...new Set(colorWarnings)].join("；"):""));if(previewWanted)runPreview();$('fileInput').value='';}
-function schedulePreview(delay=180){revision++;persistWorkspace();previewWanted=true;clearTimeout(previewTimer);previewTimer=setTimeout(runPreview,delay);$('renderState').textContent='等待更新…';}
+async function importFiles(list){if(importBusy||exportBusy){toast('请等待当前处理完成');return;}const incoming=Array.from(list);if(!incoming.length)return;importBusy=true;setEnabled();let succeeded=0;const colorWarnings=[];for(const file of incoming){if(files.length>=8){toast('最多同时打开 8 张照片，请先移除照片');break;}if(!/\.(nef|jpg|jpeg|png)$/i.test(file.name)){toast('不支持 '+file.name+'，请选择 NEF、JPG 或 PNG');continue;}if(file.size>150*1024*1024){toast(file.name+' 超过 150 MB');continue;}busy(true,'正在解码 '+file.name+'…');try{const r=await api('/api/open',file,true,{'X-Filename':encodeURIComponent(file.name)});const d=await r.json();colorWarnings.push(...(d.warnings||[]));const f={...d,settings:cloneEdit(defaults),preset:'neutral',thumb:d.image};f.history=new EditHistory(f.settings,f.preset);files.push(f);selectFile(f);succeeded++;}catch(e){toast(file.name+'：'+e.message);}}importBusy=false;setEnabled();busy(false);if(succeeded)toast(`已导入 ${succeeded} 张照片，原文件保持不变`+(colorWarnings.length?"；"+[...new Set(colorWarnings)].join("；"):""));if(previewWanted)runPreview();$('fileInput').value='';}
+function schedulePreview(delay=180){recordEdit();revision++;persistWorkspace();previewWanted=true;clearTimeout(previewTimer);previewTimer=setTimeout(runPreview,delay);$('renderState').textContent='等待更新…';}
 async function runPreview(){if(previewRunning||importBusy||exportBusy||!current)return;previewRunning=true;previewWanted=false;const f=current,rev=revision;busy(true);const p={...f.settings};try{const d=await(await api('/api/preview',{id:f.id,settings:p,before:true})).json();if(rev===revision&&current===f){f.image=d.image;f.before=d.before;f.histogram=d.histogram;f.previewWidth=d.width;f.previewHeight=d.height;if(!showingBefore)$('preview').src=d.image;else $('preview').src=d.before;histogram(d.histogram);$('qualityStatus').textContent=d.quality?.message||'未发现明显的输出异常';$('renderState').textContent=`已更新 · 预览 ${d.width} × ${d.height}`;}}catch(e){toast(e.message);$('renderState').textContent='预览失败';}finally{previewRunning=false;if(!importBusy&&!exportBusy)busy(false);if(previewWanted)runPreview();}}
 function compare(on){if(!current)return;showingBefore=on;$('preview').src=on?current.before:current.image;$('beforeLabel').hidden=!on;$('compare').classList.toggle('on',on);}
 ['importTop','importSide','importEmpty'].forEach(id=>$(id).onclick=()=>$('fileInput').click());
@@ -289,7 +289,7 @@ autoGrader=new AutoGrader({
  apply:(context,result,preview)=>{
   const f=context.source;
   f.aiUndo={settings:{...f.settings},preset:f.preset};
-  f.settings={...result.settings};f.preset='custom';
+  f.settings=cloneEdit(result.settings);f.preset='custom';recordEdit(f,'GPT 自动调色');
   // Invalidate a pending old preview before publishing the verified new image.
   revision++;clearTimeout(previewTimer);previewWanted=false;showingBefore=false;
   Object.assign(f,{image:preview.image,before:preview.before,histogram:preview.histogram,quality:preview.quality});
@@ -338,6 +338,7 @@ async function restoreWorkspace(){
   for(const photo of data.photos){
    const recipe=saved.recipes?.[photo.id]||{};
    const f={...photo,preset:recipe.preset||'custom',thumb:photo.image};
+   f.history=new EditHistory(f.settings,f.preset,photo.history);
    if(photo.undo)f.aiUndo=photo.undo;
    if(recipe.pending?.requestId)f.autoPending={source:f,base:recipe.pending.base,requestId:recipe.pending.requestId,revision:-1,recoverOnly:true};
    files.push(f);
@@ -349,3 +350,53 @@ async function restoreWorkspace(){
 }
 restoreWorkspace();
 setInterval(()=>api('/api/sessions/heartbeat',{}).catch(()=>{}),30000);
+
+var historyApplying=false;
+function recordEdit(f=current,label='调整参数'){
+ if(!f||historyApplying)return;
+ if(!f.history)f.history=new EditHistory(f.settings,f.preset);
+ if(f.history.capture(f.settings,f.preset,label))f.editVersion=(f.editVersion||0)+1;
+ syncHistory();
+}
+function syncHistory(){
+ const h=current?.history,locked=importBusy||exportBusy;
+ $('historyUndo').disabled=!h||h.index===0||locked;
+ $('historyRedo').disabled=!h||h.index===h.states.length-1||locked;
+ $('historyList').disabled=!h||locked;$('saveProject').disabled=!files.length||locked;
+ $('historyList').replaceChildren();
+ if(h)h.states.forEach((entry,index)=>{const option=document.createElement('option');option.value=index;option.textContent=(index+1)+'. '+entry.label;option.selected=index===h.index;$('historyList').append(option);});
+}
+function moveHistory(index){
+ if(!current?.history||importBusy||exportBusy)return;
+ const state=current.history.go(index);current.settings=state.settings;current.preset=state.preset;
+ current.editVersion=(current.editVersion||0)+1;historyApplying=true;
+ try{syncLabels();schedulePreview(0);}finally{historyApplying=false;}
+}
+$('historyUndo').onclick=()=>moveHistory(current.history.index-1);
+$('historyRedo').onclick=()=>moveHistory(current.history.index+1);
+$('historyList').onchange=e=>moveHistory(Number(e.target.value));
+window.addEventListener('keydown',e=>{
+ if(!(e.ctrlKey||e.metaKey)||/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName))return;
+ if(e.key.toLowerCase()==='z'){e.preventDefault();if(current?.history)moveHistory(current.history.index+(e.shiftKey?1:-1));}
+ if(e.key.toLowerCase()==='y'){e.preventDefault();if(current?.history)moveHistory(current.history.index+1);}
+});
+$('saveProject').onclick=async()=>{
+ if(!files.length||importBusy||exportBusy)return;
+ recordEdit();const recipes={};for(const f of files)recipes[f.id]={settings:f.settings,preset:f.preset,history:f.history?.snapshot(),analysis:f.autoResult?{base:f.autoResult.base,result:f.autoResult.result}:null};
+ try{const data=await(await api('/api/projects/prepare',{ids:files.map(f=>f.id),recipes,selected:files.indexOf(current)})).json();
+  const link=document.createElement('a');link.href=data.url;link.download='Z30-Project.z30proj';document.body.append(link);link.click();link.remove();
+  toast('项目含原片副本，请保管本机下载文件；下载完成前勿移除照片');
+ }catch(e){toast(e.message);}
+};
+$('openProject').onclick=()=>$('projectInput').click();
+$('projectInput').onchange=async e=>{
+ const file=e.target.files[0];if(!file)return;
+ if(file.size>512*1024*1024){toast('项目超过 512 MiB');return;}
+ importBusy=true;setEnabled();
+ try{const data=await(await api('/api/projects/open',file,true)).json();const added=[];
+  for(const photo of data.photos){const f={...photo,thumb:photo.image};f.history=new EditHistory(f.settings,f.preset,photo.history);
+   if(photo.analysis?.result)f.autoResult={base:photo.analysis.base,result:photo.analysis.result,currentImage:photo.image};
+   files.push(f);added.push(f);
+  }selectFile(added[data.selected]||added[0]);toast('项目原片、参数与历史已恢复');
+ }catch(error){toast(error.message);}finally{importBusy=false;setEnabled();if(previewWanted)runPreview();e.target.value='';}
+};
