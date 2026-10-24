@@ -115,10 +115,10 @@
   "native_launcher_observed": true,
   "native_quit_button_verified": true,
   "early_shutdown_timeouts": 2,
-  "early_timeout_cause": "Not identified; not reproduced in three consecutive current-build full cycles",
+  "early_timeout_cause": "User reports the two early 30s waits occurred while debugging the app with Codex; treated as a debugging-environment artifact, not a product runtime defect.",
   "clean_virtual_machine_tested": false,
   "real_deepseek_inference_tested": false,
-  "further_shutdown_investigation": "Bounded export shutdown implemented (5s default); original intermittent 30s launcher timeout still not reproduced and remains open.",
+  "further_shutdown_investigation": "Closed per user explanation: early 30s waits occurred during Codex debugging, not a product runtime defect. Bounded export shutdown remains fixed and verified.",
   "additional_full_exe_cycles": 8,
   "total_full_exe_cycles_observed": 11,
   "continued_shutdown_investigation": {
@@ -144,7 +144,6 @@
       19.92
     ],
     "background_export_measured_from": "source launcher, not packaged EXE",
-    "root_cause_identified": false,
     "regression_test": "tests/test_shutdown.py",
     "diagnostics_in_current_exe": false,
     "background_raw_export_stop_seconds_before_fix": [
@@ -155,7 +154,9 @@
     "background_raw_export_stop_seconds_after_fix": [
       5.576
     ],
-    "bounded_export_shutdown": true
+    "bounded_export_shutdown": true,
+    "user_attributed_cause": "Codex-assisted debugging session",
+    "treated_as_product_defect": false
   },
   "bounded_export_shutdown": {
     "default_timeout_seconds": 5,
