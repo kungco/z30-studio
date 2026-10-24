@@ -2,6 +2,8 @@
 
 为尼康 Z30 使用者制作的中文本地 RAW 暗房，支持 NEF 显影、Codex CLI 及 DeepSeek / OpenAI 兼容视觉接口辅助调色。独立项目，与尼康官方无关联。
 
+交给其他开发者或 AI 接手：先读 [项目交接说明](AI_HANDOFF.md)，可直接使用 [接手提示词](HANDOFF_PROMPT.txt)。
+
 ![Codex 辅助面板](docs/images/codex-assistant.png)
 
 ## 功能
