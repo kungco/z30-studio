@@ -169,7 +169,7 @@ def data_url(im):
 
 def preview_result(session, p, include_before=False):
     token = session.setdefault('_cache_id', session.get('meta', {}).get('id') or secrets.token_hex(16))
-    cache_key = (token, 'render', tuple(sorted(p.items())), bool(include_before))
+    cache_key = (token, 'render', json.dumps(p, sort_keys=True, allow_nan=False), bool(include_before))
     cached = CACHE.get(cache_key)
     if cached is not None:
         return dict(cached)
@@ -569,6 +569,24 @@ class Handler(BaseHTTPRequestHandler):
                     release_photo(key)
                     return self.json({'ok': True})
                 p = settings(data.get('settings', {}))
+                if route == '/api/inspect':
+                    cx, cy = float(data.get('cx', .5)), float(data.get('cy', .5))
+                    if not math.isfinite(cx) or not math.isfinite(cy) or not 0 <= cx <= 1 or not 0 <= cy <= 1:
+                        raise ValueError('检视位置无效')
+                    token = s.setdefault('_cache_id', key)
+                    cache_key = (token, 'native-rgb8', json.dumps(p, sort_keys=True, allow_nan=False))
+                    pixels = CACHE.get(cache_key)
+                    if pixels is None:
+                        pixels = np.asarray(develop(decode(s, p['wb'], False), p))
+                        pixels.setflags(write=False); CACHE.put(cache_key, pixels)
+                    full_h, full_w = pixels.shape[:2]
+                    w = min(full_w, max(64, min(1024, int(data.get('width', 640)))))
+                    h = min(full_h, max(64, min(1024, int(data.get('height', 480)))))
+                    x = max(0, min(full_w-w, round(cx*full_w-w/2)))
+                    y = max(0, min(full_h-h, round(cy*full_h-h/2)))
+                    tile = Image.fromarray(pixels[y:y+h, x:x+w])
+                    return self.json(dict(image='data:image/png;base64,'+base64.b64encode(image_bytes(tile,'PNG')).decode(),
+                        width=w,height=h,x=x,y=y,full_width=full_w,full_height=full_h,cx=(x+w/2)/full_w,cy=(y+h/2)/full_h))
                 if route == '/api/codex/cancel':
                     job = ADVISOR.get(data.get('job'))
                     if job['source_id'] != key:

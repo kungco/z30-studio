@@ -83,6 +83,20 @@ class HttpTests(unittest.TestCase):
             self.assertEqual(server.SESSIONS[opened['id']]['path'].read_bytes(),original)
         finally:self.post('/api/close',{'id':opened['id']}).close()
 
+    def test_inspection_is_an_exact_crop_of_native_render_with_geometry(self):
+        import base64
+        import numpy as np
+        key=self.open_photo(); p=server.settings(dict(rotation=1,crop='1:1',exposure=.5))
+        try:
+            expected=np.asarray(server.develop(server.decode(server.SESSIONS[key],'camera',False),p))
+            with self.post('/api/inspect',dict(id=key,settings=p,cx=.8,cy=.3)) as response:data=json.load(response)
+            actual=np.asarray(Image.open(io.BytesIO(base64.b64decode(data['image'].split(',')[1]))))
+            self.assertEqual((data['full_width'],data['full_height']),(8,8))
+            np.testing.assert_array_equal(actual,expected)
+            with patch.object(server,'decode',side_effect=AssertionError('native render cache missed')):
+                self.post('/api/inspect',dict(id=key,settings=p)).close()
+        finally:self.post('/api/close',{'id':key}).close()
+
     def test_refresh_restores_eight_photos_and_parameters_instead_of_leaking_slots(self):
         self.owner = 'b' * 32
         keys = [self.open_photo() for _ in range(8)]

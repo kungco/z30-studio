@@ -66,7 +66,7 @@ $('compare').onpointerup=$('compare').onpointercancel=()=>compare(false);
 $('compare').onclick=e=>{if(e.detail===0){compare(!showingBefore);}};
 window.addEventListener('keydown',e=>{if(e.code==='Space'&&!/INPUT|SELECT|TEXTAREA|BUTTON/.test(document.activeElement.tagName)&&!$('exportDialog').open&&!$('assistantDialog').open){e.preventDefault();compare(true);}});
 window.addEventListener('keyup',e=>{if(e.code==='Space')compare(false);});window.addEventListener('blur',()=>compare(false));
-$('zoom').onclick=()=>{const on=$('imageWrap').classList.toggle('zoomed');$('zoom').textContent=on?'100%':'适应';};
+$('zoom').onclick=()=>{if(!current)return;inspector={source:current,settings:cloneEdit(current.settings),cx:.5,cy:.5};$('inspectMap').src=current.image;$('inspectDialog').showModal();loadInspection();};
 let dragDepth=0;document.addEventListener('dragenter',e=>{if(e.dataTransfer.types.includes('Files')){e.preventDefault();dragDepth++;$('dropOverlay').hidden=false;}});document.addEventListener('dragover',e=>e.preventDefault());document.addEventListener('dragleave',()=>{if(--dragDepth<=0){dragDepth=0;$('dropOverlay').hidden=true;}});document.addEventListener('drop',e=>{e.preventDefault();dragDepth=0;$('dropOverlay').hidden=true;importFiles(e.dataTransfer.files);});
 function download(blob,name){const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);}
 $('saveRecipe').onclick=()=>{if(!current)return;download(new Blob([JSON.stringify({app:'Z30 Studio',version:1,source:current.name,settings:current.settings},null,2)],{type:'application/json'}),current.name.replace(/\.[^.]+$/,'')+'-z30.json');toast('参数已下载，可在下次导入照片后载入');};
@@ -400,3 +400,21 @@ $('projectInput').onchange=async e=>{
   }selectFile(added[data.selected]||added[0]);toast('项目原片、参数与历史已恢复');
  }catch(error){toast(error.message);}finally{importBusy=false;setEnabled();if(previewWanted)runPreview();e.target.value='';}
 };
+
+var inspector=null,inspectRevision=0;
+async function loadInspection(){
+ if(!inspector)return;const job=inspector,rev=++inspectRevision;
+ $('inspectStatus').textContent='正在读取全尺寸显影；此视图包含当前调色与构图…';
+ try{const data=await(await api('/api/inspect',{id:job.source.id,settings:job.settings,cx:job.cx,cy:job.cy})).json();
+  if(rev!==inspectRevision||!$('inspectDialog').open)return;
+  inspector={...job,...data};$('inspectImage').src=data.image;$('inspectImage').width=data.width;$('inspectImage').height=data.height;
+  $('inspectStatus').textContent=`原尺寸 ${data.full_width} × ${data.full_height} · 区域 (${data.x}, ${data.y}) ${data.width} × ${data.height} · PNG 无损预览`;
+ }catch(e){$('inspectStatus').textContent=e.message;}
+}
+$('inspectClose').onclick=()=>{$('inspectDialog').close();inspectRevision++;};
+$('inspectMap').onclick=e=>{if(!inspector)return;const r=e.target.getBoundingClientRect();inspector.cx=(e.clientX-r.left)/r.width;inspector.cy=(e.clientY-r.top)/r.height;loadInspection();};
+document.querySelectorAll('[data-pan]').forEach(button=>button.onclick=()=>{
+ if(!inspector?.full_width)return;const [dx,dy]=button.dataset.pan.split(',').map(Number);
+ inspector.cx=Math.max(0,Math.min(1,inspector.cx+dx*inspector.width/inspector.full_width*.7));
+ inspector.cy=Math.max(0,Math.min(1,inspector.cy+dy*inspector.height/inspector.full_height*.7));loadInspection();
+});
