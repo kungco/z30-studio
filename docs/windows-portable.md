@@ -24,7 +24,7 @@
 python tools/build_windows.py
 ```
 
-构建结果为 `dist/Z30-Studio/` 及上级目录的 `Z30-Studio-Windows-x64.zip`。打包器不包含 `.data`、原片、项目、虚拟环境或 Codex 登录信息。
+每次构建在新的 `dist/release-*/Z30-Studio/` 目录生成程序，并在上级目录生成 `Z30-Studio-Windows-x64.zip`；不会替换当前正在运行的程序目录。打包器不包含 `.data`、原片、项目、虚拟环境或 Codex 登录信息。
 
 `Z30_DATA_DIR` 可显式指定独立的数据目录。诊断参数 `--headless --no-browser --port 0 --ready-file status.json --stop-file stop.signal` 可不显示窗口启动；等待状态 JSON 出现后访问其中的 URL，创建停止信号文件可正常退出。停止信号文件必须在启动前不存在。普通用户直接双击即可。
 

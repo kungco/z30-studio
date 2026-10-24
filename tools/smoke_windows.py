@@ -1,4 +1,4 @@
-"""Exercise the extracted EXE, not source imports; no model requests or original writes."""
+"""Exercise the extracted EXE, not source imports; no cloud inference or original writes."""
 import argparse
 import hashlib
 import io
@@ -35,6 +35,7 @@ def main():
     p=argparse.ArgumentParser()
     p.add_argument('--zip',type=Path,required=True)
     p.add_argument('--samples',type=Path)
+    p.add_argument('--deepseek-network-check',action='store_true',help='GET official models with a deliberately invalid key; no images/inference')
     p.add_argument('--out',type=Path,required=True)
     args=p.parse_args()
     report={'model_requests':0,'raw':[]}
@@ -63,7 +64,8 @@ def main():
                 try:assert process.wait(timeout=30)==0
                 except subprocess.TimeoutExpired:process.kill();process.wait();raise
         def get(route):
-            with urllib.request.urlopen(url+route,timeout=120) as response:return response.read()
+            request=urllib.request.Request(url+route,headers={'X-Z30-Client':owner})
+            with urllib.request.urlopen(request,timeout=120) as response:return response.read()
         def post(route,value,binary=False,name='fixture.png'):
             body=value if binary else json.dumps(value).encode()
             request=urllib.request.Request(url+route,data=body,headers={'X-Z30-Request':'1','X-Z30-Client':owner,'X-Filename':urllib.parse.quote(name)})
@@ -108,6 +110,13 @@ def main():
                 assert 'local-smoke-not-a-secret' not in (data/'ai-provider.json').read_text()
                 report['compatible_mock_requests']=1;report['real_cloud_inference_verified']=False
             finally:mock.shutdown();mock.server_close();thread.join()
+            if args.deepseek_network_check:
+                post('/api/ai/config',dict(provider='deepseek',base_url='https://api.deepseek.com',model='deepseek-flash',api_key='z30-public-connectivity-test-not-a-key'))
+                try:post('/api/ai/test',{})
+                except urllib.error.HTTPError as error:
+                    message=json.loads(error.read())['error'];assert 'HTTP 401' in message
+                    report['official_https_expected_unauthorized']=True
+                else:raise AssertionError('Deliberately invalid key unexpectedly accepted')
             if args.samples:
                 originals=[];recipes={}
                 for depth in (12,14):

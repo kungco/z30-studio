@@ -9,6 +9,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,8 +26,10 @@ def main():
         target=(ROOT/name).resolve()
         if not target.is_relative_to(ROOT.resolve()):
             raise ValueError('Build output escapes workspace: '+str(target))
-    subprocess.run([sys.executable, '-m', 'PyInstaller', '--noconfirm', str(ROOT/'Z30-Studio.spec')], cwd=ROOT, check=True)
-    bundle = ROOT/'dist'/'Z30-Studio'
+    (ROOT/'dist').mkdir(exist_ok=True)
+    staging=Path(tempfile.mkdtemp(prefix='release-',dir=ROOT/'dist'))
+    subprocess.run([sys.executable, '-m', 'PyInstaller', '--noconfirm', '--distpath', str(staging), str(ROOT/'Z30-Studio.spec')], cwd=ROOT, check=True)
+    bundle = staging/'Z30-Studio'
     licenses = bundle/'licenses';licenses.mkdir(exist_ok=True)
     for name in PACKAGES:
         dist = importlib.metadata.distribution(name)
@@ -39,6 +42,7 @@ def main():
                     dest = target/relative;dest.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(source,dest)
     python_license = Path(sys.base_prefix)/'LICENSE.txt'
     if python_license.is_file():shutil.copyfile(python_license,licenses/'Python-LICENSE.txt')
+    shutil.copyfile(ROOT/'docs'/'licenses'/'Tcl-8.6.15-license.terms',licenses/'Tcl-license.terms')
     # Tcl/Tk runtime hooks include their own license. Keep a visible companion copy.
     for name in ('_tcl_data','_tk_data'):
         for file in (bundle/'_internal'/name).glob('*license*'):
@@ -64,7 +68,7 @@ def main():
                 z.write(file,Path('Z30-Studio')/relative)
     digest=hashlib.sha256(archive.read_bytes()).hexdigest()
     archive.with_suffix('.zip.sha256').write_text(digest+'  '+archive.name+'\n',encoding='ascii')
-    print(json.dumps(dict(zip=str(archive),bytes=archive.stat().st_size,sha256=digest),indent=2))
+    print(json.dumps(dict(app_directory=str(bundle),zip=str(archive),bytes=archive.stat().st_size,sha256=digest),indent=2))
 
 
 if __name__=='__main__':main()
