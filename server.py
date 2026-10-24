@@ -31,6 +31,7 @@ import drafts
 import darkroom
 import workflow
 import local_vision
+import lens_tools
 from app_runtime import APP_VERSION, resource_root, data_root
 from imaging import raw_crop, raw_pixels, raster_linear, resize_linear, srgb_to_linear
 
@@ -58,7 +59,7 @@ STORES = {}
 VISIONS = {}
 DEFAULTS = dict(exposure=0, contrast=0, highlights=0, shadows=0,
                 temperature=0, tint=0, saturation=0, vibrance=0,
-                sharpen=0, rotation=0, crop='original', wb='camera') | spatial.DEFAULTS | darkroom.DEFAULTS | {'lens_profile':'手动 / 未校准'}
+                sharpen=0, rotation=0, crop='original', wb='camera') | spatial.DEFAULTS | darkroom.DEFAULTS | lens_tools.DEFAULTS | {'lens_profile':'手动 / 未校准'}
 LIMITS = dict(exposure=(-4, 4), contrast=(-100, 100), highlights=(-100, 100),
               shadows=(-100, 100), temperature=(-100, 100), tint=(-100, 100),
               saturation=(-100, 100), vibrance=(-100, 100), sharpen=(0, 100)) | spatial.LIMITS
@@ -85,6 +86,7 @@ def settings(data):
     if p['skin_mask']:spatial.bitmap_field(p['skin_mask'])
     p['lens_profile'] = str(data.get('lens_profile', '手动 / 未校准'))[:100]
     p.update(darkroom.normalize(data))
+    p.update(lens_tools.normalize(data))
     return p
 
 
@@ -267,6 +269,8 @@ def restore_draft(data, owner):
             key = secrets.token_hex(16)
             meta = {k: photo['meta'][k] for k in ('name','width','height','camera','raw','bytes')}
             meta['id'] = key
+            meta.update({k:photo['meta'][k] for k in ('lens_model','focal_mm','aperture','sensor_crop','focus_m') if k in photo['meta']})
+            if 'lens_model' not in meta:meta.update(lens_tools.metadata(path,meta['camera']))
             session = dict(path=path, name=meta['name'], raw=meta['raw'], cache={}, owner=owner,
                            persistent=True, asset=photo['asset'], meta=meta, thumbnail=photo.get('thumbnail'), last_seen=time.monotonic())
             SESSIONS[key] = session
@@ -385,6 +389,7 @@ def import_image(body, name, owner=None, make_preview=True):
                     raise ValueError('图像超过 8000 万像素限制')
         session['meta'] = dict(id=key, name=name, width=w, height=h, camera=model,
                                raw=session['raw'], bytes=len(body))
+        session['meta'].update(lens_tools.metadata(path,model))
         result = preview_result(session, DEFAULTS, True) if make_preview else {}
         session['meta'].update(color_policy=session.get('color_policy', 'RAW → linear sRGB'),
                                warnings=session.get('color_warnings', []))
@@ -499,6 +504,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(AI_SETTINGS.public())
         if route == '/api/local-models':
             return self.json(get_vision().status())
+        if route == '/api/lens/profiles':
+            db=lens_tools.database()
+            return self.json(dict(profiles=[dict(id=p['id'],name=p['name'],crop=p['crop'],
+                min_focal=min(r['focal'] for r in p['distortion']),max_focal=max(r['focal'] for r in p['distortion']),
+                has_tca=bool(p['tca']),has_vignetting=bool(p['vignetting'])) for p in db['profiles']],
+                source=db['source'],license=db['license'],source_sha256=db['source_sha256']))
         if route == '/api/codex/status':
             config=AI_SETTINGS.public()
             if config['provider']=='codex':return self.json(codex_assist.status() | {'provider':'codex'})
@@ -556,6 +567,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({'error': '建议任务不存在，请重新生成'}, 404)
         files = {'/': ('index.html', 'text/html; charset=utf-8'),
                  '/app.js': ('app.js', 'application/javascript; charset=utf-8'),
+                 '/lens-controls.js': ('lens-controls.js','application/javascript; charset=utf-8'),
                  '/local-tools.js': ('local-tools.js','application/javascript; charset=utf-8'),
                  '/library-workflow.js': ('library-workflow.js','application/javascript; charset=utf-8'),
                  '/darkroom-controls.js': ('darkroom-controls.js', 'application/javascript; charset=utf-8'),
@@ -773,6 +785,11 @@ class Handler(BaseHTTPRequestHandler):
                     release_photo(key)
                     return self.json({'ok': True})
                 p = settings(data.get('settings', {}))
+                if route == '/api/lens/apply':
+                    update=lens_tools.select(s['meta'],data.get('options',{}))
+                    return self.json({'settings':settings(p|update),'message':'已应用 Lensfun 配置；手动镜头系数已重置，请检查边缘。尚未做本机实镜网格标定。'})
+                if route == '/api/lens/tca':
+                    return self.json(lens_tools.estimate_tca(decode(s,source_wb(s,p),True),p))
                 if route == '/api/repairs/place':
                     edit=dict(data.get('repair',{}));edit=spatial.repairs([edit])[0]
                     if data.get('auto_source',False):

@@ -5,7 +5,7 @@ from PyInstaller.utils.hooks import collect_dynamic_libs
 root = Path(SPECPATH)
 a = Analysis([str(root / 'desktop.py')], pathex=[str(root)],
     binaries=collect_dynamic_libs('rawpy') + collect_dynamic_libs('onnxruntime'),
-    datas=[(str(root / 'web'), 'web')],
+    datas=[(str(root / 'web'), 'web'), (str(root / 'data'), 'data')],
     hiddenimports=['tifffile._imagecodecs'],
     excludes=['unittest', 'pytest', 'pip', 'setuptools', 'scipy', 'matplotlib', 'IPython'],
     noarchive=False)

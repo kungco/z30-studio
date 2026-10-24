@@ -7,7 +7,7 @@ GROUPS = {
     'detail':('sharpen','clarity','texture','dehaze','denoise_luma','denoise_chroma'),
     'geometry':('rotation','crop','crop_rect','straighten'),
     'local':('masks','repairs','skin_smooth','skin_mask'),
-    'optics':('lens_k1','lens_k2','lens_red','lens_blue','vignette','lens_profile','lens_auto','lens_tca'),
+    'optics':('lens_k1','lens_k2','lens_red','lens_blue','vignette','lens_profile','lens_auto','lens_tca','lens_calibration','lens_fill','lens_vignette'),
 }
 
 

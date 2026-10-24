@@ -133,6 +133,18 @@ class HttpTests(unittest.TestCase):
             self.assertTrue(0<=repair['sx']<=1);self.assertTrue(0<=repair['sy']<=1)
         finally:self.post('/api/close',{'id':key}).close()
 
+    def test_lens_profile_lookup_snapshot_and_flat_image_tca_noop(self):
+        self.owner='8'*32;key=self.open_photo()
+        server.SESSIONS[key]['meta'].update(lens_model='NIKKOR Z DX 16-50mm f/3.5-6.3 VR',focal_mm=50,aperture=6.3,sensor_crop=1.531)
+        try:
+            with urllib.request.urlopen(self.base+'/api/lens/profiles') as response:
+                self.assertTrue(any(p['name'].startswith('Nikkor Z DX 16-50') for p in json.load(response)['profiles']))
+            with self.post('/api/lens/apply',dict(id=key,settings={},options={})) as response:p=json.load(response)['settings']
+            self.assertTrue(p['lens_auto']);self.assertEqual(p['lens_calibration']['focal'],50)
+            with self.post('/api/lens/tca',dict(id=key,settings=p)) as response:
+                self.assertFalse(json.load(response)['applied'])
+        finally:self.post('/api/close',{'id':key}).close()
+
     def test_compatible_backend_uses_actual_http_images_and_quality_guard(self):
         import base64
         import api_backend

@@ -43,6 +43,7 @@ def main():
     python_license = Path(sys.base_prefix)/'LICENSE.txt'
     if python_license.is_file():shutil.copyfile(python_license,licenses/'Python-LICENSE.txt')
     shutil.copyfile(ROOT/'docs'/'licenses'/'Tcl-8.6.15-license.terms',licenses/'Tcl-license.terms')
+    shutil.copyfile(ROOT/'data'/'Lensfun-COPYING.CC_BY-SA_3.0.txt',licenses/'Lensfun-data-CC-BY-SA-3.0.txt')
     # Tcl/Tk runtime hooks include their own license. Keep a visible companion copy.
     for name in ('_tcl_data','_tk_data'):
         for file in (bundle/'_internal'/name).glob('*license*'):

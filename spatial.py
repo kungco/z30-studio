@@ -142,6 +142,9 @@ def _sample(a,x,y):
 
 
 def optical(arr,p):
+    if p.get('lens_auto'):
+        from lens_tools import correct
+        arr=correct(arr,p,_sample)
     if not any(p.get(k,0) for k in ('lens_k1','lens_k2','lens_red','lens_blue','vignette')):return arr
     h,w=arr.shape[:2];out=np.empty_like(arr);cx=(w-1)/2;cy=(h-1)/2;scale=max(cx,cy,1)
     xx=(np.arange(w,dtype=np.float32)[None,:]-cx)/scale
