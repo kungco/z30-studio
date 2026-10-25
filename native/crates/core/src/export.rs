@@ -3,7 +3,7 @@
 use crate::{Error, Result, develop::SrgbFrame};
 use image::{
     ExtendedColorType, ImageEncoder,
-    codecs::{jpeg::JpegEncoder, png::PngEncoder, tiff::TiffEncoder},
+    codecs::{png::PngEncoder, tiff::TiffEncoder},
 };
 use std::{io::Write, path::Path};
 pub const SRGB_ICC: &[u8] = include_bytes!("../assets/srgb.icc");
@@ -34,6 +34,9 @@ pub fn save(frame: &SrgbFrame, destination: &Path, format: Format, jpeg_quality:
         return Err(Error::Policy(
             "导出扩展名与格式不匹配，NEF 不能作为输出".into(),
         ));
+    }
+    if matches!(format, Format::Jpeg) && (frame.width > 65500 || frame.height > 65500) {
+        return Err(Error::Policy("JPEG 单边尺寸不能超过 65500 像素".into()));
     }
     let count = frame.width as u64 * frame.height as u64;
     if count == 0
@@ -86,12 +89,13 @@ pub fn save(frame: &SrgbFrame, destination: &Path, format: Format, jpeg_quality:
                 .map(|v| (v.clamp(0.0, 1.0) * 255.0).round_ties_even() as u8)
                 .collect();
             if matches!(format, Format::Jpeg) {
-                let mut encoder =
-                    JpegEncoder::new_with_quality(temporary.as_file_mut(), jpeg_quality);
-                encoder
-                    .set_icc_profile(SRGB_ICC.to_vec())
-                    .map_err(image::ImageError::Unsupported)?;
-                encoder.write_image(&data, frame.width, frame.height, ExtendedColorType::Rgb8)?;
+                encode_jpeg(
+                    temporary.as_file_mut(),
+                    &data,
+                    frame.width,
+                    frame.height,
+                    jpeg_quality,
+                )?;
             } else {
                 let mut encoder = PngEncoder::new(temporary.as_file_mut());
                 encoder
@@ -109,6 +113,35 @@ pub fn save(frame: &SrgbFrame, destination: &Path, format: Format, jpeg_quality:
         .persist_noclobber(destination)
         .map_err(|error| Error::Io(error.error))?;
     Ok(())
+}
+
+fn encode_jpeg(
+    writer: impl Write,
+    data: &[u8],
+    width: u32,
+    height: u32,
+    quality: u8,
+) -> Result<()> {
+    // The upstream safe wrapper reports C errors by unwinding. An encoder or
+    // output-device failure must remain a regular failed no-overwrite export.
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+        let mut encoder = mozjpeg::Compress::new(mozjpeg::ColorSpace::JCS_RGB);
+        encoder.set_fastest_defaults();
+        encoder.set_size(width as usize, height as usize);
+        encoder.set_quality(quality as f32);
+        encoder.set_chroma_sampling_pixel_sizes((1, 1), (1, 1));
+        let mut started = encoder.start_compress(writer)?;
+        // One-based ICC sequence, as required by ICC's JPEG embedding format.
+        // mozjpeg 0.10.13 write_icc_profile() uses a zero-based chunk number.
+        let mut marker = b"ICC_PROFILE\0\x01\x01".to_vec();
+        marker.extend_from_slice(SRGB_ICC);
+        started.write_marker(mozjpeg::Marker::APP(2), &marker);
+        started.write_scanlines(data)?;
+        let mut writer = started.finish()?;
+        writer.flush()?;
+        Ok(())
+    }))
+    .unwrap_or_else(|_| Err(Error::Policy("JPEG 编码失败；已有文件未被覆盖".into())))
 }
 
 #[cfg(test)]
@@ -144,6 +177,31 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+    #[test]
+    fn jpeg_limits_and_output_failures_return_errors() {
+        struct Broken;
+        impl Write for Broken {
+            fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("injected output failure"))
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Err(std::io::Error::other("injected flush failure"))
+            }
+        }
+        assert!(encode_jpeg(Broken, &[128; 3 * 16 * 16], 16, 16, 95).is_err());
+        let root = tempfile::tempdir().unwrap();
+        let destination = root.path().join("too-wide.jpg");
+        let frame = SrgbFrame {
+            width: 65501,
+            height: 1,
+            pixels: vec![[0.; 3]; 65501],
+        };
+        assert!(
+            matches!(save(&frame,&destination,Format::Jpeg,95),Err(Error::Policy(message)) if message.contains("65500"))
+        );
+        assert!(!destination.exists());
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
     }
     #[test]
     fn real_tiff16_keeps_sub_eight_bit_values_and_srgb_tag() {

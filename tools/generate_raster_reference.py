@@ -177,6 +177,12 @@ def cases():
         width,height=max(1,round(11*scale)),max(1,round(7*scale))
         expected=np.stack([np.asarray(Image.fromarray(source[:,:,c]).resize((width,height),Image.Resampling.BILINEAR)) for c in range(3)],axis=-1)
         resizes.append(dict(bounds=list(bounds),width=width,height=height,expected=expected.reshape(-1,3).tolist()))
+    for width,height,bounds in [(5,2,(10,1)),(2,5,(1,10))]:
+        values=np.arange(width*height*3,dtype=np.float32).reshape(height,width,3)/30
+        scale=min(bounds[0]/width,bounds[1]/height,1)
+        size=(max(1,round(width*scale)),max(1,round(height*scale)))
+        expected=np.stack([np.asarray(Image.fromarray(values[:,:,c]).resize(size,Image.Resampling.BILINEAR)) for c in range(3)],axis=-1)
+        resizes.append(dict(source=dict(width=width,height=height,pixels=values.reshape(-1,3).tolist()),bounds=list(bounds),width=size[0],height=size[1],expected=expected.reshape(-1,3).tolist()))
     return dict(reference='Original synthetic files; analytic W3C/ICC TRC references, Pillow JPEG integer decode; no Rust CMS oracle', cases=results,
                 resize_source=dict(width=11,height=7,pixels=source.reshape(-1,3).tolist()),resizes=resizes)
 

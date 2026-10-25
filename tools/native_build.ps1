@@ -5,7 +5,8 @@ param(
     [switch]$RawProbe,
     [switch]$RawFixtures,
     [switch]$ExportProbe,
-    [switch]$RasterProbe
+    [switch]$RasterProbe,
+    [switch]$PhotoExportProbe
 )
 $ErrorActionPreference='Stop'
 $repoRoot=Split-Path -Parent $PSScriptRoot
@@ -71,6 +72,7 @@ try {
     if($RawProbe){& $cargoTool build -p z30-core --example raw_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'RAW probe build failed'}}
     if($ExportProbe){& $cargoTool build -p z30-core --example export_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Export probe build failed'}}
     if($RasterProbe){& $cargoTool build -p z30-core --example raster_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Raster probe build failed'}}
+    if($PhotoExportProbe){& $cargoTool build -p z30-core --example photo_export_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Photo export probe build failed'}}
     $profile=if($DebugBuild){'debug'}else{'release'}
     $binary=Join-Path (Get-Location) "target\$profile\z30-native.exe"
     $staging=Join-Path $repoRoot ('native\dist\stage-'+[Guid]::NewGuid().ToString('N'))

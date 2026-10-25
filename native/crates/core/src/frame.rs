@@ -20,6 +20,7 @@ mod tests {
         }
         #[derive(serde::Deserialize)]
         struct Resize {
+            source: Option<Source>,
             bounds: [u32; 2],
             width: u32,
             height: u32,
@@ -40,7 +41,11 @@ mod tests {
         .unwrap();
         let before = source.pixels.clone();
         for case in data.resizes {
-            let result = source.thumbnail(case.bounds[0], case.bounds[1]).unwrap();
+            let replacement = case
+                .source
+                .map(|v| Frame::new(v.width, v.height, v.pixels).unwrap());
+            let candidate = replacement.as_ref().unwrap_or(&source);
+            let result = candidate.thumbnail(case.bounds[0], case.bounds[1]).unwrap();
             assert_eq!((result.width, result.height), (case.width, case.height));
             for (actual, expected) in result
                 .pixels
@@ -111,8 +116,8 @@ impl Frame {
         let scale = (max_width as f64 / self.width as f64)
             .min(max_height as f64 / self.height as f64)
             .min(1.);
-        let width = (self.width as f64 * scale).round().max(1.) as usize;
-        let height = (self.height as f64 * scale).round().max(1.) as usize;
+        let width = (self.width as f64 * scale).round_ties_even().max(1.) as usize;
+        let height = (self.height as f64 * scale).round_ties_even().max(1.) as usize;
         let xs =
             crate::raw_geometry::coefficients(self.width as usize, width, 0., self.width as f64);
         let ys =
