@@ -1,4 +1,4 @@
-2026-10-25 最新原生断点：阶段 2A 完成限定验收，2B 暖色真实样片失败未验收。先读 PROJECT_PROGRESS.md / docs/reports/native-stage2b.md / .development/checkpoint.json；先修画质差异，不跳到 AI。旧 Python 完成声明不代表原生完成。不自动关机。
+2026-10-25 最新原生断点：阶段 2A 限定验收通过；2B 暖色色域数值跳变已修复，修正 Rust/Python 四组对照通过。旧输出差异另报，阶段 2 整体尚未完成。先读 PROJECT_PROGRESS.md / docs/reports/native-gamut-stability.md / .development/checkpoint.json，继续 ICC 输入与原生编辑，不跳到 AI。不自动关机。
 
 请先读取 PROJECT_PROGRESS.md、DEVELOPMENT_PLAN.md 和 .development/checkpoint.json（存在时）。当前分支 feat/native-slint，正在进行原生 Rust/Slint 迁移；旧 Python 2.0 仅作对照。以最新用户总任务、真实源码和测试为准，不从零开始、不虚报完成、不继承旧关机指令。
 

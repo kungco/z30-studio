@@ -1,4 +1,4 @@
-2026-10-25 最新原生断点：阶段 2A 完成限定验收，2B 暖色真实样片失败未验收。先读 PROJECT_PROGRESS.md / docs/reports/native-stage2b.md / .development/checkpoint.json；先修画质差异，不跳到 AI。旧 Python 完成声明不代表原生完成。不自动关机。
+2026-10-25 最新原生断点：阶段 2A 限定验收通过；2B 暖色色域数值跳变已修复，修正 Rust/Python 四组对照通过。旧输出差异另报，阶段 2 整体尚未完成。先读 PROJECT_PROGRESS.md / docs/reports/native-gamut-stability.md / .development/checkpoint.json，继续 ICC 输入与原生编辑，不跳到 AI。不自动关机。
 
 > 新任务：当前开发分支为 `feat/native-slint`，正在进行 Rust + Slint 原生迁移。请优先阅读 PROJECT_PROGRESS.md 和 DEVELOPMENT_PLAN.md。下文 2.0“已完成”仅指历史 Python 工作台，不代表原生迁移完成。严禁据此直接宣布新总任务完成或关机。
 

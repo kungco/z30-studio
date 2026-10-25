@@ -1,4 +1,5 @@
 import io
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -14,6 +15,20 @@ import server
 
 
 class ToneTests(unittest.TestCase):
+    def test_gamut_does_not_amplify_two_lightness_ulps_into_colour_steps(self):
+        lab=np.array([[[.8651548624038696,-.012072279118001461,.24119898676872253]]],np.float32)
+        shifted=lab.copy()
+        for _ in range(2):shifted[...,0]=np.nextafter(shifted[...,0],np.float32(np.inf))
+        from colour_management import encode
+        a=encode(core.gamut_map(lab.copy()),'srgb');b=encode(core.gamut_map(shifted),'srgb')
+        self.assertLess(float(np.max(abs(a-b))),2e-5)
+
+    def test_gamut_matches_independent_cubic_boundary_reference(self):
+        fixture=json.loads((Path(__file__).resolve().parents[1]/'native/crates/core/tests/fixtures/gamut-boundaries.json').read_text(encoding='utf8'))
+        lab=np.array([case['lab'] for case in fixture['cases']],np.float32)[None]
+        expected=np.array([case['expected'] for case in fixture['cases']],np.float32)[None]
+        self.assertLess(float(np.max(abs(core.gamut_map(lab)-expected))),2e-6)
+
     def test_tone_is_monotonic_and_preserves_true_black(self):
         y = np.linspace(0, 12, 30000, dtype=np.float32)
         for shadows in (-100, 0, 100):

@@ -15,24 +15,32 @@ const LMS_LAB: [[f32; 3]; 3] = [
     [1.9779985, -2.4285922, 0.4505937],
     [0.025904037, 0.78277177, -0.80867577],
 ];
-const LAB_LMS: [[f32; 3]; 3] = [
-    [1.0, 0.39633778, 0.21580376],
-    [1.0, -0.105561346, -0.06385417],
-    [1.0, -0.089484185, -1.2914855],
+const LAB_LMS64: [[f64; 3]; 3] = [
+    [0.9999999984799417, 0.3963377921537674, 0.21580375802634233],
+    [
+        1.0000000088980117,
+        -0.10556134234721802,
+        -0.06385417483942997,
+    ],
+    [1.000000054630844, -0.08948418213793843, -1.2914855379547747],
 ];
-const LMS_RGB: [[f32; 3]; 3] = [
-    [4.076742, -3.307712, 0.23096998],
-    [-1.2684381, 2.6097577, -0.3413194],
-    [-0.0041960552, -0.7034187, 1.7076147],
+const LMS_RGB64: [[f64; 3]; 3] = [
+    [4.076741942889828, -3.307711991174428, 0.23096997692536173],
+    [-1.2684381261827504, 2.609757604306311, -0.34131942433773027],
+    [
+        -0.004196055076226249,
+        -0.7034186762444677,
+        1.7076146699636876,
+    ],
 ];
 fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
-fn matrix(m: [[f32; 3]; 3], p: [f32; 3]) -> [f32; 3] {
-    m.map(|row| dot(row, p))
+fn matrix64(m: [[f64; 3]; 3], p: [f64; 3]) -> [f64; 3] {
+    m.map(|r| r[0] * p[0] + r[1] * p[1] + r[2] * p[2])
 }
-fn lab_to_rgb(p: [f32; 3]) -> [f32; 3] {
-    matrix(LMS_RGB, matrix(LAB_LMS, p).map(|v| v * v * v))
+fn lab_to_rgb64(p: [f64; 3]) -> [f64; 3] {
+    matrix64(LMS_RGB64, matrix64(LAB_LMS64, p).map(|v| v * v * v))
 }
 fn in_gamut(p: [f32; 3]) -> bool {
     p.iter().all(|&v| (0.0..=1.0).contains(&v))
@@ -112,24 +120,33 @@ fn mapped(y: f32, table: &[f32], ceiling: f32) -> f32 {
     let fraction = position - index as f32;
     table[index] + (table[index + 1] - table[index]) * fraction
 }
-fn gamut(mut lab: [f32; 3]) -> [f32; 3] {
+fn gamut(mut lab: [f64; 3]) -> [f32; 3] {
     lab[0] = lab[0].clamp(0.0, 1.0);
-    let mut rgb = lab_to_rgb(lab);
-    if rgb.iter().any(|&v| !(-1e-6..=1.0 + 1e-6).contains(&v)) {
+    // Paired f64 inverses and a 24-bit chroma search avoid the old 1/1024
+    // staircase: two ULPs of L previously changed encoded blue by ~0.008.
+    let mut rgb = lab_to_rgb64(lab);
+    let neutral = lab_to_rgb64([lab[0], 0.0, 0.0]);
+    let lower = neutral.iter().copied().fold(f64::INFINITY, f64::min);
+    let upper = neutral.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let guard = 1e-5f64.min(lower * 0.25).min((1.0 - upper) * 0.25).max(0.0);
+    if rgb.iter().any(|&v| !(guard..=1.0 - guard).contains(&v)) {
         let original = [lab[1], lab[2]];
         let (mut low, mut high) = (0.0, 1.0);
-        for _ in 0..10 {
+        for _ in 0..24 {
             let mid = (low + high) * 0.5;
             let candidate = [lab[0], original[0] * mid, original[1] * mid];
-            if in_gamut(lab_to_rgb(candidate)) {
+            if lab_to_rgb64(candidate)
+                .iter()
+                .all(|&v| (guard..=1.0 - guard).contains(&v))
+            {
                 low = mid;
             } else {
                 high = mid;
             }
         }
-        rgb = lab_to_rgb([lab[0], original[0] * low, original[1] * low]);
+        rgb = lab_to_rgb64([lab[0], original[0] * low, original[1] * low]);
     }
-    rgb.map(|v| v.clamp(0.0, 1.0))
+    rgb.map(|v| v.clamp(0.0, 1.0) as f32)
 }
 fn encode(v: f32) -> f32 {
     let v = v.max(0.0);
@@ -195,32 +212,22 @@ pub fn render(source: &Frame, p: &Parameters) -> Result<SrgbFrame> {
             needs_gamut |= !in_gamut(*x);
         }
         if p.saturation != 0.0 || p.vibrance != 0.0 || needs_gamut {
-            let mut negative_lms = false;
             for x in pixels.iter_mut() {
-                *x = matrix(RGB_LMS, *x);
-                negative_lms |= x.iter().any(|&v| v < 0.0);
-            }
-            for x in pixels.iter_mut() {
-                let lms = x.map(|v| {
-                    if negative_lms {
-                        v.cbrt()
-                    } else {
-                        v.powf(1.0 / 3.0)
-                    }
-                });
-                let mut lab = matrix(LMS_LAB, lms);
+                let lms =
+                    matrix64(RGB_LMS.map(|r| r.map(f64::from)), x.map(f64::from)).map(f64::cbrt);
+                let mut lab = matrix64(LMS_LAB.map(|r| r.map(f64::from)), lms);
                 if p.saturation != 0.0 || p.vibrance != 0.0 {
                     let chroma = (lab[1] * lab[1] + lab[2] * lab[2]).sqrt();
                     let hue = lab[2].atan2(lab[1]);
                     let warm =
                         (-((hue - 0.8) / 0.55).powi(2)).exp() * (-(chroma / 0.2).powi(2)).exp();
-                    let saturation = p.saturation / 100.0;
+                    let saturation = p.saturation as f64 / 100.0;
                     let factor = (if saturation > 0.0 {
                         1.0 + saturation * (1.0 - 0.55 * warm)
                     } else {
                         1.0 + saturation
                     }) * (1.0
-                        + p.vibrance / 100.0 * (-chroma / 0.12).exp() * (1.0 - 0.6 * warm));
+                        + p.vibrance as f64 / 100.0 * (-chroma / 0.12).exp() * (1.0 - 0.6 * warm));
                     lab[1] *= factor;
                     lab[2] *= factor;
                 }
@@ -302,6 +309,35 @@ fn sharpen(rgb: &mut [[f32; 3]], width: usize, height: usize, amount: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn gamut_boundary_matches_independent_polynomial_roots() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/gamut-boundaries.json")).unwrap();
+        for case in fixture["cases"].as_array().unwrap() {
+            let lab: [f32; 3] = serde_json::from_value(case["lab"].clone()).unwrap();
+            let expected: [f32; 3] = serde_json::from_value(case["expected"].clone()).unwrap();
+            let actual = gamut(lab.map(f64::from));
+            for c in 0..3 {
+                assert!(
+                    (actual[c] - expected[c]).abs() < 2e-6,
+                    "cubic boundary mismatch: {lab:?}, {actual:?}, {expected:?}"
+                );
+            }
+        }
+    }
+    #[test]
+    fn two_ulps_do_not_create_visible_gamut_staircases() {
+        let lab = [
+            0.8651548624038696f32,
+            -0.012072279118001461,
+            0.24119898676872253,
+        ];
+        let mut shifted = lab;
+        shifted[0] = f32::from_bits(lab[0].to_bits() + 2);
+        let a = gamut(lab.map(f64::from)).map(encode);
+        let b = gamut(shifted.map(f64::from)).map(encode);
+        assert!(a.iter().zip(b).all(|(x, y)| (x - y).abs() <= 2e-5));
+    }
     #[test]
     fn rejects_nonfinite_out_of_range_and_unknown_parameters() {
         assert!(
