@@ -1,0 +1,242 @@
+import { Button, Slider, ScrollView, ListView, AboutSlint } from "std-widgets.slint";
+
+export struct PhotoView {
+    name: string,
+    detail: string,
+    stars: string,
+    thumbnail: image,
+}
+
+component ToolButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    in property <bool> active: true;
+    callback triggered();
+    height: 34px;
+    min-width: 72px;
+    border-radius: 6px;
+    background: !root.active ? #20242a : root.primary ? #e6bd65 : pointer.has-hover ? #343b45 : #272d35;
+    border-color: root.primary ? #e6bd65 : #414851;
+    border-width: 1px;
+    opacity: root.active ? 1 : 0.45;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { if root.active { root.triggered(); } }
+    Text { text: root.label; color: root.primary ? #191d22 : #d8dce3; font-size: 13px; horizontal-alignment: center; vertical-alignment: center; }
+    pointer := TouchArea { enabled: root.active; mouse-cursor: MouseCursor.pointer; clicked => { root.triggered(); } }
+}
+
+component Adjustment inherits VerticalLayout {
+    in property <string> label;
+    in property <bool> active;
+    in property <float> minimum: -100;
+    in property <float> maximum: 100;
+    in-out property <float> value;
+    callback adjusted(float);
+    spacing: 5px;
+    HorizontalLayout {
+        Text { text: root.label; color: #cbd1d9; font-size: 12px; }
+        Text { text: "" + round(root.value * 100) / 100; color: #d9bd81; font-size: 12px; horizontal-alignment: right; }
+    }
+    Slider { minimum: root.minimum; maximum: root.maximum; value <=> root.value; enabled: root.active; changed(v) => { root.adjusted(v); } }
+}
+
+export component AppWindow inherits Window {
+    title: "Z30 Studio · 原生开发预览";
+    preferred-width: 1320px; preferred-height: 860px;
+    min-width: 1000px; min-height: 680px;
+    background: #161a20;
+    default-font-family: "Microsoft YaHei UI";
+    default-font-size: 13px;
+    in property <[PhotoView]> photos;
+    in property <int> selected-index: -1;
+    in property <image> preview;
+    in property <bool> has-preview: false;
+    in property <bool> busy: false;
+    in property <bool> can-import: true;
+    in property <bool> engine-ready: false;
+    in property <bool> ai-ready: false;
+    in property <string> photo-name: "欢迎来到你的暗房";
+    in property <string> photo-info: "从本机导入照片开始";
+    in property <string> colour-info: "";
+    in property <string> status: "就绪 · 本机原生窗口";
+    in property <string> draft-status: "原片仅引用，不会被覆盖";
+    in-out property <bool> compare: false;
+    in-out property <bool> about-visible: false;
+    in-out property <bool> exit-warning: false;
+    in-out property <float> zoom: 1;
+    in-out property <float> exposure: 0;
+    in-out property <float> contrast: 0;
+    in-out property <float> highlights: 0;
+    in-out property <float> shadows: 0;
+    in-out property <float> temperature: 0;
+    in-out property <float> tint: 0;
+    in-out property <float> saturation: 0;
+    in-out property <float> vibrance: 0;
+    in-out property <float> sharpen: 0;
+    callback import-files();
+    callback select-photo(int);
+    callback rate-photo(int);
+    callback cancel-preview();
+    callback adjust(string, float);
+    callback reset-edits();
+    callback export-photo();
+    callback auto-grade();
+    callback confirm-exit();
+
+    VerticalLayout {
+        spacing: 1px; padding: 0px;
+        Rectangle {
+            height: 70px; background: #20252d;
+            HorizontalLayout {
+                padding-left: 22px; padding-right: 22px; spacing: 12px;
+                VerticalLayout {
+                    alignment: center; spacing: 2px;
+                    Text { text: "Z30  STUDIO"; color: #f0d39b; font-size: 23px; font-weight: 700; }
+                    Text { text: "你的摄影暗房"; color: #969faa; font-size: 10px; }
+                }
+                Rectangle { horizontal-stretch: 1; background: transparent; }
+                ToolButton { label: "＋ 导入照片"; active: root.can-import; triggered => { root.import-files(); } }
+                ToolButton { label: "AI 自动调色"; active: root.ai-ready && root.has-preview; triggered => { root.auto-grade(); } }
+                ToolButton { label: "导出照片"; primary: true; active: root.engine-ready && root.has-preview; triggered => { root.export-photo(); } }
+                ToolButton { label: "关于"; min-width: 54px; triggered => { root.about-visible = true; } }
+            }
+        }
+        HorizontalLayout {
+            spacing: 1px;
+            Rectangle {
+                width: 228px; background: #1d2229;
+                VerticalLayout {
+                    padding: 16px; spacing: 14px;
+                    HorizontalLayout {
+                        Text { text: "照片库"; color: #e6e9ee; font-size: 15px; font-weight: 600; }
+                        Text { text: "" + root.photos.length; color: #d7b773; horizontal-alignment: right; }
+                    }
+                    Text { text: "NEF  /  JPEG  /  PNG"; color: #7f8996; font-size: 10px; }
+                    ListView {
+                        for photo[index] in root.photos: Rectangle {
+                            height: 92px;
+                            background: root.selected-index == index ? #303137 : #242a32;
+                            border-radius: 5px;
+                            border-width: root.selected-index == index ? 1px : 0px;
+                            border-color: #c6a35d;
+                            HorizontalLayout {
+                                padding: 8px; spacing: 8px;
+                                Rectangle {
+                                    width: 54px; background: #161a20; border-radius: 3px;
+                                    Image { source: photo.thumbnail; image-fit: contain; }
+                                }
+                                VerticalLayout {
+                                    alignment: center; spacing: 5px;
+                                    Text { text: photo.name; color: #d8dde4; font-size: 11px; overflow: elide; }
+                                    Text { text: photo.detail; color: #7f8996; font-size: 9px; overflow: elide; }
+                                    Text { text: photo.stars; color: #d7b773; font-size: 11px; }
+                                }
+                            }
+                            TouchArea { clicked => { root.select-photo(index); } }
+                            accessible-role: list-item;
+                            accessible-label: photo.name;
+                        }
+                    }
+                    Text { text: root.draft-status; color: #929da9; font-size: 10px; wrap: word-wrap; }
+                    Text { text: "阶段 1 · 原生查看器\n其余功能按画质验收逐项迁移"; color: #7b8796; font-size: 10px; wrap: word-wrap; }
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1; background: #12161b;
+                VerticalLayout {
+                    padding: 16px; spacing: 12px;
+                    HorizontalLayout {
+                        Text { text: root.photo-name; color: #d8dee7; font-size: 12px; overflow: elide; }
+                        ToolButton { label: root.compare ? "显示编辑" : "原片对比"; active: root.engine-ready; triggered => { root.compare = !root.compare; } }
+                        ToolButton { label: root.zoom == 1 ? "放大" : "适合窗口"; active: root.has-preview; triggered => { root.zoom = root.zoom == 1 ? 1.5 : 1; } }
+                    }
+                    Rectangle {
+                        vertical-stretch: 1; background: #101318; clip: true;
+                        if root.has-preview: Image {
+                            source: root.preview; image-fit: contain;
+                            width: parent.width * root.zoom; height: parent.height * root.zoom;
+                            x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+                        }
+                        if !root.has-preview: VerticalLayout {
+                            alignment: center; padding: 50px; spacing: 14px;
+                            Text { text: "光影，从这里开始"; color: #e7cf9f; font-size: 25px; horizontal-alignment: center; }
+                            Text { text: "导入照片，开始本机查看。\n原生 RAW / 调色引擎正在迁移，Python 版本保留作对照。"; color: #8e99a6; font-size: 13px; horizontal-alignment: center; wrap: word-wrap; }
+                            ToolButton { label: "选择照片"; primary: true; active: root.can-import; triggered => { root.import-files(); } }
+                        }
+                        if root.busy: Rectangle {
+                            x: 12px; y: 12px; width: 140px; height: 33px;
+                            border-radius: 5px; background: #292d34;
+                            Text { text: "正在读取照片…"; color: #e6c783; horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                    }
+                    Text { text: root.photo-info; color: #a2adba; font-size: 11px; overflow: elide; }
+                    Text { text: root.colour-info; color: #818b97; font-size: 10px; wrap: word-wrap; }
+                    HorizontalLayout {
+                        alignment: start; spacing: 8px;
+                        Text { text: "评分"; color: #929da9; vertical-alignment: center; }
+                        for rating in 6: ToolButton { label: rating == 0 ? "清除" : "" + rating + " ★"; min-width: 42px; active: root.selected-index >= 0; triggered => { root.rate-photo(rating); } }
+                        Rectangle { horizontal-stretch: 1; background: transparent; }
+                        ToolButton { label: "取消读取"; active: root.busy; triggered => { root.cancel-preview(); } }
+                    }
+                }
+            }
+            Rectangle {
+                width: 300px; background: #1d2229;
+                VerticalLayout {
+                    padding: 18px; spacing: 14px;
+                    HorizontalLayout {
+                        Text { text: "显影调整"; color: #e0e5ed; font-size: 15px; font-weight: 600; }
+                        ToolButton { label: "重置"; min-width: 50px; active: root.engine-ready; triggered => { root.reset-edits(); } }
+                    }
+                    Text { text: root.engine-ready ? "浮点显影 · 本机处理" : "调色引擎迁移中，当前只查看原片。\n未验收功能保持关闭。"; color: #b19c76; font-size: 11px; wrap: word-wrap; }
+                    ScrollView {
+                        VerticalLayout {
+                            spacing: 12px; padding-right: 6px;
+                            Text { text: "光线"; color: #e7d0a4; font-size: 12px; }
+                            Adjustment { label: "曝光 EV"; minimum: -4; maximum: 4; value <=> root.exposure; active: root.engine-ready; adjusted(v) => { root.adjust("exposure", v); } }
+                            Adjustment { label: "对比度"; value <=> root.contrast; active: root.engine-ready; adjusted(v) => { root.adjust("contrast", v); } }
+                            Adjustment { label: "高光"; value <=> root.highlights; active: root.engine-ready; adjusted(v) => { root.adjust("highlights", v); } }
+                            Adjustment { label: "阴影"; value <=> root.shadows; active: root.engine-ready; adjusted(v) => { root.adjust("shadows", v); } }
+                            Text { text: "色彩"; color: #e7d0a4; font-size: 12px; }
+                            Adjustment { label: "色温"; value <=> root.temperature; active: root.engine-ready; adjusted(v) => { root.adjust("temperature", v); } }
+                            Adjustment { label: "色调"; value <=> root.tint; active: root.engine-ready; adjusted(v) => { root.adjust("tint", v); } }
+                            Adjustment { label: "饱和度"; value <=> root.saturation; active: root.engine-ready; adjusted(v) => { root.adjust("saturation", v); } }
+                            Adjustment { label: "自然饱和度"; value <=> root.vibrance; active: root.engine-ready; adjusted(v) => { root.adjust("vibrance", v); } }
+                            Text { text: "细节"; color: #e7d0a4; font-size: 12px; }
+                            Adjustment { label: "锐化"; minimum: 0; value <=> root.sharpen; active: root.engine-ready; adjusted(v) => { root.adjust("sharpen", v); } }
+                        }
+                    }
+                }
+            }
+        }
+        Rectangle {
+            height: 34px; background: #20252d;
+            HorizontalLayout {
+                padding-left: 18px; padding-right: 18px;
+                Text { text: root.status; color: #aab4c1; font-size: 10px; vertical-alignment: center; overflow: elide; }
+                Text { text: "NATIVE  /  0.1 开发版"; color: #d8bd86; font-size: 10px; horizontal-alignment: right; vertical-alignment: center; }
+            }
+        }
+    }
+    if root.about-visible: Rectangle {
+        background: #101318e8;
+        VerticalLayout {
+            alignment: center; padding: 80px; spacing: 18px;
+            Text { text: "Z30 Studio · 原生开发版"; color: #ead4ab; font-size: 24px; horizontal-alignment: center; }
+            Text { text: "Rust + Slint  /  本机照片工具\n阶段能力与未验证项见随附文档。"; color: #b3becb; horizontal-alignment: center; }
+            AboutSlint { }
+            ToolButton { label: "返回暗房"; triggered => { root.about-visible = false; } }
+        }
+    }
+    if root.exit-warning: Rectangle {
+        background: #101318ee;
+        VerticalLayout {
+            alignment: center; padding: 90px; spacing: 20px;
+            Text { text: "有尚未成功保存的改动"; color: #f0d39b; font-size: 24px; horizontal-alignment: center; }
+            Text { text: "原片保持不变。返回后可以检查保存错误，或明确放弃未保存的评分/选择。"; color: #c0c8d3; wrap: word-wrap; horizontal-alignment: center; }
+            ToolButton { label: "返回检查"; primary: true; triggered => { root.exit-warning = false; } }
+            ToolButton { label: "放弃未保存改动并退出"; triggered => { root.confirm-exit(); } }
+        }
+    }
+}

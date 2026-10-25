@@ -24,10 +24,13 @@ def quota_summary(payload, now=None):
             return dict(unknown, source="stale_or_invalid_snapshot")
     except (KeyError, TypeError, ValueError):
         return dict(unknown, source="missing_snapshot_time")
-    limits = payload.get("rateLimitsByLimitId", {}).get("codex") or payload.get("rateLimits") or {}
+    buckets = payload.get("rateLimitsByLimitId")
+    limits = (buckets.get("codex") if isinstance(buckets,dict) else None) or payload.get("rateLimits")
+    if not isinstance(limits,dict):limits={}
     windows = []
     for name in ("primary", "secondary"):
-        window = limits.get(name) or {}
+        window = limits.get(name)
+        if not isinstance(window,dict):continue
         used = window.get("usedPercent")
         if isinstance(used, bool) or not isinstance(used, (int, float)) or not math.isfinite(used) or not 0 <= used <= 100:
             continue
@@ -68,10 +71,15 @@ def main():
     parser.add_argument("--quota-file",type=Path)
     args=parser.parse_args()
     now=dt.datetime.now(dt.timezone.utc)
-    quota=json.loads(args.quota_file.read_text(encoding="utf8")) if args.quota_file else None
+    quota=None
+    if args.quota_file:
+        try:quota=json.loads(args.quota_file.read_text(encoding="utf8"))
+        except (OSError,ValueError):pass  # An unavailable usage source must not lose the code checkpoint.
     reports=[]
     for path in args.report:
         path=path.resolve()
+        if path.name.lower() in ("auth.json",".env") or path.suffix.lower() in (".nef",".jpg",".jpeg",".png",".onnx"):
+            parser.error("Only development reports are accepted; photos, weights and credentials are excluded")
         if not path.is_file():parser.error("Report missing: "+str(path))
         with path.open("rb") as stream:digest=hashlib.file_digest(stream,"sha256").hexdigest()
         reports.append(dict(path=str(path),bytes=path.stat().st_size,sha256=digest))

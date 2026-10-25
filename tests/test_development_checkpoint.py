@@ -17,6 +17,8 @@ class DevelopmentCheckpointTests(unittest.TestCase):
             self.assertEqual(result["decision"],"checkpoint_by_stage")
         old=(now-dt.timedelta(hours=1)).isoformat()
         self.assertEqual(quota_summary(dict(observed_at=old,rateLimits=dict(primary=dict(usedPercent=99))),now)["source"],"stale_or_invalid_snapshot")
+        for limits in (None,[],"bad",dict(primary=[])):
+            self.assertEqual(quota_summary(dict(observed_at=now.isoformat(),rateLimits=limits),now)["windows"],[])
 
     def test_low_either_window_pauses_and_account_secrets_are_not_copied(self):
         now=dt.datetime.now(dt.timezone.utc)
