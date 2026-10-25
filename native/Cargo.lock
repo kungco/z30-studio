@@ -5601,6 +5601,7 @@ dependencies = [
 name = "z30-core"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "cc",
  "image",
  "libloading 0.8.9",
@@ -5608,6 +5609,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
+ "tiff",
 ]
 
 [[package]]

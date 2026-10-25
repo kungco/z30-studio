@@ -42,3 +42,5 @@
 Slint 1.18.1 采用 Royalty-free Desktop License 2.0，并在顶层“关于”面板保留官方 AboutSlint 组件。原文在 licenses/；MinGW 静态运行库声明也保留。Rust 工具链、编译依赖与可选大模型不会作为基础软件运行依赖隐藏在外部。
 
 目前 EXE 体积只是查看器阶段的数据，不能据此宣称完整产品已达到 50 MB 目标。完整功能/模型/GPU 组件、依赖和许可清单在后续阶段验收后统计。正式发布、main 合并都需要用户确认。
+
+阶段 2B 已加入 float 九参数和带 sRGB ICC 的不覆盖 JPEG/PNG/TIFF16 核心；中性样片和合成导出通过，暖色完整样片最大误差超标，见 docs/reports/native-stage2b.md。界面保持关闭，不能作为已迁移完成版本交付。`-ExportProbe` 编译仅供开发验证的合成 TIFF 探针；不替代全尺寸 NEF 导出验证。
