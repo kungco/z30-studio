@@ -1,0 +1,90 @@
+{
+  "model_requests": 0,
+  "raw": [
+    {
+      "bits": 12,
+      "source_sha256": "75249c11a3a845367c7a322a1c4e7076f33c785ec2518fc6594c34c185b41161",
+      "preview": [
+        1067,
+        1600
+      ],
+      "native": [
+        3712,
+        5568
+      ],
+      "original_unchanged": true
+    },
+    {
+      "bits": 14,
+      "source_sha256": "03d94c1f184c4236ea8f890ab0fe30e91b65965e8b09cebecc397fba081a607f",
+      "preview": [
+        1067,
+        1600
+      ],
+      "native": [
+        3712,
+        5568
+      ],
+      "original_unchanged": true
+    }
+  ],
+  "shutdowns": [
+    {
+      "cycle": 1,
+      "seconds": 0.342,
+      "exit_code": 0
+    },
+    {
+      "cycle": 2,
+      "seconds": 0.549,
+      "exit_code": 0
+    }
+  ],
+  "shutdown_timeout_seconds": 25.0,
+  "health": {
+    "app": "Z30 Studio",
+    "version": "2.0.0",
+    "rawpy": "0.27.1",
+    "libraw": "0.22.1",
+    "cache": {
+      "bytes": 0,
+      "limit_bytes": 134217728,
+      "entries": 0,
+      "hits": 0,
+      "misses": 0
+    }
+  },
+  "static_assets": true,
+  "codex_status": {
+    "available": true,
+    "ready": true,
+    "version": "codex-cli 0.164.0-alpha.11.1",
+    "message": "Codex 已就绪 · 生成建议需要联网",
+    "provider": "codex"
+  },
+  "single_instance": true,
+  "raster_exports": [
+    "JPEG",
+    "PNG",
+    "TIFF16"
+  ],
+  "bundled_lens_profiles": 35,
+  "compatible_mock_requests": 1,
+  "real_cloud_inference_verified": false,
+  "local_mock_requests": 1,
+  "preflight_exact_payload_no_inference": true,
+  "packaged_onnx_subject": {
+    "coverage": 0.39935302734375,
+    "local_only": true
+  },
+  "advanced_prophoto_tiff16": true,
+  "draft_saved": "b8f65f36e9c751424f504e7b71d47ddc",
+  "project_roundtrip": true,
+  "graceful_exit": true,
+  "key_not_persisted_after_restart": true,
+  "draft_recovered_after_restart": true,
+  "durable_export_after_restart": true,
+  "python_removed_from_PATH": true,
+  "unicode_and_space_paths": true,
+  "exe_sha256": "3b6fc7ca560822b8fc103a7dc869d15475a4498cc7db461307ec8c9984bee6a3"
+}

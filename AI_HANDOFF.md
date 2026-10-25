@@ -2,7 +2,7 @@
 
 更新：2026-10-25，Asia/Hong_Kong。事实以实际源码/Git/报告为准，新用户指令优先。
 
-仓库 https://github.com/kungco/z30-studio ，分支 `fix/staged-image-pipeline`，PR https://github.com/kungco/z30-studio/pull/1 。PR 未自动合并；只克隆 main 会漏掉本轮工作。当前全清单功能已实现，最终 Windows 构建/实际 EXE 验收状态见 docs/implementation-status.md 和 docs/reports/windows-v2-validation.md（生成后）。包内 build-info.json 的 source_commit 才是二进制代码基线，后续纯验收文档提交不代表二进制改动。
+仓库 https://github.com/kungco/z30-studio ，分支 `fix/staged-image-pipeline`，PR https://github.com/kungco/z30-studio/pull/1 。PR 未自动合并；只克隆 main 会漏掉本轮工作。当前全清单功能已实现，最终 Windows 构建/实际 EXE 验收状态见 docs/implementation-status.md 和 docs/reports/windows-v2-validation.md。包内 build-info.json 的 source_commit 才是二进制代码基线，后续纯验收文档提交不代表二进制改动。
 
 ## 保留的约束
 
@@ -24,7 +24,7 @@ photo_workflow.py 管理图库/参数同步（避免第三方 workflow 打包钩
 
 ## 验证与风险
 
-当前功能阶段 157 Python / 31 Node；发布补修新增最终化栈测试后以最终报告计数为准。实测 Z30 12/14 位公开 NEF 原片 SHA 不变；普通 RGB 输出指标保持，复杂路径有极少数数值差异，完整分布见 docs/reports/p2-pixel-comparison.json，不宣称逐位相同。
+最终源码回归 158 Python / 31 Node 通过；实际 Windows EXE、公开 RAW 与本地 ONNX 也完成验收，详见最终报告。实测 Z30 12/14 位公开 NEF 原片 SHA 不变；普通 RGB 输出指标保持，复杂路径有极少数数值差异，完整分布见 docs/reports/p2-pixel-comparison.json，不宣称逐位相同。
 
 退出已确定并修复一条无人读取 stdout 管道阻塞路径：旧版 1500 次请求只返回 120 次，退出 3；新版全部返回，退出 0。另一次现场“无首条关停确认”是否完全同源未证明；保留独立 8/20 秒监督、停止观察线程及提前/最终化栈诊断，不以重跑通过当作根治。
 
