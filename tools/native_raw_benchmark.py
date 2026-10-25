@@ -100,6 +100,8 @@ def main():
     report=dict(stage="2A-raw-core",full_migration_complete=False,oracle_base_commit="a2a2e089d760221a52c8774cca8a2e42f0a82269",
         native_base_commit=subprocess.check_output(["git","rev-parse","HEAD"],cwd=ROOT,text=True).strip(),
         native_tree_dirty=bool(subprocess.check_output(["git","status","--porcelain"],cwd=ROOT,text=True)),
+        native_probe_sha256=digest(args.probe),native_source_sha256={str(path.relative_to(ROOT)):digest(path) for path in (
+            ROOT/"native/crates/core/src/raw.rs",ROOT/"native/crates/core/src/raw_geometry.rs",ROOT/"native/crates/core/src/native_raw.c")},
         oracle_module_sha256=digest(ROOT/"imaging.py"),libraw_dll_sha256=digest(args.dll),cases=[])
     for bits,source in ((12,args.raw12),(14,args.raw14)):
         before=digest(source)

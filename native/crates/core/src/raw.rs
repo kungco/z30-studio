@@ -5,6 +5,7 @@ use crate::{
     raw_geometry::{RawSizes, reframe16},
 };
 use libloading::Library;
+use libloading::os::windows::{LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR, LOAD_LIBRARY_SEARCH_SYSTEM32};
 use serde::Serialize;
 use std::{
     ffi::{c_int, c_uint, c_void},
@@ -111,6 +112,16 @@ pub struct RawMetadata {
 pub struct DecodedRaw {
     pub frame: Frame,
     pub metadata: RawMetadata,
+    pub timings: RawTimings,
+}
+#[derive(Clone, Debug, Serialize)]
+pub struct RawTimings {
+    pub open_seconds: f64,
+    pub unpack_seconds: f64,
+    pub process_seconds: f64,
+    pub bitmap_seconds: f64,
+    pub release_seconds: f64,
+    pub geometry_seconds: f64,
 }
 fn policy(message: impl Into<String>) -> Error {
     Error::Policy(message.into())
@@ -137,14 +148,16 @@ impl LibRaw {
         }
         let path = dll.canonicalize()?;
         unsafe {
-            let library: Library =
-                libloading::os::windows::Library::load_with_flags(&path, 0x100 | 0x800)
-                    .map_err(|e| {
-                        policy(format!(
-                            "无法加载 LibRaw：{e}；官方版本需要 VC++ x64 运行库"
-                        ))
-                    })?
-                    .into();
+            let library: Library = libloading::os::windows::Library::load_with_flags(
+                &path,
+                LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32,
+            )
+            .map_err(|e| {
+                policy(format!(
+                    "无法加载 LibRaw：{e}；官方版本需要 VC++ x64 运行库"
+                ))
+            })?
+            .into();
             let version = library
                 .get::<unsafe extern "C" fn() -> c_int>(b"libraw_versionNumber\0")
                 .map_err(|e| policy(e.to_string()))?;
@@ -182,6 +195,7 @@ impl LibRaw {
             return Err(policy("RAW 路径含空字符"));
         }
         wide.push(0);
+        let clock = std::time::Instant::now();
         // Init/close and make_mem_image/clear_mem are matched even on early errors.
         let context = Context {
             pointer: NonNull::new(unsafe { (self.init)(0) })
@@ -206,10 +220,13 @@ impl LibRaw {
         if info.aspect != 1. {
             return Err(policy("非方形像素 RAW 尚未验证"));
         }
+        let open_seconds = clock.elapsed().as_secs_f64();
+        let clock = std::time::Instant::now();
         unsafe {
             code("unpack", (self.unpack)(pointer))?;
             z30_get_raw_info(pointer, &mut info);
         }
+        let unpack_seconds = clock.elapsed().as_secs_f64();
         let sizes = RawSizes {
             raw_width: info.raw_width,
             raw_height: info.raw_height,
@@ -223,9 +240,12 @@ impl LibRaw {
             crop_height: info.crop_height,
             flip: info.flip,
         };
+        let clock = std::time::Instant::now();
         unsafe {
             code("process", (self.process)(pointer))?;
         }
+        let process_seconds = clock.elapsed().as_secs_f64();
+        let clock = std::time::Instant::now();
         let mut error = 0;
         let image_pointer = unsafe { (self.image)(pointer, &mut error) };
         let memory = NonNull::new(image_pointer).map(|pointer| Memory { pointer, api: self });
@@ -246,10 +266,19 @@ impl LibRaw {
         {
             return Err(policy("LibRaw 返回了非预期的 RGB16 缓冲"));
         }
+        let bitmap_seconds = clock.elapsed().as_secs_f64();
+        let clock = std::time::Instant::now();
+        // Official 0.22.2 mem_image.cpp malloc/copies an independent bitmap.
+        // Releasing the decoder now removes its RAW/working buffers before we
+        // allocate float pixels; Memory still owns its separate bitmap/DLL.
+        drop(context);
+        let release_seconds = clock.elapsed().as_secs_f64();
+        let clock = std::time::Instant::now();
         // LibRaw owns this checked, bounded bitmap. It outlives this slice and
         // is freed by Memory only after reframe16 has produced owned float data.
         let bytes = unsafe { std::slice::from_raw_parts(view.pixels, view.bytes as usize) };
         let frame = reframe16(bytes, view.width, view.height, sizes, half)?;
+        let geometry_seconds = clock.elapsed().as_secs_f64();
         let end = info
             .model
             .iter()
@@ -257,6 +286,14 @@ impl LibRaw {
             .unwrap_or(info.model.len());
         Ok(DecodedRaw {
             frame,
+            timings: RawTimings {
+                open_seconds,
+                unpack_seconds,
+                process_seconds,
+                bitmap_seconds,
+                release_seconds,
+                geometry_seconds,
+            },
             metadata: RawMetadata {
                 model: String::from_utf8_lossy(&info.model[..end]).into_owned(),
                 source_bits: info.raw_bits,

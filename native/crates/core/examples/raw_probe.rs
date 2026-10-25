@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     writer.flush()?;
     println!(
         "{}",
-        serde_json::json!({"metadata":decoded.metadata,"width":decoded.frame.width,"height":decoded.frame.height,"decode_seconds":elapsed})
+        serde_json::json!({"metadata":decoded.metadata,"width":decoded.frame.width,"height":decoded.frame.height,"decode_seconds":elapsed,"timings":decoded.timings})
     );
     Ok(())
 }
