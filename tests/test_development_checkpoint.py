@@ -11,7 +11,7 @@ class DevelopmentCheckpointTests(unittest.TestCase):
     def test_missing_stale_and_invalid_usage_is_never_guessed(self):
         now=dt.datetime(2026,10,25,tzinfo=dt.timezone.utc)
         self.assertEqual(quota_summary(None,now)["windows"],[])
-        for used in (True,float("nan"),-1,101,"5",None):
+        for used in (True,float("nan"),-1,"5",None):
             result=quota_summary(dict(observed_at=now.isoformat(),rateLimits=dict(primary=dict(usedPercent=used))),now)
             self.assertEqual(result["windows"],[])
             self.assertEqual(result["decision"],"checkpoint_by_stage")
@@ -31,6 +31,10 @@ class DevelopmentCheckpointTests(unittest.TestCase):
         self.assertEqual(quota_summary(payload,now)["decision"],"may_start_next_stage")
         payload["ordinaryUsageAllowed"]=False
         self.assertEqual(quota_summary(payload,now)["decision"],"finish_current_and_pause")
+        payload["ordinaryUsageAllowed"]=True;payload["rateLimits"]["primary"]["usedPercent"]=105
+        exceeded=quota_summary(payload,now)
+        self.assertEqual(exceeded["decision"],"finish_current_and_pause")
+        self.assertEqual(exceeded["windows"][0]["remaining_percent"],0)
 
     def test_atomic_replacement_is_readable_and_leaves_no_part_file(self):
         with tempfile.TemporaryDirectory() as directory:

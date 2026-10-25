@@ -1,3 +1,5 @@
+> 新任务：当前开发分支为 `feat/native-slint`，正在进行 Rust + Slint 原生迁移。请优先阅读 PROJECT_PROGRESS.md 和 DEVELOPMENT_PLAN.md。下文 2.0“已完成”仅指历史 Python 工作台，不代表原生迁移完成。严禁据此直接宣布新总任务完成或关机。
+
 # Z30 Studio 2.0：开发者 / AI 交接
 
 更新：2026-10-25，Asia/Hong_Kong。事实以实际源码/Git/报告为准，新用户指令优先。

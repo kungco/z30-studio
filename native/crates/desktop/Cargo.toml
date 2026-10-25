@@ -7,7 +7,7 @@ publish.workspace = true
 build = "build.rs"
 
 [[bin]]
-name = "Z30Studio"
+name = "z30-native"
 path = "src/main.rs"
 
 [dependencies]

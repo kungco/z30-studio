@@ -32,10 +32,10 @@ def quota_summary(payload, now=None):
         window = limits.get(name)
         if not isinstance(window,dict):continue
         used = window.get("usedPercent")
-        if isinstance(used, bool) or not isinstance(used, (int, float)) or not math.isfinite(used) or not 0 <= used <= 100:
+        if isinstance(used, bool) or not isinstance(used, (int, float)) or not math.isfinite(used) or used < 0:
             continue
         minutes, reset = window.get("windowDurationMins"), window.get("resetsAt")
-        windows.append(dict(name=name, used_percent=used, remaining_percent=100-used,
+        windows.append(dict(name=name, used_percent=used, remaining_percent=max(0,min(100,100-used)),
                             duration_minutes=minutes if isinstance(minutes,int) and not isinstance(minutes,bool) and minutes>0 else None,
                             resets_at_unix=reset if isinstance(reset,int) and not isinstance(reset,bool) and reset>0 else None))
     stopped = payload.get("ordinaryUsageAllowed") is False or limits.get("spendControlReached") is True or bool(limits.get("rateLimitReachedType"))

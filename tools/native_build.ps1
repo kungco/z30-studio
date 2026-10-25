@@ -62,7 +62,11 @@ try {
     & $cargoTool @buildArgs
     if($LASTEXITCODE -ne 0){throw 'Native build failed'}
     $profile=if($DebugBuild){'debug'}else{'release'}
-    $binary=Join-Path (Get-Location) "target\$profile\Z30Studio.exe"
+    $binary=Join-Path (Get-Location) "target\$profile\z30-native.exe"
+    $staging=Join-Path $repoRoot ('native\dist\stage-'+[Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $staging | Out-Null
+    Copy-Item -LiteralPath $binary -Destination (Join-Path $staging 'Z30Studio.exe')
     Get-Item -LiteralPath $binary | Select-Object FullName,Length
     Get-FileHash -LiteralPath $binary -Algorithm SHA256
+    Write-Output "Staged app: $staging\Z30Studio.exe"
 } finally {Pop-Location}

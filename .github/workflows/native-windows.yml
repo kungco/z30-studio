@@ -19,6 +19,6 @@ jobs:
       - name: Report stage binary size
         shell: pwsh
         run: |
-          Get-Item native/target/release/Z30Studio.exe | Select-Object Name,Length
-          Get-FileHash native/target/release/Z30Studio.exe -Algorithm SHA256
+          Get-Item native/target/release/z30-native.exe | Select-Object Name,Length
+          Get-FileHash native/target/release/z30-native.exe -Algorithm SHA256
           Write-Output 'Migration stage binary; this is not yet the complete-feature distribution.'

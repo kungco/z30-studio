@@ -16,4 +16,3 @@ strip = "debuginfo"
 
 [profile.dev]
 debug = 1
-
