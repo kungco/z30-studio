@@ -31,7 +31,7 @@ import zipfile
 import diagnostics
 import drafts
 import darkroom
-import workflow
+import photo_workflow as workflow
 import local_vision
 import lens_tools
 import colour_management as colour

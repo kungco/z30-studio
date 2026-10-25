@@ -1,7 +1,7 @@
 import tempfile
 from pathlib import Path
 import unittest
-import workflow
+import photo_workflow as workflow
 import projects
 import server
 

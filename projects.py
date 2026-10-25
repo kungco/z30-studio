@@ -7,7 +7,7 @@ import shutil
 import stat
 import tempfile
 import zipfile
-import workflow
+import photo_workflow as workflow
 
 MAX_PHOTOS = 256
 PROJECT_LIMIT = 8 * 1024 ** 3

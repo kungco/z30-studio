@@ -14,7 +14,7 @@
 
 ## 模块
 
-server.py 负责回环 API、会话与调度；imaging.py 管理 RAW 几何/输入 ICC；processing.py 为 float32 tone/OKLab；darkroom.py 是曲线/HSL/分级/WB/构图/细节；spatial.py 是蒙版/降噪/修复；lens_tools.py 与 data/ 管理 Lensfun 校准快照；colour_management.py 管理浮点空间/生成 ICC/预览打样；export_tools.py 管理输出缩放/锐化/水印/元数据；native_cache.py 是只读租约、请求 Scratch 与有界 LRU；export_jobs.py 是持久快照/逐张配方/双路进度与恢复；drafts.py 是去重原片与 SQLite 版本草稿；local_vision.py 是可选本地 ONNX 分割；api_backend.py / ai_preflight.py / codex_assist.py 共用模型校验与画质保护；desktop.py / shutdown_watchdog.py 管理 Windows 生命周期。web/ 的控制模块配合 app.js，新增脚本须列入 server 静态路由。
+photo_workflow.py 管理图库/参数同步（避免第三方 workflow 打包钩子冲突）；server.py 负责回环 API、会话与调度；imaging.py 管理 RAW 几何/输入 ICC；processing.py 为 float32 tone/OKLab；darkroom.py 是曲线/HSL/分级/WB/构图/细节；spatial.py 是蒙版/降噪/修复；lens_tools.py 与 data/ 管理 Lensfun 校准快照；colour_management.py 管理浮点空间/生成 ICC/预览打样；export_tools.py 管理输出缩放/锐化/水印/元数据；native_cache.py 是只读租约、请求 Scratch 与有界 LRU；export_jobs.py 是持久快照/逐张配方/双路进度与恢复；drafts.py 是去重原片与 SQLite 版本草稿；local_vision.py 是可选本地 ONNX 分割；api_backend.py / ai_preflight.py / codex_assist.py 共用模型校验与画质保护；desktop.py / shutdown_watchdog.py 管理 Windows 生命周期。web/ 的控制模块配合 app.js，新增脚本须列入 server 静态路由。
 
 ## 重要行为
 
