@@ -5601,7 +5601,9 @@ dependencies = [
 name = "z30-core"
 version = "0.1.0"
 dependencies = [
+ "cc",
  "image",
+ "libloading 0.8.9",
  "serde",
  "serde_json",
  "tempfile",

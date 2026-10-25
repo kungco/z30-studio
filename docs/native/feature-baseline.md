@@ -4,7 +4,7 @@
 
 | 能力 | Python 源码/测试 | 原生状态/阶段 |
 |---|---|---|
-| RAW 12/14 位、八方向、有效裁剪/半尺寸几何 | imaging.py、server.py；test_imaging.py | 未迁移 / 2 |
+| RAW 12/14 位、八方向、有效裁剪/半尺寸几何 | imaging.py、server.py；test_imaging.py | 2A 核心通过：raw.rs/raw_geometry.rs，四组真实样片逐像素一致、24 组冻结半尺寸几何；UI 未启用 |
 | JPEG/PNG ICC、无 ICC 策略、alpha、EXIF、输入位深 | imaging.py、colour_management.py；test_imaging.py/test_output.py | 未迁移 / 2 |
 | float32 tone/肩部/阴影、OKLab 护色、九参数/锐化 | processing.py、quality.py；test_processing.py/test_quality_cache.py | 未迁移 / 2 |
 | 曲线/HSL/分级/Kelvin/吸管/裁剪/拉直/细节 | darkroom.py；test_darkroom.py | 未迁移 / 2、6 |

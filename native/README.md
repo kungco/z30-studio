@@ -4,6 +4,8 @@
 
 当前阶段可运行原生三栏窗口、后台查看未配置 ICC 的 JPEG/PNG、NEF 文件引用、评分和本机草稿恢复。NEF 解码、完整色彩管理/调色、导出和 AI 尚未启用；不支持的 ICC 输入明确拒绝，不以错误颜色冒充已显影。用户确认本机窗口可见且可操作；本次桌面自动截图/点击受工具激活错误影响，未记为自动 UI 验收通过。
 
+阶段 2A 已加入独立 RAW 核心和开发探针：官方 LibRaw 0.22.2 → RGB16 → float32 线性 sRGB，公开 12/14 位样片全/半尺寸均与 Python oracle 逐像素一致。上段的“未启用”指用户界面；完整 ICC/调色/导出通过后才开放，不能以核心探针代替完整产品验收。
+
 ## 构建和运行
 
 正常 Windows 开发环境使用 Rust 1.99.1 + Visual Studio C++ Build Tools：
@@ -18,6 +20,10 @@
 ```powershell
 ./tools/native_build.ps1 -ToolchainRoot '你的独立工具链目录' -Test
 ```
+
+显式真实 RAW 测试（不将照片或 DLL 提交到 Git）：设置 `Z30_LIBRAW_DLL` 为固定 0.22.2 DLL 的绝对路径，`Z30_RAW_12`、`Z30_RAW_14` 为两份公开样片路径，再执行构建脚本加 `-Test -RawProbe -RawFixtures`。未提供这些文件时常规测试明确显示 ignored；不能当成真实 RAW 已验证。对照命令为 `python tools/native_raw_benchmark.py --dll ... --raw12 ... --raw14 ...`，只在新的 .development 目录写探针数据。
+
+头文件、上游许可证和下载/文件校验在 vendor/libraw/。官方 Windows DLL 需要 Microsoft VC++ 2015–2022 x64 运行库；当前探针在本机验证，未将该 DLL 放进基础查看器分发。最终动态库/对应源码/许可和运行库交付尚待完成，不宣称干净 Windows 已可运行 RAW。
 
 本机验证的是 Rust GNU + 便携 w64devkit 2.10.1：Rust 自带 CRT/链接库与便携 dlltool/汇编器配合，构建脚本仅修改子进程环境，不改全局 PATH。Windows Actions 使用 MSVC；不能在 CI 完成前宣称两条编译链均已验证。
 

@@ -1,5 +1,9 @@
 //! UI-independent contracts. Python remains the image-quality oracle during migration.
+pub mod frame;
 pub mod preview;
+#[cfg(windows)]
+pub mod raw;
+pub mod raw_geometry;
 pub mod session;
 pub mod worker;
 
