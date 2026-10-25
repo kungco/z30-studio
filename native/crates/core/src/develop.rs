@@ -148,13 +148,35 @@ fn gamut(mut lab: [f64; 3]) -> [f32; 3] {
     }
     rgb.map(|v| v.clamp(0.0, 1.0) as f32)
 }
-fn encode(v: f32) -> f32 {
+fn encode_analytic(v: f32) -> f32 {
     let v = v.max(0.0);
     if v <= 0.0031308 {
         (v * 12.92).clamp(0.0, 1.0)
     } else {
         (1.055 * v.powf(1.0 / 2.4) - 0.055).clamp(0.0, 1.0)
     }
+}
+
+fn encode(v: f32) -> f32 {
+    let v = v.clamp(0., 1.);
+    if v == 1. {
+        return 1.;
+    }
+    if v <= 0.0031308 {
+        return v * 12.92;
+    }
+    // Interpolate float values, rather than rounding input to a 16-bit code.
+    // The dense independent analytic regression bounds the transfer error.
+    static CURVE: std::sync::OnceLock<Vec<f32>> = std::sync::OnceLock::new();
+    let table = CURVE.get_or_init(|| {
+        (0..=65536)
+            .map(|i| encode_analytic(i as f32 / 65536.))
+            .collect()
+    });
+    let position = v * 65536.;
+    let index = (position as usize).min(65535);
+    let fraction = position - index as f32;
+    (table[index] + (table[index + 1] - table[index]) * fraction).clamp(0., 1.)
 }
 
 pub fn render(source: &Frame, p: &Parameters) -> Result<SrgbFrame> {
@@ -309,6 +331,29 @@ fn sharpen(rgb: &mut [[f32; 3]], width: usize, height: usize, amount: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn interpolated_srgb_is_monotonic_and_matches_dense_independent_analytic_curve() {
+        let mut previous = 0.;
+        let mut maximum = 0f64;
+        for i in 0..=2_000_000 {
+            let x = i as f32 / 2_000_000.;
+            let actual = encode(x);
+            let x = x as f64;
+            let expected = if x <= 0.0031308 {
+                12.92 * x
+            } else {
+                1.055 * x.powf(1. / 2.4) - 0.055
+            };
+            maximum = maximum.max((actual as f64 - expected).abs());
+            assert!(actual >= previous);
+            previous = actual;
+        }
+        assert!(maximum < 2e-6, "sRGB interpolation error {maximum}");
+        assert_eq!(encode(0.), 0.);
+        assert_eq!(encode(1.), 1.);
+        assert_eq!(encode(-1.), 0.);
+        assert_eq!(encode(5.), 1.);
+    }
     #[test]
     fn gamut_boundary_matches_independent_polynomial_roots() {
         let fixture: serde_json::Value =
