@@ -13,6 +13,30 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @unittest.skipUnless(os.name == 'nt', 'Windows launcher process')
 class LauncherShutdownTests(unittest.TestCase):
+    def test_trace_survives_complete_phase_when_interpreter_exit_is_blocked(self):
+        from shutdown_watchdog import wait_for_exit
+        with tempfile.TemporaryDirectory(prefix='z30-atexit-trace-') as folder:
+            root=Path(folder);ready=root/'ready.json';stop=root/'stop.signal'
+            code="import atexit,time,sys,desktop;atexit.register(lambda:time.sleep(60));sys.exit(desktop.main(sys.argv[1:]))"
+            process=subprocess.Popen([sys.executable,'-c',code,'--headless','--no-browser','--port','0','--ready-file',str(ready),
+                '--stop-file',str(stop),'--shutdown-grace','8','--shutdown-phase-timeout','4'],cwd=ROOT,
+                env=os.environ|{'Z30_DATA_DIR':str(root/'data')},stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            supervisor=None
+            try:
+                deadline=time.monotonic()+30
+                while not ready.exists():
+                    self.assertIsNone(process.poll())
+                    if time.monotonic()>deadline:self.fail('launcher not ready')
+                    time.sleep(.05)
+                supervisor=json.loads(ready.read_text(encoding='utf8'))['watchdog_pid'];stop.write_text('stop')
+                self.assertEqual(process.wait(12),3)
+                traces=''.join(p.read_text(encoding='utf8') for p in (root/'data/logs').glob('shutdown-stacks-*.log'))
+                self.assertIn('<lambda>',traces)
+                self.assertEqual(json.loads(next((root/'data/logs').glob('shutdown-*.json')).read_text())['phase'],'complete')
+            finally:
+                if process.poll() is None:process.kill();process.wait()
+                wait_for_exit(supervisor)
+
     def test_unread_inherited_stdout_cannot_stall_requests_or_shutdown(self):
         import socket
         from shutdown_watchdog import wait_for_exit

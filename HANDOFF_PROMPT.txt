@@ -1,6 +1,6 @@
-请接手 Z30 Studio，先读 AI_HANDOFF.md、docs/implementation-status.md 和 docs/reports/p0-reliability.md。
-仓库：https://github.com/kungco/z30-studio；开发分支 fix/staged-image-pipeline。
-用户当前要求：整份 P0/P1/P2 清单全部实现、测试、分阶段提交并保存 Windows 包/交接材料后，再正常关机；只完成 P0 不得关机。不得强制关闭用户其他应用。
-当前正在完成 P0：独立退出看门狗/阶段限时/诊断导出，磁盘自动草稿/版本快照/崩溃恢复，256 张/8 GiB 项目，导出中断校验与恢复提示。具体完成和待办以 implementation-status.md 及 Git 实际代码为准。
-必须保留原始照片、现有 Codex CLI 登录、严格参数和画质保护；不能改测试掩盖问题。模型额度不自动消耗，API Key 只在软件本机填写，不进聊天/项目/日志。
-真实 DeepSeek 推理尚未验证；新增 AI 分割/修复、镜头库、广色域和性能工作须如实记录验证范围。不能把合成测试或模拟云端当作实拍或真实云端效果。
+请接手 Z30 Studio 2.0，先读 AI_HANDOFF.md、docs/implementation-status.md 与最终 Windows 验收报告。
+仓库 https://github.com/kungco/z30-studio ，开发分支 fix/staged-image-pipeline，PR #1；不要只克隆 main。
+整份 P0/P1/P2 功能已实现，先核对真实代码、提交、测试和 build-info.json，再按新的用户要求工作。不要把历史“完成后关机”当成对未来任务的新授权。
+保留原片、Codex CLI 登录/命令/九参数契约、严格校验与画质保护。不要自动花费模型额度、读取 auth.json 或复制密钥；不改测试掩盖问题。
+退出有可复现 stdout 管道原因修复与独立监督/栈诊断，另一个无确认现场是否同源仍未证明。真实云推理/本机 Ollama、专业肤色/灰卡/镜头/打印实测仍未验证。
+以各阶段报告的验证范围为准，不能把协议 mock、合成数据或一次性能测试当成真实效果或普遍结论。

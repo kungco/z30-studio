@@ -22,7 +22,7 @@ try {
         & $z30Python -m pip install --only-binary=:all: -r (Join-Path $PSScriptRoot 'requirements.txt')
         if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed. Check connection and retry.' }
     }
-    & $z30Python (Join-Path $PSScriptRoot 'server.py')
+    & $z30Python (Join-Path $PSScriptRoot 'desktop.py')
     exit $LASTEXITCODE
 } catch {
     Write-Host $_ -ForegroundColor Red

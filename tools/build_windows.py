@@ -13,6 +13,8 @@ import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT))
+from app_runtime import APP_VERSION
 PACKAGES = ('rawpy', 'numpy', 'Pillow', 'tifffile', 'onnxruntime', 'flatbuffers', 'protobuf', 'pyinstaller')
 
 
@@ -48,23 +50,24 @@ def main():
     for name in ('_tcl_data','_tk_data'):
         for file in (bundle/'_internal'/name).glob('*license*'):
             if file.is_file():shutil.copyfile(file,licenses/(name+'-'+file.name))
+    shutil.copytree(ROOT/'docs',bundle/'docs')
     shutil.copyfile(ROOT/'docs'/'windows-portable.md',bundle/'使用说明.md')
     shutil.copyfile(ROOT/'docs'/'third-party-notices.md',bundle/'第三方声明.md')
     versions={name:importlib.metadata.version(name) for name in PACKAGES}
     import rawpy
-    manifest=dict(app='Z30 Studio',platform='Windows x64',python=platform.python_version(),packages=versions,
+    manifest=dict(app='Z30 Studio',app_version=APP_VERSION,platform='Windows x64',python=platform.python_version(),packages=versions,
                   libraw='.'.join(map(str,rawpy.libraw_version)),
                   source_commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
                   source_tree_dirty=bool(subprocess.check_output(['git','status','--porcelain'],cwd=ROOT,text=True).strip()),
                   exe_sha256=hashlib.sha256((bundle/'Z30-Studio.exe').read_bytes()).hexdigest())
     (bundle/'build-info.json').write_text(json.dumps(manifest,indent=2),encoding='utf8')
     args.output.mkdir(parents=True,exist_ok=True)
-    archive=args.output/'Z30-Studio-Windows-x64.zip'
+    archive=args.output/f'Z30-Studio-{APP_VERSION}-Windows-x64.zip'
     with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as z:
         for file in sorted(bundle.rglob('*')):
             if file.is_file():
                 relative=file.relative_to(bundle)
-                if any(x in relative.parts for x in ('.data','.venv','.git','__pycache__')) or file.suffix.lower() in ('.nef','.z30proj') or file.name in ('auth.json','.env'):
+                if any(x in relative.parts for x in ('.data','.venv','.git','__pycache__')) or file.suffix.lower() in ('.nef','.z30proj','.onnx') or file.name in ('auth.json','.env'):
                     raise ValueError('Unexpected private/runtime file: '+str(relative))
                 z.write(file,Path('Z30-Studio')/relative)
     digest=hashlib.sha256(archive.read_bytes()).hexdigest()

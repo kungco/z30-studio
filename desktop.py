@@ -170,6 +170,7 @@ def main(argv=None):
         log = configure_logs(directory / 'logs')
         trace_file=(directory/'logs'/f'shutdown-stacks-{os.getpid()}.log').open('w',encoding='utf8')
         faulthandler.enable(file=trace_file,all_threads=True)
+        if args.stop_file:faulthandler.dump_traceback_later(4,repeat=True,file=trace_file)
         if not 0 < args.shutdown_phase_timeout <= args.shutdown_grace <= 120:
             raise ValueError('关停超时需要满足 0 < 阶段超时 ≤ 总超时 ≤ 120 秒')
         watchdog = shutdown_watchdog.launch(directory/'logs', args.stop_file, args.shutdown_grace, args.shutdown_phase_timeout)
@@ -236,9 +237,12 @@ def main(argv=None):
                 pass
             lock.close()
         if trace_file:
-            faulthandler.cancel_dump_traceback_later()
-            faulthandler.disable()
-            trace_file.close()
+            if shutdown_started is None:
+                faulthandler.cancel_dump_traceback_later();faulthandler.disable();trace_file.close()
+            else:
+                # Keep the native timer/file alive across atexit and final stdio
+                # flush: phase='complete' does not prove the process has exited.
+                sys._z30_shutdown_trace=trace_file
         if shutdown_started is not None:
             logging.info('Shutdown finished in %.2fs', time.monotonic() - shutdown_started)
         logging.info('Launcher stopped')
