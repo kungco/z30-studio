@@ -1,0 +1,67 @@
+{
+  "stage": "native-stage-1-viewer",
+  "exe_sha256": "83514837189b52141c6801fef85dd5e144a2a0b5479decd37d09a586781e1073",
+  "exe_bytes": 15277873,
+  "source_sha256": "427fa23171de7865d3d0ad75cd8500d4a4a7067d189b30b0b4977fc4bf53a7f7",
+  "timing_definition": "process spawn to file marker / event-loop entry; not first on-screen paint",
+  "cycles": [
+    {
+      "cycle": 1,
+      "spawn_to_event_loop_ms": 185.272,
+      "marker": {
+        "pid": 29700,
+        "event_loop_ready_ms": 93.083,
+        "backend": "winit-software",
+        "version": "0.1.0",
+        "source_commit": "835c6ed26d8060843a55fa44f01bbd7edfbe8400",
+        "source_dirty": true
+      },
+      "preview": {
+        "first_preview_ms": 99.116,
+        "width": 1238,
+        "height": 1856
+      },
+      "memory_mib": {
+        "peak_working_set": 41.59,
+        "working_set": 32.535,
+        "private_bytes": 14.145
+      },
+      "shutdown_seconds": 0.031,
+      "exit_code": 0
+    },
+    {
+      "cycle": 2,
+      "spawn_to_event_loop_ms": 155.247,
+      "marker": {
+        "pid": 25036,
+        "event_loop_ready_ms": 90.123,
+        "backend": "winit-software",
+        "version": "0.1.0",
+        "source_commit": "835c6ed26d8060843a55fa44f01bbd7edfbe8400",
+        "source_dirty": true
+      },
+      "preview": {
+        "first_preview_ms": 96.161,
+        "width": 1238,
+        "height": 1856
+      },
+      "memory_mib": {
+        "peak_working_set": 41.371,
+        "working_set": 31.629,
+        "private_bytes": 13.691
+      },
+      "shutdown_seconds": 0.047,
+      "exit_code": 0
+    }
+  ],
+  "real_raw_decode_verified": false,
+  "real_cloud_inference_requests": 0,
+  "automatic_desktop_visual_verification": false,
+  "qa_directory": "D:\\codex\\2026-10-23\\ni-k\\outputs\\work\\原生 smoke 6_h0qc9n",
+  "duplicate_instance_rejected_without_overwrite": true,
+  "original_unchanged": true,
+  "draft_recovered": true,
+  "python_and_developer_tools_removed_from_PATH": true,
+  "unicode_and_space_paths": true,
+  "success": true
+}

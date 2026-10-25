@@ -66,6 +66,20 @@ try {
     $staging=Join-Path $repoRoot ('native\dist\stage-'+[Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $staging | Out-Null
     Copy-Item -LiteralPath $binary -Destination (Join-Path $staging 'Z30Studio.exe')
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'native\licenses') -Destination (Join-Path $staging 'licenses') -Recurse
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'native\README.md') -Destination (Join-Path $staging '使用说明.md')
+    $buildInfo=[ordered]@{
+        app='Z30 Studio Native';version='0.1.0-stage1';profile=$profile
+        source_commit=(& git rev-parse HEAD).Trim()
+        source_tree_dirty=[bool]((& git status --porcelain) -join '')
+        compiler=(& $rustcTool --version)
+        exe_bytes=(Get-Item -LiteralPath $binary).Length
+        exe_sha256=(Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
+        full_feature_migration_complete=$false
+        models_bundled=$false
+        runtime='Windows system DLLs and OS UI fonts; no Python/browser/local HTTP server'
+    }
+    [System.IO.File]::WriteAllText((Join-Path $staging 'build-info.json'),($buildInfo|ConvertTo-Json -Depth 5),[System.Text.UTF8Encoding]::new($false))
     Get-Item -LiteralPath $binary | Select-Object FullName,Length
     Get-FileHash -LiteralPath $binary -Algorithm SHA256
     Write-Output "Staged app: $staging\Z30Studio.exe"

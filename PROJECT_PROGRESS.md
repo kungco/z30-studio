@@ -1,22 +1,24 @@
 # Z30 Studio 开发检查点
 
-更新：2026-10-25（Asia/Hong_Kong）。本文件属于用户新一轮 Rust/Slint 迁移，旧 2.0 全清单完成不等于原生迁移完成。
+更新：2026-10-25（Asia/Hong_Kong）。当前原生迁移进行中，整个总任务未完成。
 
-- 当前：阶段 1，基线复测已完成，Rust/Slint Debug/Release 已构建，继续安全性/生命周期验收。
-- 分支：feat/native-slint；计划/检查点工具已提交 240b0ac；对照基线 a2a2e089d760221a52c8774cca8a2e42f0a82269。实时提交执行 `git rev-parse HEAD`；本机提交后快照记录在 .development/checkpoint.json。
-- 已完成：原 Python 全功能保留；本次 158 Python（44.014 秒，含公开 12/14 位 Z30 NEF）/31 Node 通过；没有修改原 11 项 Codex 契约测试；新增检查点 3 项、Rust core 5 项均通过。Release EXE 15,236,128 字节（仅查看器阶段，不是完整迁移体积）。
-- 正在进行：安装独立本机 Rust 工具链（不改全局 PATH）、建立 native/ 工作区、Slint 原生 UI、后台预览和恢复检查点工具。
-- 未完成：阶段 1 的实际构建/UI 验收；阶段 2–6 全部原生功能，详见 DEVELOPMENT_PLAN.md 与功能矩阵。
-- 已知问题：已验证独立 Rust 1.99.1 GNU 可执行；官方大文件/部分 Cargo 下载曾超时，已用官方清单/锁文件 SHA 校验缓存。首编译缺 GNU 汇编器，已补齐经发布 SHA 校验的便携 w64devkit 2.10.1（仅构建工具，不进产品）；已继续定位并修正 dlltool/汇编器与 libgcc 链接器路径顺序；依赖已按 Cargo.lock 校验补齐。该构建路径已通过 Debug/Release。桌面工具出现黑屏与 failed to activate captured window；用户已确认真实窗口可见且可操作，自动截图/点击仍未验证。旧版一次无首条退出确认现场仍未完全归因；不能当成原生版本已解决的证据。
-- 工作区修改：已有 native/ 工作区、Slint 界面、后台最新请求队列、只读照片引用/本机草稿、构建脚本/Actions 和 QA 文件标记代码；已构建和 unit 验证的界面/核心将独立提交；仍有待补的多实例/冲突保护与完整验收。；保存时须核对 git status，不用文档代替实际代码。
-- 测试日志（本机，不含凭证）：D:/codex/2026-10-23/ni-k/work/native-baseline-python.log、native-baseline-node.log；旧报告在 docs/reports/，标记为历史对照。
-- 额度：本轮开始工具实际读数为 5 小时窗口已用 22%、周窗口已用 3%；不是实时读数，启动下一大型步骤前重新读取。没有启用额度重置自动唤醒。
+- 当前阶段：阶段 1 限定验收完成，下一步阶段 2（LibRaw / float 引擎 / 预览导出与画质对照）。
+- 分支 feat/native-slint；Python 基线 a2a2e089d760221a52c8774cca8a2e42f0a82269；原生界面 835c6ed、保存保护 e2c5d11。实时最新 SHA 以 git rev-parse HEAD 和提交后 .development/checkpoint.json 为准。
+- 已完成：可运行 Slint 原生三栏窗口，后台参考 JPEG/PNG 查看、评分/草稿恢复、独占/冲突保护/原子保存、最新请求队列；独立构建/版本目录、Windows CI、进度和检查点工具。原 Python 全部保留。
+- 测试：158 Python 原有基线 + 3 新检查点、31 Node、7 Rust 通过；835c6ed 的 MSVC 与既有回归 CI 通过；保存保护后续提交需等其自己的 CI。实际 EXE 两轮退出 0，PATH 无 Python、中文路径、重启/重复实例/原片不变通过；报告 docs/reports/native-stage1.md 和 native-stage1-smoke.json。
+- UI：用户确认可见可操作；桌面自动化黑屏/激活失败未解决，未宣称自动截图/点击验收通过。不是程序崩溃结论。
+- 未完成：原生 RAW/ICC/float 调色与 JPEG/PNG/TIFF16、AI、批量、完整高级暗房/人像、GPU、全功能一致性/体积/正式交付，详见 DEVELOPMENT_PLAN.md 与功能矩阵。
+- 已知风险：阶段 1 仅查看器，无 ICC 暂按 sRGB，专业色彩/透明输入尚待阶段 2；旧开发构建无目录锁，升级前关闭旧构建。原有 Python 一次无关停确认现场仍未全归因。没有真实云推理、专业实拍/干净机器/多 DPI/GPU 验收。
+- 日志：D:/codex/2026-10-23/ni-k/work/native-baseline-python.log、native-baseline-node.log、native-stage1-safety.log、native-stage1-final-build.log、native-stage1-smoke.log。
+- 工作区：提交前核对 git status；阶段 1 报告/交接与构建附属文件正在收尾。未验证代码不要标完成。
 
-## 接续操作
+## 环境和恢复
 
-1. 核对 `git status --short --branch` 与 `git log -6 --oneline`，保留其他人修改，不从零设计。
-2. 读取 `D:/codex/toolchains/z30-native/install.log`；执行 tools/native_build.ps1 -ToolchainRoot D:/codex/toolchains/z30-native -DebugBuild -Test；正在运行的编译日志在 work/native-stage1-debug.log。不要重新启动已结束的下载；版本号必须匹配 native/rust-toolchain.toml。
-3. 补齐单实例/保存冲突保护、生命周期/恢复/体积报告与阶段检查点，再迁移 LibRaw/色彩；没有通过原生画质对照前不替换 Python 产品。
-4. 安全暂停时运行检查点工具，记录失败命令、下一步与未提交文件；已验证代码单独提交。停止只有本轮自己启动的进程。
+1. 先读本文件、DEVELOPMENT_PLAN.md、本机 .development/checkpoint.json，再核对 git status/log；旧 AI_HANDOFF 的 Python 全清单完成不是原生完成。
+2. 本机独立 Rust 1.99.1 GNU + w64devkit 在 D:/codex/toolchains/z30-native；无需改全局 PATH。运行 tools/native_build.ps1 -ToolchainRoot D:/codex/toolchains/z30-native -Test。已解决下载/dlltool/CRT 环境问题，不重新盲装工具链；中断的版本化安装可能不完整。
+3. 每次构建从 native/target 的内部 z30-native.exe 复制到新的 native/dist/stage-*/Z30Studio.exe，避免覆盖正在运行版本。基线公开 NEF 仍在仓库外 work/Z30-12bit.NEF 和 Z30-14bit.NEF；不得打包/覆盖。
+4. 阶段 2 优先研究官方 LibRaw 0.22.2 的安全 FFI/固定头文件，按现有 imaging.py/processing.py 保留几何、线性 float、护色/肩部/16 位输出。先建立冻结 oracle，再移植；未通过画质对照前不打开原生正式调色/导出。
+5. 大任务前/阶段边界调用 get_usage_limits，保存去账户身份的 .development/quota-snapshot.json。约低于 10% 剩余只收尾保存；未知就使用定期检查点，不猜百分比。当前快照不是实时保证。
+6. 运行 python tools/development_checkpoint.py --stage 阶段名 --next 下一步 --quota-file .development/quota-snapshot.json --report 已有日志；文件原子保存，不自动启动 Codex。仅已验证代码独立 commit。
 
-本轮不继承历史关机请求；不自动合并 main、发布正式版、读 auth.json、提交 Key/个人照片或发起收费推理。
+没有启用额度重置自动续跑，没有创建循环/系统提权调度；官方本地定时任务需要电脑/应用运行，尚无可靠重置事件接口验证。不自动消费模型额度、读取 auth.json、提交密钥/照片、合并 main、发布正式版或关机。
