@@ -111,7 +111,11 @@ fn finish(
     let mut warnings = Vec::new();
     let policy;
     if let Some(data) = metadata.icc {
-        colour::to_linear(&mut frame.pixels, &colour::embedded(&data, metadata.gray)?)?;
+        colour::to_linear_raster(
+            &mut frame.pixels,
+            &colour::embedded(&data, metadata.gray)?,
+            bits,
+        )?;
         policy = "ICC → 浮点线性 sRGB";
     } else if metadata.srgb {
         colour::decode_raster_srgb(&mut frame.pixels, bits);
@@ -123,15 +127,17 @@ fn finish(
         if !gamma.is_finite() || gamma <= 0. || gamma > 10. {
             return Err(invalid("PNG gAMA 无效或超出可支持范围"));
         }
-        colour::to_linear(
+        colour::to_linear_raster(
             &mut frame.pixels,
             &colour::rgb_profile(metadata.chroma.unwrap_or(colour::SRGB_XY), 1. / gamma)?,
+            bits,
         )?;
         policy = "PNG gAMA/cHRM → 浮点线性 sRGB";
     } else if exif_space == Some(2) || interop.as_deref() == Some(b"R03") {
-        colour::to_linear(
+        colour::to_linear_raster(
             &mut frame.pixels,
             &colour::rgb_profile(colour::ADOBE_XY, 563. / 256.)?,
+            bits,
         )?;
         policy = "EXIF Adobe RGB → 浮点线性 sRGB";
     } else {

@@ -45,4 +45,4 @@ Slint 1.18.1 采用 Royalty-free Desktop License 2.0，并在顶层“关于”�
 
 阶段 2B 已加入 float 九参数和带 sRGB ICC 的不覆盖 JPEG/PNG/TIFF16 核心；暖色边界数值跳变已修复，修正实现四组对照通过；旧输出差异另报，见 docs/reports/native-gamut-stability.md。界面保持关闭，不能作为已迁移完成版本交付。`-ExportProbe` 编译仅供开发验证的合成 TIFF 探针；不替代全尺寸 NEF 导出验证。
 
-阶段 2C 已把 JPEG/PNG 浮点 ICC 输入接入查看器，52 个合成输入和全尺寸数值/内存验证见 docs/reports/native-stage2c.md；当前通用 ICC 速度仍慢，不能宣称所有性能目标达成。`-RasterProbe` 只编译开发探针。LittleCMS 与 MozJPEG 静态链接；This software is based in part on the work of the Independent JPEG Group.
+阶段 2C 已把 JPEG/PNG 浮点 ICC 输入接入查看器，52 个合成输入和全尺寸数值/内存验证见 docs/reports/native-stage2c.md；矩阵/TRC ICC 缓存通过质量/速度复测，通用复杂 LUT 仍可能较慢；见 docs/reports/native-icc-performance.md。`-RasterProbe` 只编译开发探针。LittleCMS 与 MozJPEG 静态链接；This software is based in part on the work of the Independent JPEG Group.

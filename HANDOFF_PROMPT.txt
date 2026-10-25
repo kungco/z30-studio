@@ -1,4 +1,4 @@
-2026-10-25 最新原生断点：2A RAW、2B 暖色稳定性、2C 浮点 ICC 输入通过限定验收。查看器已接 ICC/16 位 PNG，52 合成案例通过；ICC 通用路径很慢，先优化并复跑质量，再接持久参数/编辑/导出 UI。阶段 2 整体未完，先读 PROJECT_PROGRESS.md / docs/reports/native-stage2c.md / 检查点；不跳 AI、不自动关机。
+2026-10-25 最新原生断点：2A RAW、2B 暖色稳定性、2C 浮点 ICC 输入通过限定验收。查看器已接 ICC/16 位 PNG，52 合成案例通过；矩阵/TRC 缓存已通过精度/性能验证，通用复杂 LUT 尚慢。下一步完整 NEF 最终文件验收与持久参数/编辑/导出 UI。阶段 2 整体未完，先读 PROJECT_PROGRESS.md / docs/reports/native-stage2c.md / 检查点；不跳 AI、不自动关机。
 
 请先读取 PROJECT_PROGRESS.md、DEVELOPMENT_PLAN.md 和 .development/checkpoint.json（存在时）。当前分支 feat/native-slint，正在进行原生 Rust/Slint 迁移；旧 Python 2.0 仅作对照。以最新用户总任务、真实源码和测试为准，不从零开始、不虚报完成、不继承旧关机指令。
 
