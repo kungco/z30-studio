@@ -12,7 +12,7 @@ Windows x64 便携包解压后双击 `Z30-Studio.exe`。源码包仅包含 Git �
 
 - Python 原有与新增回归合计 **158 通过**（44.369 秒），包括公开 Z30 12/14 位 NEF；Node **31 通过**。原有 `test_codex_assist.py` 的 11 项 CLI 契约测试与本轮基线比较没有修改。
 - Windows 实际便携 EXE 通过增强 smoke，完整机器可读结果见 [windows-v2-smoke.json](windows-v2-smoke.json)。运行时从 PATH 移除 Python，使用中文/空格目录，验证单实例、全部页面脚本/样式、JPEG/PNG/TIFF16、35 个内置镜头配置、项目往返、持久后台导出与重启恢复。
-- 两张公开 RAW 原尺寸均为 3712×5568，12/14 位原片 SHA 均未变化。先进导出覆盖 RGB/单通道曲线、HSL/颜色分级、Kelvin、拉直/自由裁剪、纹理、水印、输出锐化和真正 ProPhoto RGB16 TIFF。
+- 两张公开 RAW 原尺寸均为 3712×5568，12/14 位原片 SHA 均未变化。高级导出覆盖 RGB/单通道曲线、HSL/颜色分级、Kelvin、拉直/自由裁剪、纹理、水印、输出锐化和真正 ProPhoto RGB16 TIFF。
 - 实际打包 ONNX Runtime 在 CPU 上完成主体分割，覆盖比例 0.399353，仅表示蒙版面积，不能当成准确率。权重通过独立测试目录提供，没有放入发布包。
 - 兼容接口和本机服务各进行 1 次协议 mock；发送前预览没有触发推理，提交的图像/文本/JSON 与冻结预览一致，本机路径无 Authorization。真实云推理次数为 0，Key 重启后未持久化；现有 Codex CLI 登录仅检查就绪状态。
 - 最终候选包两轮普通关停分别 **0.342 / 0.549 秒，退出码均为 0**。前一候选包另两轮 0.420 / 0.548 秒。另有正常退出、无首条停止确认、无人读取 stdout 管道、最终化 atexit 卡住的真实子进程回归，测试独立看门狗与诊断，而非仅重新跑通。
@@ -26,7 +26,7 @@ Windows x64 便携包解压后双击 `Z30-Studio.exe`。源码包仅包含 Git �
 | --- | --- | --- |
 | P0 数据/退出 | desktop.py、shutdown_watchdog.py、drafts.py、export_jobs.py、server.py、app_runtime.py、web/app.js | [可靠性](p0-reliability.md)、[关停跟进](p0-shutdown-followup.md) |
 | 暗房 | darkroom.py、processing.py、imaging.py、web/darkroom-controls.js | [曲线/WB/构图/细节](p1-darkroom.md) |
-| 图库/同步 | photo_workflow.py、projects.py、web/workflow-controls.js | [工作流](p1-workflow.md) |
+| 图库/同步 | photo_workflow.py、projects.py、web/library-workflow.js | [工作流](p1-workflow.md) |
 | 蒙版/修复 | spatial.py、local_vision.py、web/local-tools.js | [本地编辑](p1-local-edits.md) |
 | 镜头 | lens_tools.py、data/、web/lens-controls.js | [镜头](p1-lens.md) |
 | 色彩/导出 | colour_management.py、export_tools.py、export_jobs.py、web/output-controls.js | [输出](p1-output.md) |
