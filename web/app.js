@@ -94,7 +94,7 @@ $('recipeInput').onchange=async e=>{
 $('exportTop').onclick=()=>$('exportDialog').showModal();
 $('quality').oninput=()=>$('qualityValue').textContent=$('quality').value;
 $('exportFormat').onchange=()=>$('qualityRow').hidden=$('exportFormat').value!=='JPEG';
-localFetch('/api/health').then(r=>{if(!r.ok)throw Error();return r.json();}).then(d=>{$('appVersion').textContent=d.version;$('engine').textContent='LibRaw '+d.libraw+' · 就绪';}).catch(()=>{$('engine').textContent='解码服务连接失败';toast('请通过 start.bat 启动本地服务，再打开网页');});
+localFetch('/api/health').then(r=>{if(!r.ok)throw Error();return r.json();}).then(d=>{const version=$('appVersion');if(version)version.textContent=d.version;$('engine').textContent='LibRaw '+d.libraw+' · 就绪';}).catch(()=>{$('engine').textContent='解码服务连接失败';toast('请通过 start.bat 启动本地服务，再打开网页');});
 function syncAssistantControls(){
  aiControls?.sync();
  const locked=importBusy||exportBusy||!!autoGrader?.busy||!!batchGrader?.busy;$('providerOpen').disabled=locked||assistant.running;
