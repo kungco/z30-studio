@@ -2,7 +2,7 @@
 
 这是 Rust + Slint 迁移分支，不是功能已经迁移完成的正式版本。原 Python 2.0 保留在仓库根目录，仍是 RAW/算法对照；先读 PROJECT_PROGRESS.md 和 DEVELOPMENT_PLAN.md。
 
-当前阶段可运行原生三栏窗口、后台查看未配置 ICC 的 JPEG/PNG、NEF 文件引用、评分和本机草稿恢复。NEF 解码、完整色彩管理/调色、导出和 AI 尚未启用；不支持的 ICC 输入明确拒绝，不以错误颜色冒充已显影。用户确认本机窗口可见且可操作；本次桌面自动截图/点击受工具激活错误影响，未记为自动 UI 验收通过。
+当前阶段可运行原生三栏窗口、后台查看带 ICC 或无 ICC 的 JPEG/PNG（含 RGB16 PNG）、NEF 文件引用、评分和本机草稿恢复。NEF 解码、完整色彩管理/调色、导出和 AI 尚未启用；ICC 通过 LittleCMS 转为浮点线性 sRGB；无声明有假设提示，损坏/通道不匹配、CMYK/YCCK、cICP/HDR 等尚不支持的输入明确拒绝。显示器 ICC 尚未适配。用户确认本机窗口可见且可操作；本次桌面自动截图/点击受工具激活错误影响，未记为自动 UI 验收通过。
 
 阶段 2A 已加入独立 RAW 核心和开发探针：官方 LibRaw 0.22.2 → RGB16 → float32 线性 sRGB，公开 12/14 位样片全/半尺寸均与 Python oracle 逐像素一致。上段的“未启用”指用户界面；完整 ICC/调色/导出通过后才开放，不能以核心探针代替完整产品验收。
 
@@ -43,4 +43,6 @@ Slint 1.18.1 采用 Royalty-free Desktop License 2.0，并在顶层“关于”�
 
 目前 EXE 体积只是查看器阶段的数据，不能据此宣称完整产品已达到 50 MB 目标。完整功能/模型/GPU 组件、依赖和许可清单在后续阶段验收后统计。正式发布、main 合并都需要用户确认。
 
-阶段 2B 已加入 float 九参数和带 sRGB ICC 的不覆盖 JPEG/PNG/TIFF16 核心；中性样片和合成导出通过，暖色完整样片最大误差超标，见 docs/reports/native-stage2b.md。界面保持关闭，不能作为已迁移完成版本交付。`-ExportProbe` 编译仅供开发验证的合成 TIFF 探针；不替代全尺寸 NEF 导出验证。
+阶段 2B 已加入 float 九参数和带 sRGB ICC 的不覆盖 JPEG/PNG/TIFF16 核心；暖色边界数值跳变已修复，修正实现四组对照通过；旧输出差异另报，见 docs/reports/native-gamut-stability.md。界面保持关闭，不能作为已迁移完成版本交付。`-ExportProbe` 编译仅供开发验证的合成 TIFF 探针；不替代全尺寸 NEF 导出验证。
+
+阶段 2C 已把 JPEG/PNG 浮点 ICC 输入接入查看器，52 个合成输入和全尺寸数值/内存验证见 docs/reports/native-stage2c.md；当前通用 ICC 速度仍慢，不能宣称所有性能目标达成。`-RasterProbe` 只编译开发探针。LittleCMS 与 MozJPEG 静态链接；This software is based in part on the work of the Independent JPEG Group.

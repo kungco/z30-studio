@@ -4,7 +4,8 @@ param(
     [switch]$DebugBuild,
     [switch]$RawProbe,
     [switch]$RawFixtures,
-    [switch]$ExportProbe
+    [switch]$ExportProbe,
+    [switch]$RasterProbe
 )
 $ErrorActionPreference='Stop'
 $repoRoot=Split-Path -Parent $PSScriptRoot
@@ -69,6 +70,7 @@ try {
     if($LASTEXITCODE -ne 0){throw 'Native build failed'}
     if($RawProbe){& $cargoTool build -p z30-core --example raw_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'RAW probe build failed'}}
     if($ExportProbe){& $cargoTool build -p z30-core --example export_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Export probe build failed'}}
+    if($RasterProbe){& $cargoTool build -p z30-core --example raster_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Raster probe build failed'}}
     $profile=if($DebugBuild){'debug'}else{'release'}
     $binary=Join-Path (Get-Location) "target\$profile\z30-native.exe"
     $staging=Join-Path $repoRoot ('native\dist\stage-'+[Guid]::NewGuid().ToString('N'))
@@ -77,7 +79,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $repoRoot 'native\licenses') -Destination (Join-Path $staging 'licenses') -Recurse
     Copy-Item -LiteralPath (Join-Path $repoRoot 'native\README.md') -Destination (Join-Path $staging '使用说明.md')
     $buildInfo=[ordered]@{
-        app='Z30 Studio Native';version='0.1.0-stage1';profile=$profile
+        app='Z30 Studio Native';version='0.1.0-stage2c';profile=$profile
         source_commit=(& git rev-parse HEAD).Trim()
         source_tree_dirty=[bool]((& git status --porcelain) -join '')
         compiler=(& $rustcTool --version)

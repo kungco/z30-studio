@@ -184,9 +184,12 @@ mod tests {
             assert_eq!(std::fs::read(&path).unwrap(), before);
             assert_eq!(icc(&path, format), SRGB_ICC);
             if !matches!(format, Format::Tiff16) {
-                assert!(
-                    matches!(crate::preview::decode(&path),Err(Error::Policy(message)) if message.contains("ICC"))
-                );
+                let preview = crate::preview::decode(&path).unwrap();
+                assert!(preview.policy.contains("ICC →"));
+                assert_eq!((preview.source_width, preview.source_height), (1024, 1));
+                let expected = crate::raster::decode(&path).unwrap();
+                assert_eq!(expected.source_bits, 8);
+                assert_eq!(std::fs::read(&path).unwrap(), before);
             }
         }
         assert!(save(&frame(), &root.path().join("原片.NEF"), Format::Tiff16, 90).is_err());

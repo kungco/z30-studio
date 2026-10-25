@@ -39,7 +39,7 @@ impl RawSizes {
     }
 }
 
-fn coefficients(length: usize, output: usize, start: f64, end: f64) -> Vec<Vec<(usize, f64)>> {
+pub(crate) fn coefficients(length: usize, output: usize, start: f64, end: f64) -> Vec<Vec<(usize, f64)>> {
     let scale = (end - start) / output as f64;
     let filter_scale = scale.max(1.);
     (0..output)
