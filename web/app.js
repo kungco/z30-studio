@@ -1,8 +1,26 @@
 'use strict';
 const $ = id => document.getElementById(id);
-const defaults = {exposure:0,contrast:0,highlights:0,shadows:0,temperature:0,tint:0,saturation:0,vibrance:0,sharpen:0,rotation:0,crop:'original',wb:'camera'};
+let aiProvider=null;
+var libraryWorkflow=null,localTools=null,lensControls=null,colourControls=null,aiControls=null,outputControls=null,overlayVisible=false,overlayRevision=0,retouchTool=null,cloneDonor=null;
+var draftSaver=null,draftsReady=false,darkroomPanel=null,wbPicking=false,gridVisible=false;
+let clientId;
+try{clientId=sessionStorage.getItem('z30-client');if(!/^[a-f0-9]{32}$/.test(clientId||'')){clientId=crypto.randomUUID().replaceAll('-','');sessionStorage.setItem('z30-client',clientId);}}
+catch{clientId=crypto.randomUUID().replaceAll('-','');}
+const localFetch=(path,options={})=>fetch(path,{...options,headers:{'X-Z30-Client':clientId,...options.headers}});
+function savedWorkspace(){try{return JSON.parse(sessionStorage.getItem('z30-workspace')||'{}');}catch{return {};}}
+function persistWorkspace(){
+ try{
+  const recipes={};for(const f of files)recipes[f.id]={catalog:f.catalog,settings:f.settings,preset:f.preset,undo:f.aiUndo,history:f.history?.snapshot(),
+   pending:f.autoPending?{base:f.autoPending.base,requestId:f.autoPending.requestId}:null};
+  sessionStorage.setItem('z30-workspace',boundedWorkspace({selected:current?.id,recipes}));
+ }catch{/* The server draft remains available if browser storage is disabled. */}
+ if(draftsReady&&draftSaver)draftSaver.schedule();
+}
+
+const defaults = {...COLOUR_DEFAULTS,exposure:0,contrast:0,highlights:0,shadows:0,temperature:0,tint:0,saturation:0,vibrance:0,sharpen:0,rotation:0,crop:'original',wb:'camera',denoise_luma:0,denoise_chroma:0,lens_k1:0,lens_k2:0,lens_red:0,lens_blue:0,vignette:0,lens_profile:'手动 / 未校准',masks:[],repairs:[],skin_smooth:0,skin_mask:'',lens_auto:false,lens_calibration:null,lens_tca:true,lens_fill:true,lens_vignette:false,...structuredClone(DARKROOM_DEFAULTS)};
 const presets = {neutral:{},portrait:{exposure:.15,contrast:-12,highlights:-22,shadows:12,temperature:7,vibrance:10},travel:{contrast:12,highlights:-20,shadows:15,vibrance:25,sharpen:18},film:{contrast:-9,highlights:-25,shadows:18,temperature:20,tint:6,saturation:-12},mono:{contrast:22,highlights:-15,shadows:8,saturation:-100,sharpen:20}};
 const files = [];
+let autoGrader=null,autoContext=null,batchGrader=null;
 let current = null, importBusy = false, exportBusy = false, previewRunning = false, previewTimer, previewWanted = false, toastTimer, showingBefore = false, revision = 0;
 const assistant = {connection:null, checking:false, running:false, source:null, base:null, result:null, image:null, strength:100, trialRevision:0, trialRunning:false, trialWanted:false, trialTimer:null, previewSignature:null, currentImage:null};
 const sliderSpecs = [
@@ -14,7 +32,14 @@ const sliderSpecs = [
  ['colorSliders','tint','色调',-100,100,1,''],
  ['colorSliders','saturation','饱和度',-100,100,1,''],
  ['colorSliders','vibrance','自然饱和度',-100,100,1,''],
- ['detailSliders','sharpen','锐化',0,100,1,'']
+ ['detailSliders','sharpen','锐化',0,100,1,''],
+ ['advancedSliders','denoise_luma','亮度降噪',0,100,1,''],
+ ['advancedSliders','denoise_chroma','色彩降噪',0,100,1,''],
+ ['advancedSliders','lens_k1','径向畸变 k1',-.3,.3,.005,''],
+ ['advancedSliders','lens_k2','径向畸变 k2',-.2,.2,.005,''],
+ ['advancedSliders','lens_red','红色差径向',-10,10,.1,' ‰'],
+ ['advancedSliders','lens_blue','蓝色差径向',-10,10,.1,' ‰'],
+ ['advancedSliders','vignette','暗角补偿',0,100,1,'']
 ];
 sliderSpecs.forEach(([parent,id,label,min,max,step,suffix]) => {
  const row = document.createElement('div'); row.className = 'sliderrow';
@@ -30,44 +55,58 @@ sliderSpecs.forEach(([parent,id,label,min,max,step,suffix]) => {
 
 function toast(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,5500);}
 function busy(show,message='正在更新预览…'){$('busy').hidden=!show;$('busyText').textContent=message;}
-function setEnabled(){const yes=!!current,locked=exportBusy||importBusy; $('controls').disabled=!yes||locked;$('wb').disabled=!yes||!current.raw||locked; ['compare','rotate','zoom','reset','saveRecipe','loadRecipe'].forEach(id=>$(id).disabled=!yes||locked);$('exportTop').disabled=!yes||locked;document.querySelectorAll('[data-preset]').forEach(b=>b.disabled=!yes||locked);syncAssistantControls();}
-function syncLabels(){const p=current?current.settings:defaults;sliderSpecs.forEach(([,id,,,,step,suffix])=>{const n=p[id];$(id).value=n;$(id+'Value').textContent=(n>0?'+':'')+(step<1?n.toFixed(2):n)+suffix;});$('wb').value=p.wb;$('crop').value=p.crop;document.querySelectorAll('[data-preset]').forEach(b=>b.classList.toggle('selected',b.dataset.preset===(current?.preset||'neutral')));}
-async function api(path,data,binary=false,extra={}){const r=await fetch(path,{method:'POST',headers:{'Content-Type':binary?'application/octet-stream':'application/json','X-Z30-Request':'1',...extra},body:binary?data:JSON.stringify(data)});if(!r.ok){let message;try{message=(await r.json()).error;}catch{message=`处理失败 (${r.status})`;}throw Error(message);}return r;}
+function setEnabled(){const yes=!!current,locked=exportBusy||importBusy; $('controls').disabled=!yes||locked;$('wb').disabled=!yes||!current.raw||locked; ['compare','rotate','zoom','reset','saveRecipe','loadRecipe'].forEach(id=>$(id).disabled=!yes||locked);$('exportTop').disabled=!yes||locked;document.querySelectorAll('.advanced-panel input,.advanced-panel button,.advanced-panel select').forEach(el=>el.disabled=!yes||locked);document.querySelectorAll('[data-preset]').forEach(b=>b.disabled=!yes||locked);syncAssistantControls();syncMaskUI();syncHistory();localTools?.sync();lensControls?.sync();colourControls?.sync();}
+function syncLabels(){syncHistory();localTools?.sync();lensControls?.sync();colourControls?.sync();darkroomPanel?.sync(current?.settings||defaults,!current||importBusy||exportBusy);const p=current?current.settings:defaults;sliderSpecs.forEach(([,id,,,,step,suffix])=>{const n=p[id];$(id).value=n;$(id+'Value').textContent=(n>0?'+':'')+(step<1?n.toFixed(step<.01?3:2):n)+suffix;});$('wb').value=p.wb;$('crop').value=p.crop;$('lensProfileName').value=p.lens_profile||'手动 / 未校准';syncMaskUI();document.querySelectorAll('[data-preset]').forEach(b=>b.classList.toggle('selected',b.dataset.preset===(current?.preset||'neutral')));}
+async function api(path,data,binary=false,extra={},options={}){if(['/api/codex/suggest','/api/codex/auto'].includes(path))data={...data,backend_revision:data.backend_revision??aiProvider?.revision};const r=await localFetch(path,{method:'POST',headers:{'Content-Type':binary?'application/octet-stream':'application/json','X-Z30-Request':'1',...extra},body:binary?data:JSON.stringify(data),...options});if(!r.ok){let message;try{message=(await r.json()).error;}catch{message=`处理失败 (${r.status})`;}throw Object.assign(Error(message),{status:r.status,retryable:r.status>=500||r.status===408||r.status===429});}return r;}
 function histogram(hist){const c=$('histogram'),ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#2b2d2f';ctx.lineWidth=1;[.25,.5,.75].forEach(t=>{ctx.beginPath();ctx.moveTo(t*c.width,0);ctx.lineTo(t*c.width,c.height);ctx.stroke();});if(!hist)return;const peak=Math.max(1,...hist.flat());ctx.globalCompositeOperation='screen';['#b65e56','#599173','#5c83ae'].forEach((color,ch)=>{ctx.beginPath();ctx.moveTo(0,c.height);hist[ch].forEach((n,i)=>ctx.lineTo(i*c.width/127,c.height-(Math.log1p(n)/Math.log1p(peak))*c.height*.92));ctx.lineTo(c.width,c.height);ctx.closePath();ctx.fillStyle=color+'90';ctx.fill();});ctx.globalCompositeOperation='source-over';}
-function drawLibrary(){$('fileList').replaceChildren();files.forEach(f=>{const card=document.createElement('div');card.className='filecard'+(current===f?' selected':'');const b=document.createElement('button');b.className='selectfile';b.title=f.name;const img=new Image();img.src=f.thumb;img.alt=f.name;const name=document.createElement('strong');name.textContent=f.name;const sub=document.createElement('small');sub.textContent=`${f.raw?'NEF RAW':'IMAGE'} · ${(f.bytes/1024/1024).toFixed(1)} MB`;b.append(img,name,sub);b.onclick=()=>selectFile(f);const remove=document.createElement('button');remove.className='remove';remove.textContent='×';remove.setAttribute('aria-label','移除 '+f.name);remove.onclick=()=>removeFile(f);card.append(b,remove);$('fileList').append(card);});$('count').textContent=String(files.length).padStart(2,'0');$('libraryHint').hidden=files.length>0;}
-function selectFile(f){current=f;revision++;showingBefore=false;$('beforeLabel').hidden=true;$('empty').hidden=!!f;$('imageWrap').hidden=!f;setEnabled();syncLabels();drawLibrary();if(!f){$('filename').textContent='尚未选择照片';$('filetype').textContent='RAW WORKSPACE';$('imageMeta').textContent='为 NEF 照片而设计';$('renderState').textContent='准备就绪';histogram();return;}$('filename').textContent=f.name;$('filetype').textContent=f.raw?'NEF RAW':'IMAGE';$('imageMeta').textContent=`${f.camera} · ${f.width} × ${f.height} · sRGB`;$('preview').src=f.image;histogram(f.histogram);schedulePreview(0);}
-async function removeFile(f){if(exportBusy||importBusy)return;try{await api('/api/close',{id:f.id});files.splice(files.indexOf(f),1);if(current===f)selectFile(files[0]||null);else drawLibrary();}catch(e){toast(e.message);}}
-async function importFiles(list){if(importBusy||exportBusy){toast('请等待当前处理完成');return;}const incoming=Array.from(list);if(!incoming.length)return;importBusy=true;setEnabled();let succeeded=0;for(const file of incoming){if(files.length>=8){toast('最多同时打开 8 张照片，请先移除照片');break;}if(!/\.(nef|jpg|jpeg|png)$/i.test(file.name)){toast('不支持 '+file.name+'，请选择 NEF、JPG 或 PNG');continue;}if(file.size>150*1024*1024){toast(file.name+' 超过 150 MB');continue;}busy(true,'正在解码 '+file.name+'…');try{const r=await api('/api/open',file,true,{'X-Filename':encodeURIComponent(file.name)});const d=await r.json();const f={...d,settings:{...defaults},preset:'neutral',thumb:d.image};files.push(f);selectFile(f);succeeded++;}catch(e){toast(file.name+'：'+e.message);}}importBusy=false;setEnabled();busy(false);if(succeeded)toast(`已导入 ${succeeded} 张照片，原文件保持不变`);if(previewWanted)runPreview();$('fileInput').value='';}
-function schedulePreview(delay=180){revision++;previewWanted=true;clearTimeout(previewTimer);previewTimer=setTimeout(runPreview,delay);$('renderState').textContent='等待更新…';}
-async function runPreview(){if(previewRunning||importBusy||exportBusy||!current)return;previewRunning=true;previewWanted=false;const f=current,rev=revision;busy(true);const p={...f.settings};try{const d=await(await api('/api/preview',{id:f.id,settings:p,before:true})).json();if(rev===revision&&current===f){f.image=d.image;f.before=d.before;f.histogram=d.histogram;f.previewWidth=d.width;f.previewHeight=d.height;if(!showingBefore)$('preview').src=d.image;else $('preview').src=d.before;histogram(d.histogram);$('renderState').textContent=`已更新 · 预览 ${d.width} × ${d.height}`;}}catch(e){toast(e.message);$('renderState').textContent='预览失败';}finally{previewRunning=false;if(!importBusy&&!exportBusy)busy(false);if(previewWanted)runPreview();}}
-function compare(on){if(!current)return;showingBefore=on;$('preview').src=on?current.before:current.image;$('beforeLabel').hidden=!on;$('compare').classList.toggle('on',on);}
+function drawLibrary(){const visible=libraryWorkflow?libraryWorkflow.visible(files):files;$('fileList').replaceChildren();visible.forEach(f=>{const card=document.createElement('div');card.className='filecard'+(current===f?' selected':'');const b=document.createElement('button');b.className='selectfile';b.title=f.name;const img=new Image();img.src=f.thumb;img.alt=f.name;const name=document.createElement('strong');name.textContent=f.name;const sub=document.createElement('small');sub.textContent=`${f.raw?'NEF RAW':'IMAGE'} · ${(f.bytes/1024/1024).toFixed(1)} MB`;b.append(img,name,sub);b.onclick=()=>selectFile(f);const remove=document.createElement('button');remove.className='remove';remove.textContent='×';remove.setAttribute('aria-label','移除 '+f.name);remove.onclick=()=>removeFile(f);card.append(b,remove);libraryWorkflow?.decorate(card,f);$('fileList').append(card);});$('count').textContent=String(files.length).padStart(2,'0');$('libraryHint').hidden=files.length>0;libraryWorkflow?.sync();}
+function selectFile(f){if(current!==f){wbPicking=false;retouchTool=null;cloneDonor=null;if(localTools)localTools.tool=null;$('maskOverlay').hidden=true;}for(const other of files){if(other!==f){other.image=other.thumb;other.before=null;other.histogram=null;}}current=f;revision++;showingBefore=false;$('beforeLabel').hidden=true;$('empty').hidden=!!f;$('imageWrap').hidden=!f;setEnabled();syncLabels();drawLibrary();if(!f){$('filename').textContent='尚未选择照片';$('filetype').textContent='RAW WORKSPACE';$('imageMeta').textContent='为 NEF 照片而设计';$('renderState').textContent='准备就绪';histogram();return;}$('filename').textContent=f.name;$('filetype').textContent=f.raw?'NEF RAW':'IMAGE';$('imageMeta').textContent=`${f.camera} · ${f.width} × ${f.height} · sRGB`;$('preview').src=f.image||f.thumb||'';histogram(f.histogram);$('qualityStatus').textContent=f.quality?.message||'等待画质检查';schedulePreview(0);}
+async function removeFile(f){if(exportBusy||importBusy)return;try{await api('/api/close',{id:f.id});files.splice(files.indexOf(f),1);if(current===f)selectFile(files[0]||null);else drawLibrary();persistWorkspace();}catch(e){toast(e.message);}}
+async function importFiles(list){if(importBusy||exportBusy){toast('请等待当前处理完成');return;}const incoming=Array.from(list);if(!incoming.length)return;importBusy=true;setEnabled();let succeeded=0;const colorWarnings=[];for(const file of incoming){if(files.length>=256){toast('最多同时打开 256 张照片，请先移除照片');break;}if(!/\.(nef|jpg|jpeg|png)$/i.test(file.name)){toast('不支持 '+file.name+'，请选择 NEF、JPG 或 PNG');continue;}if(file.size>150*1024*1024){toast(file.name+' 超过 150 MB');continue;}busy(true,'正在解码 '+file.name+'…');try{const r=await api('/api/open',file,true,{'X-Filename':encodeURIComponent(file.name)});const d=await r.json();colorWarnings.push(...(d.warnings||[]));const f={...d,settings:cloneEdit(defaults),preset:'neutral',thumb:d.thumbnail||d.image};f.history=new EditHistory(f.settings,f.preset);files.push(f);selectFile(f);succeeded++;}catch(e){toast(file.name+'：'+e.message);}}importBusy=false;setEnabled();busy(false);if(succeeded)toast(`已导入 ${succeeded} 张照片，原文件保持不变`+(colorWarnings.length?"；"+[...new Set(colorWarnings)].join("；"):""));if(previewWanted)runPreview();$('fileInput').value='';}
+function schedulePreview(delay=180){recordEdit();revision++;persistWorkspace();previewWanted=true;clearTimeout(previewTimer);previewTimer=setTimeout(runPreview,delay);$('renderState').textContent='等待更新…';}
+async function runPreview(){if(previewRunning||importBusy||exportBusy||!current)return;previewRunning=true;previewWanted=false;const f=current,rev=revision;busy(true);const p={...f.settings};try{const d=await(await api('/api/preview',{id:f.id,settings:p,before:true})).json();if(rev===revision&&current===f){f.image=d.image;f.before=d.before;f.histogram=d.histogram;f.previewWidth=d.width;f.previewHeight=d.height;if(!showingBefore)$('preview').src=d.image;else $('preview').src=d.before;histogram(d.histogram);$('qualityStatus').textContent=d.quality?.message||'未发现明显的输出异常';$('renderState').textContent=`已更新 · 预览 ${d.width} × ${d.height}`;}}catch(e){toast(e.message);$('renderState').textContent='预览失败';}finally{previewRunning=false;if(!importBusy&&!exportBusy)busy(false);if(previewWanted)runPreview();}}
+function compare(on){if(!current)return;showingBefore=on;$('preview').src=(on?current.before:current.image)||current.thumb||'';$('beforeLabel').hidden=!on;$('compare').classList.toggle('on',on);}
 ['importTop','importSide','importEmpty'].forEach(id=>$(id).onclick=()=>$('fileInput').click());
 $('fileInput').onchange=e=>importFiles(e.target.files);
-document.querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>{if(!current)return;const geometry={rotation:current.settings.rotation,crop:current.settings.crop};current.settings={...defaults,...presets[b.dataset.preset],...geometry};current.preset=b.dataset.preset;syncLabels();schedulePreview(0);});
-['wb','crop'].forEach(id=>$(id).onchange=()=>{if(!current)return;current.settings[id]=$(id).value;current.preset='custom';syncLabels();schedulePreview(0);});
+document.querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>{if(!current)return;current.settings=applyGlobalPreset(current.settings,defaults,presets[b.dataset.preset]);current.preset=b.dataset.preset;syncLabels();schedulePreview(0);});
+['wb','crop'].forEach(id=>$(id).onchange=()=>{if(!current)return;current.settings[id]=$(id).value;if(id==='wb')current.settings.wb_mode='legacy';current.preset='custom';syncLabels();schedulePreview(0);});
 $('rotate').onclick=()=>{current.settings.rotation=(current.settings.rotation+1)%4;schedulePreview(0);};
-$('reset').onclick=()=>{if(!current)return;current.settings={...defaults};current.preset='neutral';syncLabels();schedulePreview(0);};
+$('reset').onclick=()=>{if(!current)return;current.settings=cloneEdit(defaults);current.preset='neutral';syncLabels();schedulePreview(0);};
 $('compare').onpointerdown=e=>{e.preventDefault();$('compare').setPointerCapture(e.pointerId);compare(true);};
 $('compare').onpointerup=$('compare').onpointercancel=()=>compare(false);
 $('compare').onclick=e=>{if(e.detail===0){compare(!showingBefore);}};
 window.addEventListener('keydown',e=>{if(e.code==='Space'&&!/INPUT|SELECT|TEXTAREA|BUTTON/.test(document.activeElement.tagName)&&!$('exportDialog').open&&!$('assistantDialog').open){e.preventDefault();compare(true);}});
 window.addEventListener('keyup',e=>{if(e.code==='Space')compare(false);});window.addEventListener('blur',()=>compare(false));
-$('zoom').onclick=()=>{const on=$('imageWrap').classList.toggle('zoomed');$('zoom').textContent=on?'100%':'适应';};
+$('zoom').onclick=()=>{if(!current)return;inspector={source:current,settings:cloneEdit(current.settings),cx:.5,cy:.5};$('inspectMap').src=current.image;$('inspectDialog').showModal();loadInspection();};
 let dragDepth=0;document.addEventListener('dragenter',e=>{if(e.dataTransfer.types.includes('Files')){e.preventDefault();dragDepth++;$('dropOverlay').hidden=false;}});document.addEventListener('dragover',e=>e.preventDefault());document.addEventListener('dragleave',()=>{if(--dragDepth<=0){dragDepth=0;$('dropOverlay').hidden=true;}});document.addEventListener('drop',e=>{e.preventDefault();dragDepth=0;$('dropOverlay').hidden=true;importFiles(e.dataTransfer.files);});
 function download(blob,name){const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);}
-$('saveRecipe').onclick=()=>{if(!current)return;download(new Blob([JSON.stringify({app:'Z30 Studio',version:1,source:current.name,settings:current.settings},null,2)],{type:'application/json'}),current.name.replace(/\.[^.]+$/,'')+'-z30.json');toast('参数已下载，可在下次导入照片后载入');};
+$('saveRecipe').onclick=()=>{if(!current)return;download(new Blob([JSON.stringify({app:'Z30 Studio',version:2,source:current.name,settings:current.settings},null,2)],{type:'application/json'}),current.name.replace(/\.[^.]+$/,'')+'-z30.json');toast('参数已下载，可在下次导入照片后载入');};
 $('loadRecipe').onclick=()=>$('recipeInput').click();
-$('recipeInput').onchange=async e=>{try{if(!current||!e.target.files[0])return;const file=e.target.files[0];if(file.size>100000)throw Error('参数文件过大');const data=JSON.parse(await file.text());if(data.app!=='Z30 Studio'||data.version!==1||!data.settings)throw Error('这不是有效的 Z30 Studio 参数文件');const p={...defaults};sliderSpecs.forEach(([,id,,min,max])=>{const v=Number(data.settings[id]??0);if(!Number.isFinite(v))throw Error('参数包含无效数字');p[id]=Math.max(min,Math.min(max,v));});if(!['camera','auto','daylight'].includes(data.settings.wb)||!['original','3:2','4:3','1:1','16:9'].includes(data.settings.crop))throw Error('白平衡或裁剪参数无效');const rot=Number(data.settings.rotation||0);if(!Number.isInteger(rot)||rot<0||rot>3)throw Error('旋转参数无效');Object.assign(p,{wb:data.settings.wb,crop:data.settings.crop,rotation:rot});current.settings=p;current.preset='custom';syncLabels();schedulePreview(0);toast('参数已载入');}catch(err){toast(err.message);}finally{e.target.value='';}};
+$('recipeInput').onchange=async e=>{
+ try{if(!current||!e.target.files[0])return;const source=current,rev=revision;const file=e.target.files[0];if(file.size>2*1024*1024)throw Error('参数文件过大');
+  const data=JSON.parse(await file.text());if(data.app!=='Z30 Studio'||![1,2].includes(data.version)||!data.settings)throw Error('参数文件无效');
+  const validated=(await(await api('/api/settings',{id:source.id,settings:data.settings})).json()).settings;
+  if(current!==source||revision!==rev||!files.includes(source))throw Error('照片或参数已改变，未载入旧参数');
+  source.settings=validated;
+  current.preset='custom';syncLabels();schedulePreview(0);toast('参数、蒙版和镜头修正已载入');
+ }catch(error){toast(error.message);}finally{e.target.value='';}
+};
 $('exportTop').onclick=()=>$('exportDialog').showModal();
 $('quality').oninput=()=>$('qualityValue').textContent=$('quality').value;
 $('exportFormat').onchange=()=>$('qualityRow').hidden=$('exportFormat').value!=='JPEG';
-$('exportConfirm').onclick=async()=>{if(!current||exportBusy)return;const f=current,p={...f.settings},fmt=$('exportFormat').value;exportBusy=true;setEnabled();$('controls').disabled=true;$('exportDialog').close();busy(true,'正在从原片进行全尺寸导出…');$('renderState').textContent='导出中…';try{const r=await api('/api/export',{id:f.id,settings:p,format:fmt,quality:Number($('quality').value)});download(await r.blob(),f.name.replace(/\.[^.]+$/,'')+'-Z30.'+(fmt==='JPEG'?'jpg':'png'));toast('已导出，请查看浏览器下载文件夹');$('renderState').textContent='导出完成';}catch(e){toast(e.message);$('renderState').textContent='导出失败';}finally{exportBusy=false;setEnabled();busy(false);if(previewWanted)runPreview();}};
-fetch('/api/health').then(r=>{if(!r.ok)throw Error();return r.json();}).then(d=>{$('engine').textContent='LibRaw '+d.libraw+' · 就绪';}).catch(()=>{$('engine').textContent='解码服务连接失败';toast('请通过 start.bat 启动本地服务，再打开网页');});
+localFetch('/api/health').then(r=>{if(!r.ok)throw Error();return r.json();}).then(d=>{const version=$('appVersion');if(version)version.textContent=d.version;$('engine').textContent='LibRaw '+d.libraw+' · 就绪';}).catch(()=>{$('engine').textContent='解码服务连接失败';toast('请通过 start.bat 启动本地服务，再打开网页');});
 function syncAssistantControls(){
- const locked=importBusy||exportBusy;
+ aiControls?.sync();
+ const locked=importBusy||exportBusy||!!autoGrader?.busy||!!batchGrader?.busy;$('providerOpen').disabled=locked||assistant.running;
+ $('autoGrade').disabled=!current||locked||assistant.running;
+ $('autoGrade').textContent=autoGrader?.busy?'正在自动调色…':current?.autoPending?'重新连接分析任务':'一键 AI 调色';
+ $('autoCancel').hidden=!autoGrader?.busy&&!batchGrader?.busy;
+ $('batchOpen').disabled=!files.length||locked||assistant.running;
+ $('autoUndo').disabled=!current?.aiUndo||locked||assistant.running;
+ $('autoDetails').disabled=!current?.autoResult||locked||assistant.running;
  if(current&&!assistant.running&&!assistant.result&&$('aiProgress').textContent.startsWith('请先导入'))$('aiProgress').textContent='描述目标后，发送预览生成建议。';
  $('aiGenerate').disabled=!current||locked||assistant.running||!assistant.connection?.ready;
- $('aiGoal').disabled=assistant.running;
+ $('aiGoal').disabled=assistant.running||!!autoGrader?.busy;
  $('codexRecheck').disabled=assistant.running||assistant.checking;
  $('aiUndo').disabled=!current?.aiUndo||locked||assistant.running;
  document.querySelectorAll('[data-goal]').forEach(b=>b.disabled=assistant.running);
@@ -75,22 +114,24 @@ function syncAssistantControls(){
  const unchanged=sameSource&&assistant.base&&JSON.stringify(current.settings)===JSON.stringify(assistant.base);
  const candidate=assistant.result?assistantCandidate():null;
  const previewReady=candidate&&assistant.previewSignature===JSON.stringify(candidate);
+ const alreadyApplied=sameSource&&current.autoResult?.result===assistant.result&&JSON.stringify(current.settings)===JSON.stringify(assistant.result.settings);
  $('aiApply').disabled=!unchanged||!assistant.result||locked||assistant.running||!previewReady;
  if(assistant.result){
-  $('aiApplyHint').textContent=!sameSource?'建议属于另一张照片。请选择生成建议时的照片。':!unchanged?'当前参数已改变，请重新生成建议后再应用。':!previewReady?'正在生成本地试片，请稍候…':'应用会更新调色参数，可恢复应用前状态。';
+  $('aiApplyHint').textContent=!sameSource?'建议属于另一张照片。请选择生成建议时的照片。':alreadyApplied?'自动调色已应用，可恢复应用前参数。':!unchanged?'当前参数已改变，请重新生成建议后再应用。':!previewReady?'正在生成本地试片，请稍候…':'应用会更新调色参数，可恢复应用前状态。';
  }
 }
 async function checkCodex(){
  if(assistant.checking)return;
- assistant.checking=true;$('codexStatus').textContent='正在检测本机 Codex…';syncAssistantControls();
- try{const r=await fetch('/api/codex/status');if(!r.ok)throw Error('连接检查失败');assistant.connection=await r.json();$('codexStatus').textContent=assistant.connection.message;}
+ assistant.checking=true;$('codexStatus').textContent='正在检测当前模型后端…';syncAssistantControls();
+ try{const r=await localFetch('/api/codex/status');if(!r.ok)throw Error('连接检查失败');assistant.connection=await r.json();$('codexStatus').textContent=assistant.connection.message;}
  catch(e){assistant.connection={ready:false};$('codexStatus').textContent='本地服务连接失败，请检查启动窗口后重试';}
  finally{assistant.checking=false;syncAssistantControls();}
 }
 function assistantCandidate(){
- const t=assistant.strength/100,p={...assistant.base};
+ const t=assistant.strength/100,p=cloneEdit(assistant.base);
  if(t===0)return p;
  sliderSpecs.forEach(([,id,,min,max,step])=>{
+  if(!['exposure','contrast','highlights','shadows','temperature','tint','saturation','vibrance','sharpen'].includes(id))return;
   const value=assistant.base[id]+(assistant.result.settings[id]-assistant.base[id])*t;
   p[id]=Number(Math.max(min,Math.min(max,Math.round(value/step)*step)).toFixed(3));
  });
@@ -100,7 +141,7 @@ function showAdvice(){
  $('aiEmpty').hidden=!!assistant.result;$('aiResult').hidden=!assistant.result;
  if(!assistant.result)return;
  const r=assistant.result;
- $('aiTitle').textContent=r.title;$('aiSummary').textContent=r.summary;$('aiLimitations').textContent=r.limitations;
+ $('aiTitle').textContent=r.title;$('aiSummary').textContent=r.summary;$('aiLimitations').textContent=r.limitations+(r.quality?' '+r.quality.message:'');
  $('aiObservations').replaceChildren(...r.observations.map(text=>{const li=document.createElement('li');li.textContent=text;return li;}));
  $('aiBeforeImage').src=assistant.currentImage;
  $('aiAfterImage').removeAttribute('src');
@@ -134,29 +175,31 @@ async function runAssistantTrial(){
  finally{assistant.trialRunning=false;syncAssistantControls();if(assistant.trialWanted)runAssistantTrial();}
 }
 async function generateAdvice(){
- if(!current||assistant.running||!assistant.connection?.ready)return;
- const source=current,base={...current.settings},goal=$('aiGoal').value.trim();
+ if(!current||assistant.running||(autoGrader?.busy||batchGrader?.busy)||!assistant.connection?.ready)return;
+ const source=current,base=cloneEdit(current.settings),goal=$('aiGoal').value.trim();
  if(!goal){toast('请先输入调色目标');return;}
  assistant.running=true;assistant.source=source;assistant.base=base;assistant.result=null;assistant.strength=100;assistant.previewSignature=null;
  assistant.trialRevision++;assistant.trialWanted=false;clearTimeout(assistant.trialTimer);
- $('aiResult').hidden=true;$('aiEmpty').hidden=false;$('aiProgress').textContent='正在准备预览并发送给 Codex…';syncAssistantControls();
+ $('aiResult').hidden=true;$('aiEmpty').hidden=false;$('aiProgress').textContent='正在准备预览并发送给当前模型后端…';syncAssistantControls();
  try{
-  const d=await(await api('/api/codex/suggest',{id:source.id,settings:base,goal})).json();
+  const d=await(await api('/api/codex/suggest',{id:source.id,settings:base,goal,preview_token:aiControls?.tokenFor(source,base,'suggest',null,goal,aiProvider?.revision)})).json();
   assistant.currentImage=d.current_image;
   const start=Date.now();let job;
   while(true){
    if(Date.now()-start>210000)throw Error('等待建议超时，请稍后重新检测 Codex 后再试');
    await new Promise(resolve=>setTimeout(resolve,1100));
-   const response=await fetch('/api/codex/jobs/'+encodeURIComponent(d.job));
-   if(!response.ok)throw Error('无法读取建议任务，请重新生成');job=await response.json();
+   const response=await localFetch('/api/codex/jobs/'+encodeURIComponent(d.job));
+   if(!response.ok){const error=await response.json();throw Error(error.error||'无法读取建议任务，请重新生成');}job=await response.json();
    if(job.state==='done')break;
-   if(job.state==='error')throw Error(job.error);
-   $('aiProgress').textContent=`Codex 正在看图与分析… ${Math.round((Date.now()-start)/1000)} 秒。关闭面板后任务仍会继续。`;
+   if(job.state==='error'||job.state==='cancelled')throw Error(job.error||'照片会话已关闭');
+   $('aiProgress').textContent=`AI 正在看图与分析… ${Math.round((Date.now()-start)/1000)} 秒。关闭面板后任务仍会继续。`;
   }
   if(job.source_id!==source.id)throw Error('建议与当前照片不匹配，请重新生成');
-  assistant.result=job.result;showAdvice();
+  assistant.result=job.result;
+  if(files.includes(source)){source.autoResult={base:cloneEdit(base),result:cloneEdit(job.result),currentImage:assistant.currentImage};persistWorkspace();}
+  showAdvice();
   $('aiProgress').textContent='建议已就绪。调整强度、查看试片，再决定是否应用。';
-  if(!$('assistantDialog').open)toast('Codex 建议已就绪，点击“Codex 辅助”查看');
+  if(!$('assistantDialog').open)toast('AI 建议已就绪，点击“AI 辅助”查看');
  }catch(e){$('aiProgress').textContent=e.message;toast(e.message);}
  finally{assistant.running=false;syncAssistantControls();}
 }
@@ -173,13 +216,508 @@ $('aiStrength').oninput=updateAdviceStrength;
 document.querySelectorAll('[data-goal]').forEach(b=>b.onclick=()=>{if(!assistant.running)$('aiGoal').value=b.dataset.goal;});
 $('aiApply').onclick=()=>{
  if($('aiApply').disabled||assistant.source!==current)return;
- current.aiUndo={settings:{...current.settings},preset:current.preset};
+ current.aiUndo={settings:cloneEdit(current.settings),preset:current.preset};
  current.settings=assistantCandidate();current.preset='custom';syncLabels();schedulePreview(0);syncAssistantControls();
- $('assistantDialog').close();toast('已应用 Codex 建议，可在辅助面板恢复应用前参数');
+ $('assistantDialog').close();toast('已应用 AI 建议，可在辅助面板恢复应用前参数');
 };
-$('aiUndo').onclick=()=>{
- if(!current?.aiUndo||importBusy||exportBusy)return;
- current.settings={...current.aiUndo.settings};current.preset=current.aiUndo.preset;delete current.aiUndo;
+function undoAI(){
+ if(!current?.aiUndo||importBusy||exportBusy||autoGrader?.busy||assistant.running)return;
+ current.settings=cloneEdit(current.aiUndo.settings);current.preset=current.aiUndo.preset;delete current.aiUndo;
  syncLabels();schedulePreview(0);syncAssistantControls();toast('已恢复应用前参数');
-};
+ $('autoStatus').textContent='已恢复上次 AI 调色前的参数。';
+}
+$('aiUndo').onclick=undoAI;
+$('autoUndo').onclick=undoAI;
 setEnabled();syncLabels();histogram();
+
+const jobLabels={queued:'排队中',running:'正在导出',done:'已完成',partial:'部分完成',error:'失败，可重试',cancelled:'已取消',interrupted:'上次中断，可重试'};
+let jobsTimer=null,jobsLoading=false,recoveryNotified=false;
+async function jobAction(action,id){
+ try{await api('/api/exports/'+action,{job:id});await refreshExportJobs();}
+ catch(e){toast(e.message);}
+}
+async function refreshExportJobs(){
+ if(jobsLoading)return;
+ jobsLoading=true;clearTimeout(jobsTimer);
+ try{
+  const response=await localFetch('/api/exports');const data=await response.json();if(!response.ok)throw Error(data.error||'无法读取后台任务');
+  const interrupted=data.jobs.filter(j=>j.state==='interrupted'||j.recovered_at);
+  if((interrupted.length||data.recovery_warnings?.length)&&!recoveryNotified){recoveryNotified=true;$('exportRecovery').hidden=false;$('exportRecovery').textContent=`检测到 ${interrupted.length} 个上次中断的导出；已校验本机快照，请检查后重试未完成项。`;toast('上次导出被中断，可在后台任务中检查并重试');if(data.recovery_warnings?.length)$('exportRecovery').textContent+=' '+data.recovery_warnings.join('；');$('jobsDialog').showModal();}
+  const active=data.jobs.filter(j=>j.state==='running'||j.state==='queued'||j.worker_active).length;
+  $('jobsTop').textContent=active?'后台任务 · '+active:'后台任务';
+  $('jobsStorage').textContent=`本机快照与结果 ${(data.storage_bytes/1048576).toFixed(1)} MiB / ${(data.limit_bytes/1048576).toFixed(0)} MiB；${data.jobs.length} 个任务`;
+  const cache=await(await localFetch('/api/cache')).json();$('nativeCacheStatus').textContent=`全尺寸浮点磁盘缓存 ${(cache.bytes/1048576).toFixed(0)} / ${(cache.limit_bytes/1048576).toFixed(0)} MiB · 复用 ${cache.hits} 次` ;
+  $('jobsList').replaceChildren();
+  if(!data.jobs.length){const empty=document.createElement('p');empty.textContent='暂无后台导出任务。';$('jobsList').append(empty);}
+  for(const job of data.jobs){
+   const card=document.createElement('section');card.className='export-job';
+   const count=job.items.filter(x=>x.state==='done').length;
+   const title=document.createElement('h3');title.textContent=`${jobLabels[job.state]||job.state} · ${count}/${job.items.length} 张 · ${job.format}`;
+   if(job.state==='running')title.textContent+=` · ${job.workers||1} 路${job.eta_seconds==null?'':` · 约 ${job.eta_seconds} 秒`}`;
+   const progress=document.createElement('progress');progress.max=job.items.length;progress.value=(job.progress??count/job.items.length)*job.items.length;
+   const list=document.createElement('ul');
+   for(const item of job.items){const li=document.createElement('li');li.textContent=item.name+' · '+(item.state==='done'?'完成':item.state==='running'?`${({decode:'解码',prepare:'镜头与局部调整',render:'调色',cache:'复用缓存',encode:'编码'})[item.phase]||'正在处理'} ${Math.round((item.progress||0)*100)}%`:item.state==='error'?'失败：'+item.error:'等待处理')+(item.quality?.strength<1?' · 自动保护 '+Math.round(item.quality.strength*100)+'%':'');list.append(li);}
+   const actions=document.createElement('div');actions.className='job-actions';
+   if(count){
+    const link=document.createElement('a');const single=job.items.length===1;
+    link.href='/api/exports/'+encodeURIComponent(job.id)+(single?'/file':'/download');link.textContent=single?'下载照片':'下载已完成结果 ZIP';link.setAttribute('download','');actions.append(link);
+    if(!single)for(const item of job.items.filter(x=>x.state==='done')){
+     const file=document.createElement('a');file.href='/api/exports/'+encodeURIComponent(job.id)+'/files/'+item.index;
+     file.textContent='单张下载：'+item.name;file.setAttribute('download','');actions.append(file);
+    }
+   }
+   if(['partial','error','cancelled','interrupted'].includes(job.state)&&!job.worker_active){const retry=document.createElement('button');retry.textContent='重试未完成项';retry.onclick=()=>jobAction('retry',job.id);actions.append(retry);}
+   if(job.state==='running'||job.state==='queued'){const cancel=document.createElement('button');cancel.textContent='取消任务';cancel.onclick=()=>jobAction('cancel',job.id);actions.append(cancel);}
+   else if(!job.worker_active){const remove=document.createElement('button');remove.textContent='删除快照与结果';remove.onclick=()=>jobAction('delete',job.id);actions.append(remove);}
+   card.append(title,progress,list);
+   if(job.error){const error=document.createElement('p');error.textContent=job.error;card.append(error);}
+   card.append(actions);$('jobsList').append(card);
+  }
+  if(active||$('jobsDialog').open)jobsTimer=setTimeout(refreshExportJobs,1500);
+ }catch(e){$('jobsStorage').textContent=e.message;if($('jobsDialog').open)jobsTimer=setTimeout(refreshExportJobs,5000);}
+ finally{jobsLoading=false;}
+}
+$('jobsTop').onclick=()=>{$('jobsDialog').showModal();refreshExportJobs();};
+$('jobsClose').onclick=()=>$('jobsDialog').close();
+$('exportConfirm').onclick=async()=>{
+ if(!current||exportBusy)return;
+ const sources=$('exportScope').value==='all'?[...files]:$('exportScope').value==='selected'?files.filter(f=>f.multiSelected):[current];if(!sources.length){toast('请先多选需要导出的照片');return;}
+ const body={ids:sources.map(f=>f.id),settings:cloneEdit(current.settings),recipes:Object.fromEntries(sources.map(f=>[f.id,cloneEdit(f.settings)])),options:outputControls.options(),format:$('exportFormat').value,
+             quality:Number($('quality').value),protect:$('exportProtect').checked};
+ exportBusy=true;setEnabled();$('exportConfirm').disabled=true;
+ try{
+  await api('/api/exports/create',body);$('exportDialog').close();$('jobsDialog').showModal();
+  toast('已创建本机快照并加入后台队列，可继续编辑照片');await refreshExportJobs();
+ }catch(e){toast(e.message);}
+ finally{exportBusy=false;setEnabled();$('exportConfirm').disabled=false;if(previewWanted)runPreview();}
+};
+refreshExportJobs();
+
+const autoPost=(path,data)=>api(path,data,false,{}, {signal:AbortSignal.timeout(25000)});
+const gradeIO={
+ submit:async context=>{
+  assistant.trialRevision++;assistant.trialWanted=false;clearTimeout(assistant.trialTimer);
+  const data=await(await autoPost('/api/codex/auto',{id:context.source.id,settings:context.base,request_id:context.requestId,auto_options:context.autoOptions||autoOptions(),backend_revision:context.providerRevision,preview_token:aiControls?.tokenFor(context.source,context.base,'auto',context.autoOptions||autoOptions(),'',context.providerRevision)})).json();
+  context.currentImage=data.current_image;return data;
+ },
+ recover:async context=>{
+  const response=await localFetch('/api/codex/requests/'+encodeURIComponent(context.requestId)+'?source='+encodeURIComponent(context.source.id),{signal:AbortSignal.timeout(15000)});
+  const data=await response.json();if(!response.ok)throw Object.assign(Error(data.error||'无法恢复分析任务'),{status:response.status,retryable:response.status>=500});return data;
+ },
+ poll:async job=>{
+  const response=await localFetch('/api/codex/jobs/'+encodeURIComponent(job),{signal:AbortSignal.timeout(15000)});
+  const data=await response.json();if(!response.ok)throw Object.assign(Error(data.error||'无法读取自动调色任务'),{status:response.status,retryable:response.status>=500});return data;
+ },
+ cancel:(context,job)=>autoPost('/api/codex/cancel',{id:context.source.id,job}),
+ preview:async(context,settings)=>{
+  const data=await(await autoPost('/api/preview',{id:context.source.id,settings,before:true})).json();
+  const image=new Image();image.src=data.image;await image.decode();return data;
+ },
+ isCurrent:context=>canApplyAuto(context,current,files,revision),
+ apply:(context,result,preview)=>{
+  const f=context.source;
+  f.aiUndo={settings:cloneEdit(f.settings),preset:f.preset};
+  f.settings=cloneEdit(result.settings);f.preset='custom';recordEdit(f,'AI 自动调色');
+  Object.assign(f,{image:preview.image,before:preview.before,histogram:preview.histogram,quality:preview.quality,thumb:preview.image});
+  if(current!==f){drawLibrary();persistWorkspace();return;}
+  // Invalidate a pending old preview before publishing the verified new image.
+  revision++;clearTimeout(previewTimer);previewWanted=false;showingBefore=false;
+  Object.assign(f,{image:preview.image,before:preview.before,histogram:preview.histogram,quality:preview.quality});
+  $('beforeLabel').hidden=true;$('preview').src=f.image||f.thumb||'';histogram(f.histogram);
+  $('qualityStatus').textContent=preview.quality.message;
+  $('renderState').textContent=`AI 自动调色已应用 · 预览 ${preview.width} × ${preview.height}`;
+  syncLabels();
+ },
+ onState:state=>{
+  const labels={preparing:'正在准备预览…',analyzing:'AI 正在分析画面与调色…',checking:'正在检查通道、层次和色彩…',rendering:'正在验证本地调色预览…',cancelling:'正在取消；不会自动应用结果。',reconnecting:'连接暂时中断，正在取回原分析任务，不会重新调用模型…'};
+  const context=state.context||autoContext;
+  if(state.result&&files.includes(context.source))context.source.autoResult={base:context.base,result:state.result,currentImage:context.currentImage};
+  if(context&&state.state==='error'&&!state.pending)context.source.autoFailed=true;
+  if(context&&state.state==='done')context.source.autoFailed=false;
+  if(['done','stale','error','cancelled'].includes(state.state)&&context){
+   if(state.pending)context.source.autoPending=context;else delete context.source.autoPending;
+  }
+  let message=labels[state.state]||state.message;
+  if(state.state==='done')message='已自动应用。'+state.result.summary+' '+state.result.quality.message;
+  if(state.state==='stale')message='照片或参数已改变，未自动应用。可回到原照片查看分析。';
+  $('autoStatus').textContent=(context?context.source.name+' · ':'')+(message||'自动调色未完成');
+  $('autoGrade').textContent=autoGrader?.busy?'正在自动调色…':current?.autoPending?'重新连接分析任务':'一键 AI 调色';
+  persistWorkspace();syncAssistantControls();
+  if(['done','stale','error','cancelled'].includes(state.state))toast(message);
+ }
+};
+autoGrader=new AutoGrader(gradeIO);
+$('autoGrade').onclick=()=>{
+ if(!current||autoGrader.busy||batchGrader?.busy||assistant.running||importBusy||exportBusy)return;
+ autoContext=current.autoPending?{...current.autoPending,recoverOnly:true}:{source:current,base:cloneEdit(current.settings),revision,providerRevision:aiProvider?.revision,autoOptions:autoOptions(),requestId:crypto.randomUUID().replaceAll('-','')};
+ current.autoPending=autoContext;persistWorkspace();
+ autoGrader.start(autoContext).catch(e=>toast(e.message));
+};
+$('autoCancel').onclick=()=>batchGrader?.busy?batchGrader.cancel():autoGrader.cancel();
+$('autoDetails').onclick=()=>{
+ if(!current?.autoResult||autoGrader.busy||assistant.running)return;
+ const saved=current.autoResult;
+ Object.assign(assistant,{source:current,base:saved.base,result:saved.result,currentImage:saved.currentImage,strength:100,previewSignature:null});
+ $('aiProgress').textContent='这是自动调色的分析与画质检查记录。';showAdvice();
+ $('assistantDialog').showModal();syncAssistantControls();
+ if(!assistant.connection)checkCodex();
+};
+setEnabled();
+
+async function restoreWorkspace(){
+ const saved=savedWorkspace();importBusy=true;setEnabled();
+ try{
+  const data=await(await api('/api/sessions/restore',{recipes:saved.recipes||{},selected:saved.selected})).json();
+  for(const photo of data.photos){
+   const recipe=saved.recipes?.[photo.id]||{};
+   const f={...photo,preset:recipe.preset||'custom',thumb:photo.thumbnail||photo.image};
+   f.history=new EditHistory(f.settings,f.preset,photo.history);
+   if(photo.undo)f.aiUndo=photo.undo;
+   if(recipe.pending?.requestId)f.autoPending={source:f,base:recipe.pending.base,requestId:recipe.pending.requestId,revision:-1,recoverOnly:true};
+   files.push(f);
+  }
+  selectFile(files.find(f=>f.id===saved.selected)||files[0]||null);
+  if(!files.length){draftSaver.reset();await showDrafts(true);}else{try{const d=JSON.parse(sessionStorage.getItem('z30-draft-state')||'null');if(d)draftSaver.reset(d.id,d.version);}catch{}}
+ }catch(e){toast('恢复照片会话失败：'+e.message);}
+ finally{importBusy=false;draftsReady=true;setEnabled();if(previewWanted)runPreview();}
+}
+restoreWorkspace();
+setInterval(()=>api('/api/sessions/heartbeat',{}).catch(()=>{}),30000);
+
+var historyApplying=false;
+function recordEdit(f=current,label='调整参数'){
+ if(!f||historyApplying)return;
+ if(!f.history)f.history=new EditHistory(f.settings,f.preset);
+ if(label==='调整参数'){const previous=f.history.states[f.history.index];const changed=Object.keys(f.settings).filter(k=>JSON.stringify(previous.settings[k])!==JSON.stringify(f.settings[k]));const labels={curves:'RGB / 单通道曲线',hsl:'HSL 分色',grading:'颜色分级',straighten:'水平拉直',crop_rect:'自由裁剪',wb_mode:'白平衡方式',kelvin:'Kelvin 光源校正',wb_gains:'灰卡校准',masks:'局部蒙版',crop:'构图裁剪',rotation:'旋转',wb:'白平衡',lens_profile:'镜头配置'};const presetsNames={neutral:'自然',portrait:'柔和人像',travel:'晴日旅行',film:'暖调胶片',mono:'经典黑白'};label=f.preset!=='custom'&&presetsNames[f.preset]?'预设：'+presetsNames[f.preset]:changed.length===1?(sliderSpecs.find(x=>x[1]===changed[0])?.[2]||labels[changed[0]]||'调整参数'):'多个参数';}
+ if(f.history.capture(f.settings,f.preset,label))f.editVersion=(f.editVersion||0)+1;
+ syncHistory();
+}
+function syncHistory(){
+ const h=current?.history,locked=importBusy||exportBusy;
+ $('historyUndo').disabled=!h||h.index===0||locked;
+ $('historyRedo').disabled=!h||h.index===h.states.length-1||locked;
+ $('historyList').disabled=!h||locked;$('saveProject').disabled=!files.length||locked;
+ $('historyList').replaceChildren();
+ if(h)h.states.forEach((entry,index)=>{const option=document.createElement('option');option.value=index;option.textContent=(index+1)+'. '+entry.label;option.selected=index===h.index;$('historyList').append(option);});
+}
+function moveHistory(index){
+ if(!current?.history||importBusy||exportBusy)return;
+ const state=current.history.go(index);current.settings=state.settings;current.preset=state.preset;
+ current.editVersion=(current.editVersion||0)+1;historyApplying=true;
+ try{syncLabels();schedulePreview(0);}finally{historyApplying=false;}
+}
+$('historyUndo').onclick=()=>moveHistory(current.history.index-1);
+$('historyRedo').onclick=()=>moveHistory(current.history.index+1);
+$('historyList').onchange=e=>moveHistory(Number(e.target.value));
+window.addEventListener('keydown',e=>{
+ if(!(e.ctrlKey||e.metaKey)||/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName))return;
+ if(e.key.toLowerCase()==='z'){e.preventDefault();if(current?.history)moveHistory(current.history.index+(e.shiftKey?1:-1));}
+ if(e.key.toLowerCase()==='y'){e.preventDefault();if(current?.history)moveHistory(current.history.index+1);}
+});
+$('saveProject').onclick=async()=>{
+ if(!files.length||importBusy||exportBusy)return;
+ recordEdit();const recipes={};for(const f of files)recipes[f.id]={catalog:f.catalog,settings:f.settings,preset:f.preset,undo:f.aiUndo||null,history:f.history?.snapshot(),analysis:f.autoResult?{base:f.autoResult.base,result:f.autoResult.result}:null};
+ try{const data=await(await api('/api/projects/prepare',{ids:files.map(f=>f.id),recipes,selected:files.indexOf(current)})).json();
+  const link=document.createElement('a');link.href=data.url;link.download='Z30-Project.z30proj';document.body.append(link);link.click();link.remove();
+  toast('项目含原片副本，请保管本机下载文件；下载完成前勿移除照片');
+ }catch(e){toast(e.message);}
+};
+$('openProject').onclick=()=>$('projectInput').click();
+$('projectInput').onchange=async e=>{
+ const file=e.target.files[0];if(!file)return;
+ if(file.size>8*1024*1024*1024){toast('项目超过 8 GiB');return;}
+ importBusy=true;setEnabled();
+ try{const data=await(await api('/api/projects/open',file,true)).json();const added=[];
+  for(const photo of data.photos){const f={...photo,thumb:photo.thumbnail||photo.image};f.history=new EditHistory(f.settings,f.preset,photo.history);if(photo.undo)f.aiUndo=photo.undo;
+   if(photo.analysis?.result)f.autoResult={base:photo.analysis.base,result:photo.analysis.result,currentImage:photo.image};
+   files.push(f);added.push(f);
+  }selectFile(added[data.selected]||added[0]);toast('项目原片、参数与历史已恢复');
+ }catch(error){toast(error.message);}finally{importBusy=false;setEnabled();if(previewWanted)runPreview();e.target.value='';}
+};
+
+var inspector=null,inspectRevision=0;
+async function loadInspection(){
+ if(!inspector)return;const job=inspector,rev=++inspectRevision;
+ $('inspectStatus').textContent='正在读取全尺寸显影；此视图包含当前调色与构图…';
+ try{const data=await(await api('/api/inspect',{id:job.source.id,settings:job.settings,cx:job.cx,cy:job.cy})).json();
+  if(rev!==inspectRevision||!$('inspectDialog').open)return;
+  inspector={...job,...data};$('inspectImage').src=data.image;$('inspectImage').width=data.width;$('inspectImage').height=data.height;
+  $('inspectStatus').textContent=`原尺寸 ${data.full_width} × ${data.full_height} · 区域 (${data.x}, ${data.y}) ${data.width} × ${data.height} · PNG 无损预览`;
+ }catch(e){$('inspectStatus').textContent=e.message;}
+}
+$('inspectClose').onclick=()=>{$('inspectDialog').close();inspectRevision++;};
+$('inspectMap').onclick=e=>{if(!inspector)return;const r=e.target.getBoundingClientRect();inspector.cx=(e.clientX-r.left)/r.width;inspector.cy=(e.clientY-r.top)/r.height;loadInspection();};
+document.querySelectorAll('[data-pan]').forEach(button=>button.onclick=()=>{
+ if(!inspector?.full_width)return;const [dx,dy]=button.dataset.pan.split(',').map(Number);
+ inspector.cx=Math.max(0,Math.min(1,inspector.cx+dx*inspector.width/inspector.full_width*.7));
+ inspector.cy=Math.max(0,Math.min(1,inspector.cy+dy*inspector.height/inspector.full_height*.7));loadInspection();
+});
+
+function autoOptions(){return {style:$('autoStyle').value,strength:Number($('autoMaxStrength').value),exposure_limit:Number($('autoExposureLimit').value),color_limit:Number($('autoColorLimit').value),goal:$('autoGoalExtra').value,reference:''};}
+try{const saved=JSON.parse(localStorage.getItem('z30-auto-preferences')||'null');if(saved){for(const [id,key] of [['autoStyle','style'],['autoMaxStrength','strength'],['autoExposureLimit','exposure_limit'],['autoColorLimit','color_limit']]){if([...$(id).options].some(o=>o.value===String(saved[key])))$(id).value=saved[key];}if(typeof saved.goal==='string')$('autoGoalExtra').value=saved.goal.slice(0,350);}}catch{}
+['autoStyle','autoMaxStrength','autoExposureLimit','autoColorLimit','autoGoalExtra'].forEach(id=>$(id).addEventListener('change',()=>{try{localStorage.setItem('z30-auto-preferences',JSON.stringify(autoOptions()));}catch{}}));
+function batchStillCurrent(context){return files.includes(context.source)&&(!context.source.autoPending||context.source.autoPending.requestId===context.requestId)&&(context.source.editVersion||0)===context.fileRevision&&JSON.stringify(context.source.settings)===JSON.stringify(context.base);}
+let batchItems=[];
+function drawBatch(){
+ $('batchItems').replaceChildren(...batchItems.map(item=>{const li=document.createElement('li');li.textContent=item.name+' · '+item.state;return li;}));
+ $('batchStart').disabled=!!batchGrader?.busy||!!autoGrader?.busy||assistant.running||!files.length;
+ $('batchStop').disabled=!batchGrader?.busy;$('batchBudget').disabled=!!batchGrader?.busy;
+}
+batchGrader=new BatchGrader({
+ isCurrent:batchStillCurrent,
+ make:(context,index)=>{context.source.autoPending=context;persistWorkspace();return new AutoGrader({...gradeIO,isCurrent:batchStillCurrent,onState:state=>{
+  gradeIO.onState({...state,context});batchItems[index].state=state.state==='done'?'已应用':state.state==='stale'?'编辑已改变，跳过':state.message||({preparing:'准备预览',submitting:'提交分析',analyzing:'分析中',rendering:'渲染验证',checking:'画质检查',cancelling:'取消中'})[state.state]||state.state;drawBatch();
+ }});},
+ onItem:(index,outcome)=>{batchItems[index].state=({done:'已应用',stale:'编辑已改变，跳过',error:'失败：'+outcome.message,cancelled:'已取消'})[outcome.state]||outcome.state;drawBatch();},
+ onFinish:(outcomes,spent)=>{outcomes.forEach((o,i)=>{if(o.state==='not-started')batchItems[i].state='未开始（上限或已停止）';});$('batchStatus').textContent=`本次已启动 ${spent} 次分析，成功应用 ${outcomes.filter(x=>x.state==='done').length} 张。`;drawBatch();syncAssistantControls();}
+});
+$('batchOpen').onclick=()=>{if(!batchItems.length)$('batchBudget').value=Math.max(1,Math.min(8,files.length));$('batchDialog').showModal();drawBatch();};
+$('batchClose').onclick=()=>$('batchDialog').close();
+$('batchStop').onclick=()=>batchGrader.cancel();
+$('batchStart').onclick=async()=>{
+ if(batchGrader.busy||autoGrader.busy||assistant.running)return;
+ const options=autoOptions();const contexts=files.map(f=>({source:f,base:cloneEdit(f.settings),fileRevision:f.editVersion||0,providerRevision:aiProvider?.revision,autoOptions:options,requestId:crypto.randomUUID().replaceAll('-','')}));
+ batchItems=contexts.map(c=>({name:c.source.name,state:'等待'}));$('batchStatus').textContent='顺序逐张分析，可停止；编辑中的照片若有变化会跳过。';drawBatch();
+ try{await batchGrader.run(contexts,Number($('batchBudget').value));}catch(e){toast(e.message);}
+};
+
+var activeMask=-1,maskEditing=false,maskDrag=null;
+var maskSliderSpecs=[['exposure','局部曝光',-2,2,.05],['shadows','局部阴影',-100,100,1],['temperature','局部色温',-60,60,1],['saturation','局部饱和度',-100,100,1],['opacity','不透明度',0,1,.05],['feather','羽化',.01,1,.01],['radius','画笔大小',.005,.3,.005],['range_min','场景亮度下限',0,1,.01],['range_max','场景亮度上限',0,1,.01],['range_softness','范围过渡',.005,.5,.005],['color_distance','颜色范围容差',.01,1,.01]];
+for(const [key,label,min,max,step] of maskSliderSpecs){
+ const row=document.createElement('label');row.className='mask-slider';row.textContent=label;
+ const input=document.createElement('input');Object.assign(input,{id:'mask-'+key,type:'range',min,max,step});input.setAttribute('aria-label',label);
+ const output=document.createElement('output');output.id='mask-value-'+key;
+ input.oninput=()=>{const mask=current?.settings.masks?.[activeMask];if(!mask||importBusy||exportBusy)return;mask[key]=Number(input.value);if(key==='range_min')mask.range_max=Math.max(mask.range_max,mask.range_min);if(key==='range_max')mask.range_min=Math.min(mask.range_min,mask.range_max);current.preset='custom';schedulePreview();syncMaskUI();};
+ row.append(input,output);$('maskSliders').append(row);
+}
+function newMask(type){return {type,enabled:true,invert:false,x0:.2,y0:.2,x1:.8,y1:.8,cx:.5,cy:.5,rx:.25,ry:.25,radius:.06,feather:.6,opacity:1,exposure:.5,shadows:0,temperature:0,saturation:0,range_min:0,range_max:1,range_softness:.08,color_distance:.18,range_color:[.5,.5,.5],points:[],breaks:[]};}
+function syncMaskUI(){
+ const masks=current?.settings.masks||[];activeMask=masks.length?Math.max(0,Math.min(Number.isInteger(activeMask)?activeMask:0,masks.length-1)):-1;
+ $('maskList').replaceChildren(...masks.map((m,i)=>{const o=document.createElement('option');o.value=i;o.textContent=(i+1)+'. '+(({linear:'渐变',radial:'径向',brush:'画笔',luminance:'亮度范围',color:'颜色范围',semantic:'AI '+(m.label||'区域')})[m.type]);o.selected=i===activeMask;return o;}));
+ const mask=masks[activeMask];if(mask&&!['linear','radial','brush'].includes(mask.type))maskEditing=false;const locked=!current||importBusy||exportBusy;
+ for(const id of ['maskDraw','maskDelete','maskEnabled','maskInvert','maskList'])$(id).disabled=locked||!mask;
+ $('maskEnabled').checked=mask?.enabled??true;$('maskInvert').checked=mask?.invert??false;
+ for(const [key] of maskSliderSpecs||[]){const input=$('mask-'+key);if(!input)continue;input.disabled=locked||!mask;input.value=mask?.[key]??0;$('mask-value-'+key).textContent=Number(mask?.[key]??0).toFixed(key==='exposure'?2:3);}
+ $('maskDraw').disabled=locked||!mask||!['linear','radial','brush'].includes(mask.type);$('maskPreview').disabled=locked||!mask;$('maskColorRow').hidden=mask?.type!=='color';if(mask?.range_color)$('maskColor').value='#'+mask.range_color.map(c=>Math.round(c*255).toString(16).padStart(2,'0')).join('');
+ if($('mask-radius'))$('mask-radius').parentElement.hidden=mask?.type!=='brush';
+ for(const [key] of maskSliderSpecs||[]){const input=$('mask-'+key);if(input&&(key.startsWith('range_')||key==='color_distance'))input.parentElement.hidden=key==='color_distance'?mask?.type!=='color':!['color','luminance'].includes(mask?.type);}
+ $('maskDraw').textContent=maskEditing?'完成绘制':'在照片上绘制';paintMasks();
+}
+function paintMasks(){
+ const canvas=$('maskCanvas'),mask=current?.settings.masks?.[activeMask];canvas.hidden=!maskEditing||!mask;
+ if(canvas.hidden)return;
+ const image=$('preview').getBoundingClientRect(),stage=$('stage').getBoundingClientRect();
+ if(!image.width||!image.height)return;
+ Object.assign(canvas.style,{left:(image.left-stage.left)+'px',top:(image.top-stage.top)+'px',width:image.width+'px',height:image.height+'px'});
+ const scale=devicePixelRatio||1;canvas.width=Math.round(image.width*scale);canvas.height=Math.round(image.height*scale);
+ const ctx=canvas.getContext('2d');ctx.scale(scale,scale);ctx.strokeStyle='#f3d071';ctx.fillStyle='#edcb6838';ctx.lineWidth=2;
+ const x=v=>v*image.width,y=v=>v*image.height;
+ if(mask.type==='linear'){ctx.beginPath();ctx.moveTo(x(mask.x0),y(mask.y0));ctx.lineTo(x(mask.x1),y(mask.y1));ctx.stroke();for(const p of [[mask.x0,mask.y0],[mask.x1,mask.y1]]){ctx.beginPath();ctx.arc(x(p[0]),y(p[1]),5,0,Math.PI*2);ctx.stroke();}}
+ if(mask.type==='radial'){ctx.beginPath();ctx.ellipse(x(mask.cx),y(mask.cy),x(mask.rx),y(mask.ry),0,0,Math.PI*2);ctx.fill();ctx.stroke();}
+ if(mask.type==='brush'&&mask.points.length){ctx.lineWidth=mask.radius*Math.min(image.width,image.height)*2;ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#edcb6866';ctx.beginPath();const starts=new Set([0,...(mask.breaks||[])]);mask.points.forEach((p,i)=>{if(starts.has(i)){ctx.moveTo(x(p[0]),y(p[1]));ctx.lineTo(x(p[0])+.01,y(p[1]));}else ctx.lineTo(x(p[0]),y(p[1]));});ctx.stroke();}
+}
+document.querySelectorAll('[data-new-mask]').forEach(button=>button.onclick=()=>{
+ if(!current||importBusy||exportBusy)return;if(current.settings.masks.length>=32){toast('最多 32 个蒙版');return;}
+ current.settings.masks.push(newMask(button.dataset.newMask));activeMask=current.settings.masks.length-1;maskEditing=['linear','radial','brush'].includes(button.dataset.newMask);if(!maskEditing)overlayVisible=true;syncMaskUI();schedulePreview(0);
+});
+$('maskList').onchange=e=>{activeMask=Number(e.target.value);syncMaskUI();};
+$('maskDraw').onclick=()=>{retouchTool=null;cloneDonor=null;wbPicking=false;if(localTools)localTools.tool=null;drawRetouch();maskEditing=!maskEditing;syncMaskUI();};
+$('maskDelete').onclick=()=>{if(!current)return;current.settings.masks.splice(activeMask,1);activeMask--;syncMaskUI();schedulePreview(0);};
+for(const [id,key] of [['maskEnabled','enabled'],['maskInvert','invert']])$(id).onchange=()=>{const mask=current?.settings.masks[activeMask];if(mask){mask[key]=$(id).checked;schedulePreview(0);}};
+function maskPoint(event){const rect=$('maskCanvas').getBoundingClientRect();return [Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)),Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height))].map(x=>Math.round(x*100000)/100000);}
+$('maskCanvas').onpointerdown=e=>{
+ const mask=current?.settings.masks[activeMask];if(!mask)return;e.preventDefault();$('maskCanvas').setPointerCapture(e.pointerId);
+ const point=maskPoint(e);maskDrag={source:current,mask,start:point};
+ if(mask.type==='brush'){
+  if(current.settings.masks.reduce((n,m)=>n+m.points.length,0)>=8192){maskDrag=null;toast('画笔点已达上限');return;}
+  if(mask.points.length)(mask.breaks??=[]).push(mask.points.length);
+  mask.points.push(point);
+ }else if(mask.type==='linear'){[mask.x0,mask.y0]=point;[mask.x1,mask.y1]=point;}
+ else{[mask.cx,mask.cy]=point;mask.rx=.01;mask.ry=.01;}
+ paintMasks();
+};
+$('maskCanvas').onpointermove=e=>{
+ if(!maskDrag||maskDrag.source!==current)return;const m=maskDrag.mask,p=maskPoint(e);
+ if(m.type==='brush'){
+  const last=m.points[m.points.length-1];if(Math.hypot(p[0]-last[0],p[1]-last[1])>m.radius/3&&current.settings.masks.reduce((n,x)=>n+x.points.length,0)<8192)m.points.push(p);
+ }else if(m.type==='linear'){[m.x1,m.y1]=p;}else{m.rx=Math.max(.01,Math.abs(p[0]-m.cx));m.ry=Math.max(.01,Math.abs(p[1]-m.cy));}
+ paintMasks();
+};
+$('maskCanvas').onpointerup=$('maskCanvas').onpointercancel=()=>{if(maskDrag){const source=maskDrag.source;maskDrag=null;if(!files.includes(source))return;source.preset='custom';recordEdit(source,'局部蒙版');persistWorkspace();if(source===current){syncMaskUI();schedulePreview(0);}}};
+$('preview').addEventListener('load',paintMasks);window.addEventListener('resize',paintMasks);
+$('lensProfileName').onchange=()=>{if(current){current.settings.lens_profile=$('lensProfileName').value;schedulePreview();}};
+$('saveLens').onclick=()=>{if(!current)return;const settings={};for(const key of ['lens_k1','lens_k2','lens_red','lens_blue','vignette','lens_profile','lens_auto','lens_calibration','lens_tca','lens_fill','lens_vignette'])settings[key]=current.settings[key];download(new Blob([JSON.stringify({app:'Z30 Lens Profile',version:2,model:'snapshot-radial-v2',settings},null,2)],{type:'application/json'}),'Z30-manual-lens.json');};
+$('loadLens').onclick=()=>$('lensInput').click();
+$('lensInput').onchange=async e=>{try{if(!current||!e.target.files[0])return;const source=current,rev=revision;const update=cloneEdit(source.settings);const file=e.target.files[0];if(file.size>20000)throw Error('配置过大');const data=JSON.parse(await file.text());if(!((data.app==='Z30 Manual Optics'&&data.version===1&&data.model==='centered-radial-v1')||(data.app==='Z30 Lens Profile'&&data.version===2&&data.model==='snapshot-radial-v2')))throw Error('不是兼容的手动镜头配置');if(data.version===1){update.lens_auto=false;update.lens_calibration=null;}for(const key of ['lens_k1','lens_k2','lens_red','lens_blue','vignette','lens_profile','lens_auto','lens_calibration','lens_tca','lens_fill','lens_vignette'])if(key in data.settings)update[key]=data.settings[key];const validated=(await(await api('/api/settings',{id:source.id,settings:update})).json()).settings;if(current!==source||revision!==rev||!files.includes(source))throw Error('照片或参数已改变，未载入旧镜头配置');source.settings=validated;syncLabels();schedulePreview(0);toast('已载入手动镜头参数，请检查网格和边缘');}catch(error){toast(error.message);}finally{e.target.value='';}};
+setEnabled();syncMaskUI();
+
+const modelSettings=new ModelSettings({read:()=>localFetch('/api/ai/config'),post:(path,data)=>api(path,data),busy:()=>importBusy||exportBusy||!!autoGrader?.busy||!!batchGrader?.busy||assistant.running,changed:config=>{
+ aiProvider=config;assistant.connection=null;
+ const label=config.provider==='codex'?'Codex CLI':config.provider==='deepseek'?'DeepSeek · '+config.model:config.provider==='local'?'本机模型 · '+config.model:'兼容接口 · '+config.model;
+ $('providerSummary').textContent=label;$('modelBadge').textContent=label;
+ const privacy=config.provider==='codex'?'点击分析会发送两张去除 EXIF/GPS 的缩小预览至 Codex，使用现有 CLI 登录与额度。':config.provider==='local'?`点击分析会发送两张去除 EXIF/GPS 的预览至本机 ${config.base_url}。该服务须配置本机视觉权重并禁用云模式；软件不发送任何 API Key。`:`点击分析会发送两张去除 EXIF/GPS 的缩小预览至 ${config.base_url}（${config.model}），可能使用该服务商的付费额度。`;
+ $('modelPrivacy').textContent=privacy+' 原片留在本机，不自动重试。';document.querySelector('.ai-privacy').textContent=privacy+' 原片留在本机。';$('batchPrivacy').textContent=privacy+' 每张照片独立分析，次数由下方上限约束。';syncAssistantControls();
+}});modelSettings.init();
+
+// Durable autosave is independent of sessionStorage and never submits AI jobs.
+function draftDocument(){
+ const recipes={};for(const f of files)recipes[f.id]={catalog:f.catalog,settings:cloneEdit(f.settings),preset:f.preset,
+  history:f.history?.snapshot(),undo:f.aiUndo,analysis:f.autoResult?{base:f.autoResult.base,result:f.autoResult.result}:null};
+ return {ids:files.map(f=>f.id),recipes,selected:Math.max(0,files.indexOf(current))};
+}
+draftSaver=new DraftSaver({snapshot:draftDocument,uuid:()=>crypto.randomUUID().replaceAll('-',''),
+ save:async data=>(await api('/api/drafts/save',data)).json(),
+ ack:data=>{try{sessionStorage.setItem('z30-draft-state',JSON.stringify(data));}catch{}},
+ state:(state,detail)=>{
+  const labels={pending:'有编辑待自动保存',saving:'正在自动保存到本机…',saved:'已自动保存到本机',error:'自动保存失败：'+(detail?.message||'连接中断')};
+  $('draftStatus').textContent=labels[state]+(state==='saved'?' · '+new Date(detail.saved*1000).toLocaleTimeString():'');
+  $('draftRetry').hidden=state!=='error';
+ }});
+$('draftRetry').onclick=()=>draftSaver.blocked?showDrafts():draftSaver.flush();
+$('draftSnapshot').onclick=async()=>{if(!files.length)return;const ok=await draftSaver.flush(true);if(ok)toast('版本快照已保存');};
+$('diagnosticsTop').onclick=async()=>{try{const r=await localFetch('/api/diagnostics');if(!r.ok)throw Error('诊断导出失败');download(await r.blob(),'Z30-diagnostics.zip');toast('诊断仅含日志，可能包含本机路径；不含照片与模型设置');}catch(e){toast(e.message);}};
+async function showDrafts(startup=false){
+ try{
+  const r=await localFetch('/api/drafts');if(!r.ok)throw Error('无法读取本机草稿');const data=await r.json();
+  $('draftStorage').textContent=`原片去重存储 ${(data.storage_bytes/1073741824).toFixed(2)} / ${(data.limit_bytes/1073741824).toFixed(0)} GiB · 最多 256 张 / 项目`;
+  $('draftList').replaceChildren();
+  for(const draft of data.drafts){
+   const row=document.createElement('div');row.className='export-job';
+   const title=document.createElement('p');title.textContent=`${draft.count} 张照片 · ${new Date(draft.saved*1000).toLocaleString()}`;
+   const select=document.createElement('select');select.setAttribute('aria-label','选择草稿版本');
+   const versions=await(await localFetch('/api/drafts/'+draft.id+'/versions')).json();
+   for(const version of versions.versions){const opt=document.createElement('option');opt.value=version.revision;opt.textContent='版本 '+version.revision+' · '+new Date(version.saved*1000).toLocaleString();select.append(opt);}
+   const restore=document.createElement('button');restore.textContent='恢复所选版本';restore.onclick=()=>restoreDraft(draft.id,Number(select.value));
+   const remove=document.createElement('button');remove.textContent='删除草稿及未使用原片副本';remove.onclick=async()=>{if(draftSaver.id===draft.id&&draftSaver.unsaved){toast('请先完成当前自动保存，再删除草稿');return;}if(!confirm('删除这个自动草稿及其版本？已另存的项目和原始照片不受影响。'))return;try{await api('/api/drafts/delete',{draft_id:draft.id});if(draftSaver.id===draft.id)draftSaver.reset();await showDrafts();}catch(e){toast(e.message);}};
+   row.append(title,select,restore,remove);$('draftList').append(row);
+  }
+  if(!data.drafts.length)$('draftList').textContent='暂无草稿。导入并编辑照片后自动保存。';
+  if(!startup||data.drafts.some(d=>d.count))$('draftDialog').showModal();
+ }catch(e){toast(e.message);}
+}
+async function restoreDraft(id,version){
+ if(files.length||importBusy||draftSaver.running){toast('请先保存并移除当前照片，再恢复草稿；现有编辑没有改变');return;}
+ importBusy=true;draftsReady=false;setEnabled();busy(true,'正在恢复草稿…');
+ try{
+  const data=await(await api('/api/drafts/restore',{draft_id:id,revision:version})).json();
+  for(const photo of data.photos){const f={...photo,preset:photo.preset||'custom',thumb:photo.thumbnail||photo.image};f.history=new EditHistory(f.settings,f.preset,photo.history);if(photo.undo)f.aiUndo=photo.undo;if(photo.analysis)f.autoResult=photo.analysis;files.push(f);}
+  draftSaver.reset(data.draft_id,data.revision);try{sessionStorage.setItem('z30-draft-state',JSON.stringify({id:data.draft_id,version:data.revision}));}catch{}
+  selectFile(files[data.selected]||files[0]||null);$('draftDialog').close();
+  $('draftStatus').textContent='已恢复版本 '+data.restored_revision+'；旧版本仍保留';
+  if(data.restored_revision!==data.revision){draftsReady=true;draftSaver.dirty=true;await draftSaver.flush(true);}
+  toast('草稿已恢复；原片校验与预览按当前选中照片加载');
+ }catch(e){toast('恢复失败：'+e.message);}finally{importBusy=false;draftsReady=true;setEnabled();busy(false);if(previewWanted)runPreview();}
+}
+$('recoverDraft').onclick=()=>showDrafts();$('draftClose').onclick=()=>$('draftDialog').close();
+window.addEventListener('pagehide',()=>draftSaver.flush());
+window.addEventListener('beforeunload',e=>{if(draftSaver.unsaved){draftSaver.flush();e.preventDefault();e.returnValue='';}});
+
+// Advanced darkroom controls use the same preview / native / TIFF pipeline.
+darkroomPanel=new DarkroomControls({locked:()=>!current||importBusy||exportBusy,error:toast,
+ change:delta=>{if(!current||importBusy||exportBusy)return;current.settings={...current.settings,...delta};current.preset='custom';syncLabels();schedulePreview();},
+ sample:()=>{if(!current)return;retouchTool=null;cloneDonor=null;if(localTools)localTools.tool=null;drawRetouch();maskEditing=false;syncMaskUI();wbPicking=true;$('preview').style.cursor='crosshair';toast('点击未过曝的中性灰卡区域；取样不会发送照片给模型');},
+ crop:openFreeCrop,grid:value=>{gridVisible=value;drawGrid();}});
+darkroomPanel.sync(defaults,true);
+$('preview').addEventListener('click',async e=>{
+ if(!wbPicking||!current)return;wbPicking=false;$('preview').style.cursor='';const source=current,rev=revision,r=e.target.getBoundingClientRect();
+ try{const d=await(await api('/api/wb/sample',{id:source.id,settings:source.settings,x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height})).json();
+  if(current!==source||revision!==rev)throw Error('编辑已改变，未应用过期取样');
+  source.settings={...source.settings,wb_mode:'custom',wb_gains:d.wb_gains,temperature:0,tint:0};source.preset='custom';syncLabels();schedulePreview(0);toast('灰卡白平衡已应用；可保存参数作为校准');
+ }catch(error){toast(error.message);}
+});
+function drawGrid(){
+ const canvas=$('gridCanvas');canvas.hidden=!gridVisible||!current;if(canvas.hidden)return;
+ const image=$('preview').getBoundingClientRect(),stage=$('stage').getBoundingClientRect();if(!image.width||!image.height)return;
+ Object.assign(canvas.style,{left:(image.left-stage.left)+'px',top:(image.top-stage.top)+'px',width:image.width+'px',height:image.height+'px'});
+ canvas.width=Math.round(image.width);canvas.height=Math.round(image.height);const ctx=canvas.getContext('2d');ctx.strokeStyle='#ffffff99';ctx.lineWidth=1;
+ for(const t of [1/3,2/3]){ctx.beginPath();ctx.moveTo(t*canvas.width,0);ctx.lineTo(t*canvas.width,canvas.height);ctx.moveTo(0,t*canvas.height);ctx.lineTo(canvas.width,t*canvas.height);ctx.stroke();}
+}
+$('preview').addEventListener('load',drawGrid);window.addEventListener('resize',drawGrid);
+let cropContext=null,cropDrag=null;
+async function openFreeCrop(){
+ wbPicking=false;retouchTool=null;cloneDonor=null;if(localTools)localTools.tool=null;drawRetouch();
+ if(!current||importBusy||exportBusy)return;const source=current,rev=revision;cropContext={source,revision:rev,rect:[0,0,1,1]};$('cropApply').disabled=true;$('cropDialog').showModal();$('cropStatus').textContent='正在加载完整构图…';
+ try{const d=await(await api('/api/preview',{id:source.id,settings:{...source.settings,crop:'original',crop_rect:[0,0,1,1]}})).json();
+  if(!cropContext||cropContext.source!==source||cropContext.revision!==rev||!$('cropDialog').open)return;
+  const image=new Image();await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=reject;image.src=d.image;});cropContext.image=image;
+  const canvas=$('cropCanvas'),scale=Math.min(800/image.width,Math.min(540,Math.max(220,window.innerHeight*.5))/image.height);canvas.width=Math.round(image.width*scale);canvas.height=Math.round(image.height*scale);drawCrop();$('cropStatus').textContent='拖动绘制矩形；应用后可随时改回原始比例。';$('cropApply').disabled=false;
+ }catch(e){$('cropStatus').textContent=e.message;}
+}
+function drawCrop(){
+ if(!cropContext?.image)return;const canvas=$('cropCanvas'),ctx=canvas.getContext('2d'),[x,y,w,h]=cropContext.rect;
+ ctx.drawImage(cropContext.image,0,0,canvas.width,canvas.height);ctx.fillStyle='#0009';ctx.fillRect(0,0,canvas.width,canvas.height);
+ ctx.save();ctx.beginPath();ctx.rect(x*canvas.width,y*canvas.height,w*canvas.width,h*canvas.height);ctx.clip();ctx.drawImage(cropContext.image,0,0,canvas.width,canvas.height);ctx.restore();ctx.strokeStyle='#edcb68';ctx.lineWidth=2;ctx.strokeRect(x*canvas.width,y*canvas.height,w*canvas.width,h*canvas.height);
+ ctx.lineWidth=1;for(const t of [1/3,2/3]){ctx.beginPath();ctx.moveTo((x+w*t)*canvas.width,y*canvas.height);ctx.lineTo((x+w*t)*canvas.width,(y+h)*canvas.height);ctx.moveTo(x*canvas.width,(y+h*t)*canvas.height);ctx.lineTo((x+w)*canvas.width,(y+h*t)*canvas.height);ctx.stroke();}
+}
+function cropPoint(e){const r=$('cropCanvas').getBoundingClientRect();return [Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))];}
+$('cropCanvas').onpointerdown=e=>{if(!cropContext?.image)return;cropDrag=cropPoint(e);e.target.setPointerCapture(e.pointerId);};
+$('cropCanvas').onpointermove=e=>{if(!cropDrag||!cropContext)return;const [x,y]=cropPoint(e),[sx,sy]=cropDrag;cropContext.rect=[Math.min(x,sx),Math.min(y,sy),Math.abs(x-sx),Math.abs(y-sy)];drawCrop();};
+$('cropCanvas').onpointerup=$('cropCanvas').onpointercancel=()=>{cropDrag=null;};
+$('cropClose').onclick=()=>{$('cropDialog').close();cropContext=null;};
+$('cropApply').onclick=()=>{if(!cropContext)return;const {source,revision:rev,rect}=cropContext;if(current!==source||revision!==rev){toast('编辑已改变，请重新绘制裁剪');return;}if(Math.min(rect[2],rect[3])<.02){toast('裁剪框过小，请重新绘制');return;}source.settings={...source.settings,crop:'free',crop_rect:rect};source.preset='custom';$('cropDialog').close();cropContext=null;syncLabels();schedulePreview(0);};
+
+libraryWorkflow=new LibraryWorkflow({photos:()=>files,current:()=>current,redraw:drawLibrary,persist:persistWorkspace,error:toast,
+ validate:async data=>(await api('/api/edits/sync',data)).json(),record:recordEdit,
+ applied:()=>{persistWorkspace();syncLabels();drawLibrary();schedulePreview(0);},compare:comparePhotos});
+drawLibrary();
+let comparisonRevision=0;
+async function comparePhotos(selected){
+ if(selected.length!==2)return;const rev=++comparisonRevision;$('compareDialog').showModal();$('compareStatus').textContent='正在生成两张当前显影…';$('compareImages').replaceChildren();
+ try{for(const f of selected){const signature=JSON.stringify(f.settings);const data=await(await api('/api/preview',{id:f.id,settings:f.settings})).json();if(rev!==comparisonRevision||!$('compareDialog').open)return;if(!files.includes(f)||JSON.stringify(f.settings)!==signature)throw Error('比较期间照片已改变，请重新打开');const figure=document.createElement('figure'),img=new Image(),caption=document.createElement('figcaption');img.src=data.image;img.alt=f.name;caption.textContent=f.name;figure.append(img,caption);$('compareImages').append(figure);} $('compareStatus').textContent='显示各自当前参数；原片与编辑不会改变。';}catch(e){$('compareStatus').textContent=e.message;}
+}
+$('compareClose').onclick=()=>{$('compareDialog').close();comparisonRevision++;};
+
+
+function placeOverlay(element){const image=$('preview').getBoundingClientRect(),stage=$('stage').getBoundingClientRect();Object.assign(element.style,{left:(image.left-stage.left)+'px',top:(image.top-stage.top)+'px',width:image.width+'px',height:image.height+'px'});}
+async function refreshMaskOverlay(){
+ const mask=current?.settings.masks?.[activeMask];$('maskOverlay').hidden=!overlayVisible||!mask;if(!overlayVisible||!mask)return;const source=current,rev=revision,index=activeMask,request=++overlayRevision;
+ try{const data=await(await api('/api/masks/preview',{id:source.id,settings:source.settings,index})).json();if(request!==overlayRevision||source!==current||revision!==rev||index!==activeMask)return;$('maskOverlay').src=data.image;placeOverlay($('maskOverlay'));}catch(e){toast(e.message);}
+}
+$('maskPreview').onclick=()=>{overlayVisible=!overlayVisible;refreshMaskOverlay();};
+$('maskColor').oninput=()=>{const mask=current?.settings.masks?.[activeMask];if(!mask||mask.type!=='color')return;mask.range_color=[1,3,5].map(i=>parseInt($('maskColor').value.slice(i,i+2),16)/255);current.preset='custom';schedulePreview();};
+$('preview').addEventListener('load',()=>{refreshMaskOverlay();drawRetouch();});
+const originalMaskChange=$('maskList').onchange;$('maskList').onchange=e=>{originalMaskChange(e);refreshMaskOverlay();};
+localTools=new LocalTools({current:()=>current,locked:()=>importBusy||exportBusy,error:toast,
+ status:async()=>{const r=await localFetch('/api/local-models');if(!r.ok)throw Error('无法读取本地模型状态');return r.json();},
+ install:async()=>(await api('/api/local-models/install',{})).json(),
+ change:delta=>{if(!current||importBusy||exportBusy)return;current.settings={...current.settings,...delta};current.preset='custom';syncLabels();schedulePreview();drawRetouch();},
+ markers:drawRetouch,tool:mode=>{retouchTool=mode;cloneDonor=null;wbPicking=false;maskEditing=false;syncMaskUI();drawRetouch();},
+ segment:async(kind,skin)=>{const source=current,rev=revision;if(!source)return;wbPicking=false;retouchTool=null;cloneDonor=null;localTools.tool=null;drawRetouch();if(!skin&&source.settings.masks.length>=32)throw Error('最多 32 个蒙版');
+  const result=await(await api('/api/masks/semantic',{id:source.id,settings:source.settings,kind})).json();
+  if(current!==source||revision!==rev||!files.includes(source))throw Error('编辑已改变，未应用过期的本地分割结果');
+  if(skin)source.settings={...source.settings,skin_mask:result.mask.bitmap,skin_smooth:25};else{source.settings.masks.push(result.mask);activeMask=source.settings.masks.length-1;overlayVisible=true;}
+  source.preset='custom';recordEdit(source,skin?'本地人像肤色柔化':'本地 AI '+({subject:'主体',person:'人像',sky:'天空'})[kind]+' 蒙版');syncLabels();schedulePreview(0);toast(result.limitation);
+ }});localTools.status();
+function drawRetouch(){
+ const canvas=$('retouchCanvas'),edits=current?.settings.repairs||[];canvas.hidden=!current||(!retouchTool&&(!$('repairMarkers')?.checked||!edits.length));if(canvas.hidden)return;
+ placeOverlay(canvas);const r=$('preview').getBoundingClientRect();canvas.width=Math.round(r.width);canvas.height=Math.round(r.height);canvas.style.pointerEvents=retouchTool?'auto':'none';const ctx=canvas.getContext('2d');ctx.strokeStyle='#e5d47b';ctx.lineWidth=1;
+ if($('repairMarkers').checked)for(const edit of edits){ctx.beginPath();ctx.arc(edit.x*canvas.width,edit.y*canvas.height,edit.radius*Math.min(canvas.width,canvas.height),0,Math.PI*2);ctx.stroke();ctx.beginPath();ctx.moveTo(edit.x*canvas.width,edit.y*canvas.height);ctx.lineTo(edit.sx*canvas.width,edit.sy*canvas.height);ctx.stroke();}
+ if(cloneDonor){ctx.beginPath();ctx.arc(cloneDonor[0]*canvas.width,cloneDonor[1]*canvas.height,5,0,Math.PI*2);ctx.stroke();}
+}
+$('retouchCanvas').onpointerdown=async e=>{
+ if(!retouchTool||!current||importBusy||exportBusy)return;const r=e.target.getBoundingClientRect(),x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height;
+ if(retouchTool==='clone'&&!cloneDonor){cloneDonor=[x,y];$('retouchStatus').textContent='取样点已选；点击目标应用克隆。';drawRetouch();return;}
+ const source=current,rev=revision,mode=retouchTool;if((source.settings.repairs||[]).length>=256){toast('最多 256 个修复点');return;}
+ try{const data=await(await api('/api/repairs/place',{id:source.id,settings:source.settings,auto_source:mode==='heal',repair:{mode,x,y,sx:cloneDonor?.[0]??.5,sy:cloneDonor?.[1]??.5,radius:Number($('repairRadius').value),opacity:Number($('repairOpacity').value),feather:.5}})).json();
+  if(current!==source||revision!==rev)throw Error('编辑已改变，未应用旧修复点');
+  source.settings.repairs=[...(source.settings.repairs||[]),data.repair];source.preset='custom';cloneDonor=null;recordEdit(source,mode==='heal'?'污点修复':'克隆修复');syncLabels();schedulePreview(0);drawRetouch();
+ }catch(error){toast(error.message);}
+};
+window.addEventListener('resize',()=>{placeOverlay($('maskOverlay'));drawRetouch();});
+
+lensControls=new LensControls({current:()=>current,locked:()=>importBusy||exportBusy,error:toast,
+ read:async()=>{const r=await localFetch('/api/lens/profiles');if(!r.ok)throw Error('无法读取镜头配置库');return r.json();},
+ apply:async(f,options)=>(await api('/api/lens/apply',{id:f.id,settings:f.settings,options})).json(),
+ estimate:async f=>(await api('/api/lens/tca',{id:f.id,settings:f.settings})).json(),
+ change:delta=>{if(!current||importBusy||exportBusy)return;current.settings={...current.settings,...delta};current.preset='custom';syncLabels();schedulePreview(0);}});lensControls.init();
+
+colourControls=new ColourControls({current:()=>current,locked:()=>importBusy||exportBusy,error:toast,
+ list:async()=>await(await localFetch('/api/colour/profiles')).json(),upload:file=>api('/api/colour/profiles',file,true),
+ change:delta=>{if(!current||importBusy||exportBusy)return;current.settings={...current.settings,...delta};current.preset='custom';syncLabels();schedulePreview(0);}});colourControls.init();
+outputControls=new OutputControls();
+
+$('clearNativeCache').onclick=async()=>{try{await api('/api/cache/clear',{});await refreshExportJobs();toast('已清理闲置缓存；原片、草稿和导出结果不变');}catch(e){toast(e.message);}};
+
+aiControls=new AIControls({current:()=>current,provider:()=>aiProvider,options:autoOptions,goal:()=>$('aiGoal').value,
+ busy:()=>importBusy||exportBusy||!!autoGrader?.busy||!!batchGrader?.busy||assistant.running,error:toast,
+ prepare:async body=>await(await api('/api/ai/preflight',body)).json(),retry:()=>$('autoGrade').click()});

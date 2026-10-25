@@ -4,6 +4,7 @@ venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.data/
 
 # Credentials, local settings and logs
 .env
@@ -30,3 +31,14 @@ work/
 *.tiff
 *.zip
 !docs/images/*.png
+
+*.z30proj
+
+# Windows packaging outputs
+build/
+dist/
+*.exe
+
+# Downloaded local inference weights
+*.onnx
+models/

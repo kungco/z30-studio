@@ -1,0 +1,127 @@
+{
+  "platform": "Windows-11-10.0.22631-SP0",
+  "python": "3.14.6",
+  "variant": "global controls only",
+  "repeats": 1,
+  "memory": "Fresh process per stage including prerequisite decode/render",
+  "samples": [
+    {
+      "sample": "Z30-12bit.NEF",
+      "sha256": "75249c11a3a845367c7a322a1c4e7076f33c785ec2518fc6594c34c185b41161",
+      "stages": {
+        "decode_full": {
+          "seconds": 0.9965482999978121,
+          "peak_rss_mib": 403.18359375
+        },
+        "decode_preview": {
+          "seconds": 0.44582630000513745,
+          "peak_rss_mib": 156.2734375,
+          "dimensions": [
+            1067,
+            1600
+          ]
+        },
+        "decode_preview_cached": {
+          "seconds": 2.970000059576705e-05,
+          "peak_rss_mib": 156.3203125
+        },
+        "develop_full": {
+          "seconds": 4.367722799994226,
+          "peak_rss_mib": 427.99609375,
+          "dimensions": [
+            3712,
+            5568
+          ],
+          "dtype": "float32",
+          "channel_means": [
+            67.83882049790365,
+            51.74229041064395,
+            48.38347771788607
+          ],
+          "channel_clip_fraction": [
+            0.005175674807396948,
+            0.0,
+            8.626689147344432e-05
+          ]
+        },
+        "encode_jpeg": {
+          "seconds": 0.10739029999967897,
+          "peak_rss_mib": 428.21484375,
+          "bytes": 10324403
+        },
+        "preview_pipeline_cached": {
+          "seconds": 0.6376128999982029,
+          "peak_rss_mib": 156.1484375
+        },
+        "preview_pipeline_repeat": {
+          "seconds": 8.900000102585182e-05,
+          "peak_rss_mib": 156.38671875
+        },
+        "export_tiff16": {
+          "seconds": 8.083277400000952,
+          "peak_rss_mib": 628.8515625,
+          "bytes": 117501894
+        }
+      }
+    },
+    {
+      "sample": "Z30-14bit.NEF",
+      "sha256": "03d94c1f184c4236ea8f890ab0fe30e91b65965e8b09cebecc397fba081a607f",
+      "stages": {
+        "decode_full": {
+          "seconds": 1.0018894000022556,
+          "peak_rss_mib": 402.55859375
+        },
+        "decode_preview": {
+          "seconds": 0.4417390000016894,
+          "peak_rss_mib": 156.40234375,
+          "dimensions": [
+            1067,
+            1600
+          ]
+        },
+        "decode_preview_cached": {
+          "seconds": 2.300000051036477e-05,
+          "peak_rss_mib": 156.14453125
+        },
+        "develop_full": {
+          "seconds": 4.297738900000695,
+          "peak_rss_mib": 431.5,
+          "dimensions": [
+            3712,
+            5568
+          ],
+          "dtype": "float32",
+          "channel_means": [
+            73.17891821027794,
+            52.561851087185396,
+            47.875210853120045
+          ],
+          "channel_clip_fraction": [
+            0.0035951956840814506,
+            0.0,
+            6.289790180340864e-06
+          ]
+        },
+        "encode_jpeg": {
+          "seconds": 0.10286809999524849,
+          "peak_rss_mib": 432.1953125,
+          "bytes": 9254740
+        },
+        "preview_pipeline_cached": {
+          "seconds": 0.6371150000049965,
+          "peak_rss_mib": 156.10546875
+        },
+        "preview_pipeline_repeat": {
+          "seconds": 8.600000001024455e-05,
+          "peak_rss_mib": 156.3515625
+        },
+        "export_tiff16": {
+          "seconds": 8.093027700000675,
+          "peak_rss_mib": 633.77734375,
+          "bytes": 117672229
+        }
+      }
+    }
+  ]
+}

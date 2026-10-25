@@ -1,0 +1,13 @@
+{
+  "source_sha256": "03d94c1f184c4236ea8f890ab0fe30e91b65965e8b09cebecc397fba081a607f",
+  "dimensions": [
+    3712,
+    5568
+  ],
+  "dtype": "uint16",
+  "bits_per_sample": 16,
+  "icc_exact": true,
+  "unique_red_levels": 65536,
+  "bytes": 114184688,
+  "original_unchanged": true
+}

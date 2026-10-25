@@ -1,0 +1,20 @@
+{
+  "workers": 2,
+  "state": "done",
+  "items": [
+    {
+      "name": "Z30-14bit.NEF",
+      "state": "done",
+      "phase": "done",
+      "seconds": 9.167187213897705,
+      "output_bytes": 5931174
+    },
+    {
+      "name": "Z30-12bit.NEF",
+      "state": "done",
+      "phase": "done",
+      "seconds": 7.852583408355713,
+      "output_bytes": 5357511
+    }
+  ]
+}

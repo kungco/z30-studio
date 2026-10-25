@@ -1,0 +1,62 @@
+{
+  "source_sha256": "03d94c1f184c4236ea8f890ab0fe30e91b65965e8b09cebecc397fba081a607f",
+  "metadata": {
+    "lens_model": "NIKKOR Z DX 16-50mm f/3.5-6.3 VR",
+    "focal_mm": 50.0,
+    "aperture": 6.3,
+    "sensor_crop": 1.531,
+    "focus_m": null
+  },
+  "calibration": {
+    "model": "ptlens",
+    "source_id": "Nikkor Z DX 16-50mm f/3.5-6.3 VR",
+    "revision": "dcae5ec2e505411a7f00b6b8dd03825e55620403b558b156be15e9ddfbeaf159",
+    "crop": 1.531,
+    "image_crop": 1.531,
+    "aspect": 1.5,
+    "focal": 50.0,
+    "aperture": 6.3,
+    "distance": 1000.0,
+    "coefficients": [
+      0.003,
+      -0.004,
+      0.02
+    ],
+    "tca": [
+      0.0,
+      0.0,
+      1.0000005,
+      0.0,
+      0.0,
+      1.0000475
+    ],
+    "vignetting": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "preview_seconds": 0.31834069999604253,
+  "tca": {
+    "applied": true,
+    "settings": {
+      "lens_blue": 2.499999999999999
+    },
+    "message": "已估计横向色差，请在高对比边缘检查并可撤销",
+    "max_edge_improvement": 0.22154801082457828
+  },
+  "tca_seconds": 1.3376385000010487,
+  "export_seconds": 10.261162200004037,
+  "output": {
+    "shape": [
+      5568,
+      3712,
+      3
+    ],
+    "dtype": "uint16",
+    "icc": true,
+    "sub8bit_steps": true
+  },
+  "original_unchanged": true,
+  "actual_grid_calibration_verified": false
+}

@@ -1,0 +1,14 @@
+[
+  {
+    "source": "before",
+    "responses": 120,
+    "exit_code": 3,
+    "shutdown_seconds": 8.591683500002546
+  },
+  {
+    "source": "after",
+    "responses": 1500,
+    "exit_code": 0,
+    "shutdown_seconds": 0.3552650999990874
+  }
+]

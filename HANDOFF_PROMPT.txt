@@ -1,0 +1,6 @@
+请接手 Z30 Studio 2.0，先读 AI_HANDOFF.md、docs/implementation-status.md 与最终 Windows 验收报告。
+仓库 https://github.com/kungco/z30-studio ，开发分支 fix/staged-image-pipeline，PR #1；不要只克隆 main。
+整份 P0/P1/P2 功能已实现，先核对真实代码、提交、测试和 build-info.json，再按新的用户要求工作。不要把历史“完成后关机”当成对未来任务的新授权。
+保留原片、Codex CLI 登录/命令/九参数契约、严格校验与画质保护。不要自动花费模型额度、读取 auth.json 或复制密钥；不改测试掩盖问题。
+退出有可复现 stdout 管道原因修复与独立监督/栈诊断，另一个无确认现场是否同源仍未证明。真实云推理/本机 Ollama、专业肤色/灰卡/镜头/打印实测仍未验证。
+以各阶段报告的验证范围为准，不能把协议 mock、合成数据或一次性能测试当成真实效果或普遍结论。

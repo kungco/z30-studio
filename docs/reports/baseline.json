@@ -1,0 +1,114 @@
+{
+  "platform": "Windows-11-10.0.22631-SP0",
+  "python": "3.14.6",
+  "repeats": 2,
+  "memory": "OS process high-water RSS; stages cumulative within each isolated process",
+  "samples": [
+    {
+      "sample": "Z30-12bit.NEF",
+      "sha256": "75249c11a3a845367c7a322a1c4e7076f33c785ec2518fc6594c34c185b41161",
+      "stages": {
+        "decode_full": {
+          "seconds": 1.1826395000000502,
+          "peak_rss_mib": 632.26171875
+        },
+        "decode_preview": {
+          "seconds": 0.5246962000001076,
+          "peak_rss_mib": 632.26171875
+        },
+        "decode_preview_cached": {
+          "seconds": 3.2000000373955118e-06,
+          "peak_rss_mib": 632.26171875
+        },
+        "develop_full": {
+          "seconds": 4.869563900000003,
+          "peak_rss_mib": 632.26171875
+        },
+        "encode_jpeg": {
+          "seconds": 0.11479220000001078,
+          "peak_rss_mib": 632.26171875
+        },
+        "preview_pipeline_cached": {
+          "seconds": 0.686227850000023,
+          "peak_rss_mib": 632.26171875
+        }
+      },
+      "dimensions": [
+        3712,
+        5568
+      ],
+      "dtype": "float32",
+      "preview_dimensions": [
+        1067,
+        1600
+      ],
+      "jpeg_bytes": 10765683,
+      "color": {
+        "channel_means": [
+          74.33101143309676,
+          57.4350900910839,
+          53.382331427817206
+        ],
+        "channel_clip_fraction": [
+          0.02167297193940745,
+          0.001235169642414784,
+          0.001025284182396948
+        ],
+        "dark_fraction": 0.0
+      }
+    },
+    {
+      "sample": "Z30-14bit.NEF",
+      "sha256": "03d94c1f184c4236ea8f890ab0fe30e91b65965e8b09cebecc397fba081a607f",
+      "stages": {
+        "decode_full": {
+          "seconds": 1.118083200000001,
+          "peak_rss_mib": 632.17578125
+        },
+        "decode_preview": {
+          "seconds": 0.5082527999998092,
+          "peak_rss_mib": 632.17578125
+        },
+        "decode_preview_cached": {
+          "seconds": 3.2000000373955118e-06,
+          "peak_rss_mib": 632.17578125
+        },
+        "develop_full": {
+          "seconds": 4.739995249999765,
+          "peak_rss_mib": 632.17578125
+        },
+        "encode_jpeg": {
+          "seconds": 0.10550674999990406,
+          "peak_rss_mib": 632.17578125
+        },
+        "preview_pipeline_cached": {
+          "seconds": 0.6669803500001308,
+          "peak_rss_mib": 632.17578125
+        }
+      },
+      "dimensions": [
+        3712,
+        5568
+      ],
+      "dtype": "float32",
+      "preview_dimensions": [
+        1067,
+        1600
+      ],
+      "jpeg_bytes": 9460409,
+      "color": {
+        "channel_means": [
+          80.51275424299568,
+          58.87389730301538,
+          53.30851386966471
+        ],
+        "channel_clip_fraction": [
+          0.01739422121172711,
+          0.00030432907872572336,
+          0.00011950601342647642
+        ],
+        "dark_fraction": 0.0
+      }
+    }
+  ]
+}
