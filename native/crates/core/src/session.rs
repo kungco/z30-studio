@@ -1,4 +1,4 @@
-use crate::{Error, MAX_PHOTOS, MAX_SOURCE_BYTES, Result};
+use crate::{Error, MAX_PHOTOS, MAX_SOURCE_BYTES, Result, recipe::Recipe};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -19,6 +19,8 @@ pub struct Photo {
     pub rating: u8,
     #[serde(default)]
     pub flag: i8,
+    #[serde(default)]
+    pub recipe: Recipe,
 }
 
 impl Photo {
@@ -42,7 +44,7 @@ pub struct Session {
 impl Default for Session {
     fn default() -> Self {
         Self {
-            version: 1,
+            version: 2,
             photos: vec![],
             selected: None,
         }
@@ -51,7 +53,7 @@ impl Default for Session {
 
 impl Session {
     pub fn validate(&self) -> Result<()> {
-        if self.version != 1
+        if !matches!(self.version, 1 | 2)
             || self.photos.len() > MAX_PHOTOS
             || self.selected.is_some_and(|i| i >= self.photos.len())
         {
@@ -65,6 +67,14 @@ impl Session {
             .any(|p| p.rating > 5 || !(-1..=1).contains(&p.flag) || !p.path.is_absolute())
         {
             return Err(Error::Policy("原生草稿包含无效评分、旗标或文件路径".into()));
+        }
+        for photo in &self.photos {
+            photo.recipe.validate()?;
+            if self.version == 1 && photo.recipe != Recipe::default() {
+                return Err(Error::Policy(
+                    "v1 草稿包含新格式调色参数，已拒绝猜测迁移".into(),
+                ));
+            }
         }
         Ok(())
     }
@@ -93,6 +103,7 @@ impl Session {
             path,
             rating: 0,
             flag: 0,
+            recipe: Recipe::default(),
         });
         self.selected.get_or_insert(0);
         Ok(true)
@@ -144,17 +155,25 @@ impl SessionStore {
         let mut persisted = self.persisted.lock().unwrap_or_else(|e| e.into_inner());
         self.validated.store(false, Ordering::Release);
         let bytes = read_snapshot(&self.root.join("session.json"))?;
-        let session = match &bytes {
+        let mut session = match &bytes {
             Some(bytes) => serde_json::from_slice::<Session>(bytes)?,
             None => Session::default(),
         };
         session.validate()?;
+        if session.version == 1 {
+            session.version = 2;
+        }
         *persisted = bytes;
         self.validated.store(true, Ordering::Release);
         Ok(session)
     }
     pub fn save(&self, session: &Session) -> Result<()> {
         session.validate()?;
+        if session.version != 2 {
+            return Err(Error::Policy(
+                "只写入原生 v2 草稿；请先读取并迁移旧草稿".into(),
+            ));
+        }
         if !self.validated.load(Ordering::Acquire) {
             return Err(Error::Policy("磁盘草稿未通过读取验证，已阻止覆盖".into()));
         }
@@ -173,6 +192,19 @@ impl SessionStore {
         let temp = self
             .root
             .join(format!("session-{}-{stamp}.part", std::process::id()));
+        if let Some(previous) = persisted
+            .as_ref()
+            .filter(|data| serde_json::from_slice::<Session>(data).is_ok_and(|s| s.version == 1))
+        {
+            // Preserve the exact old bytes before the first v2 publication.
+            // A failed backup must leave the original session.json untouched.
+            let mut backup = tempfile::NamedTempFile::new_in(&self.root)?;
+            backup.write_all(previous)?;
+            backup.as_file().sync_all()?;
+            backup
+                .persist_noclobber(self.root.join(format!("session-v1-backup-{stamp}.json")))
+                .map_err(|error| Error::Io(error.error))?;
+        }
         let result = (|| {
             let mut file = fs::OpenOptions::new()
                 .write(true)
@@ -212,7 +244,7 @@ mod tests {
         assert_eq!(fs::read(&source).unwrap(), b"original bytes");
         session.version = 999;
         assert!(store.save(&session).is_err());
-        assert_eq!(store.load().unwrap().version, 1);
+        assert_eq!(store.load().unwrap().version, 2);
     }
     #[test]
     fn rejects_bad_indices_flags_and_truncated_json_without_replacing_it() {
@@ -249,5 +281,86 @@ mod tests {
         assert_eq!(fs::read(dir.path().join("session.json")).unwrap(), external);
         let latest = store.load().unwrap();
         store.save(&latest).unwrap();
+    }
+    #[test]
+    fn legacy_migration_preserves_exact_old_bytes_until_a_backed_up_save() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("旧原片.jpg");
+        fs::write(&source, b"original").unwrap();
+        let directory = root.path().join("data");
+        let store = SessionStore::new(directory.clone()).unwrap();
+        let value = serde_json::json!({"version":1,"photos":[{"path":source.canonicalize().unwrap(),"rating":4,"flag":1}],"selected":0});
+        let legacy = serde_json::to_vec_pretty(&value).unwrap();
+        let path = directory.join("session.json");
+        fs::write(&path, &legacy).unwrap();
+        let migrated = store.load().unwrap();
+        assert_eq!(migrated.version, 2);
+        assert_eq!(migrated.photos[0].recipe, Recipe::default());
+        assert_eq!(migrated.photos[0].rating, 4);
+        assert_eq!(migrated.photos[0].flag, 1);
+        assert_eq!(fs::read(&path).unwrap(), legacy);
+        let backups = || {
+            fs::read_dir(&directory)
+                .unwrap()
+                .map(|p| p.unwrap().path())
+                .filter(|p| {
+                    p.file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .starts_with("session-v1-backup-")
+                })
+                .collect::<Vec<_>>()
+        };
+        assert!(backups().is_empty());
+        store.save(&migrated).unwrap();
+        assert_eq!(backups().len(), 1);
+        assert_eq!(fs::read(&backups()[0]).unwrap(), legacy);
+        store.save(&store.load().unwrap()).unwrap();
+        assert_eq!(backups().len(), 1);
+        assert_eq!(fs::read(source).unwrap(), b"original");
+    }
+    #[test]
+    fn recipes_restore_independently_and_invalid_changes_cannot_overwrite_disk() {
+        let root = tempfile::tempdir().unwrap();
+        let mut session = Session::default();
+        for name in ["one.jpg", "two.png"] {
+            let path = root.path().join(name);
+            fs::write(&path, b"source").unwrap();
+            session.add(&path).unwrap();
+        }
+        session.photos[0].recipe.parameters.exposure = 0.8;
+        session.photos[0].recipe.white_balance = crate::recipe::WhiteBalance::Auto;
+        session.photos[1].recipe.parameters.temperature = -20.;
+        session.photos[1].recipe.white_balance = crate::recipe::WhiteBalance::Daylight;
+        let directory = root.path().join("data");
+        let store = SessionStore::new(directory.clone()).unwrap();
+        store.save(&session).unwrap();
+        drop(store);
+        let store = SessionStore::new(directory.clone()).unwrap();
+        assert_eq!(store.load().unwrap(), session);
+        let before = fs::read(directory.join("session.json")).unwrap();
+        session.photos[0].recipe.parameters.exposure = 50.;
+        assert!(store.save(&session).is_err());
+        assert_eq!(fs::read(directory.join("session.json")).unwrap(), before);
+        for photo in &session.photos {
+            assert_eq!(fs::read(&photo.path).unwrap(), b"source");
+        }
+    }
+    #[test]
+    fn legacy_version_cannot_hide_new_nondefault_parameters() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source.jpg");
+        fs::write(&source, b"source").unwrap();
+        let mut invalid = Session::default();
+        invalid.add(&source).unwrap();
+        invalid.version = 1;
+        invalid.photos[0].recipe.parameters.exposure = 1.;
+        let store = SessionStore::new(root.path().join("data")).unwrap();
+        let path = root.path().join("data/session.json");
+        let bytes = serde_json::to_vec(&invalid).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        assert!(store.load().is_err());
+        assert!(store.save(&Session::default()).is_err());
+        assert_eq!(fs::read(path).unwrap(), bytes);
     }
 }

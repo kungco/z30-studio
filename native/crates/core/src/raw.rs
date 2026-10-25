@@ -80,12 +80,7 @@ impl Drop for Memory<'_> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum WhiteBalance {
-    Camera,
-    Auto,
-    Daylight,
-}
+pub use crate::recipe::WhiteBalance;
 impl WhiteBalance {
     fn id(self) -> c_int {
         match self {

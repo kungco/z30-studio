@@ -50,14 +50,15 @@ def wait_json(path,process,timeout=30):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exe",required=True,type=Path)
-    parser.add_argument("--sample",required=True,type=Path,help="Stage 1: unprofiled sRGB JPEG/PNG reference; not a RAW decoding test")
+    parser.add_argument("--sample",required=True,type=Path,help="JPEG/PNG native viewer input, optionally ICC tagged; not a RAW UI test")
+    parser.add_argument("--legacy-recovery",action="store_true",help="Before the second launch, seed a native v1 draft and verify backed-up v2 migration")
     parser.add_argument("--out",required=True,type=Path)
     parser.add_argument("--work",type=Path,default=Path(__file__).resolve().parents[1]/".development/native-smoke")
     args=parser.parse_args()
     if sys.platform!="win32":parser.error("This acceptance harness requires Windows")
     if args.out.suffix.lower()!=".json":parser.error("Acceptance output must be JSON, never an image")
     exe=args.exe.resolve();sample=args.sample.resolve();args.work.mkdir(parents=True,exist_ok=True)
-    original=digest(sample);result=dict(stage="native-stage-1-viewer",exe_sha256=digest(exe),exe_bytes=exe.stat().st_size,source_sha256=original,
+    original=digest(sample);result=dict(stage="native-viewer-process-smoke",exe_sha256=digest(exe),exe_bytes=exe.stat().st_size,source_sha256=original,
         timing_definition="process spawn to file marker / event-loop entry; not first on-screen paint",cycles=[],real_raw_decode_verified=False,
         real_cloud_inference_requests=0,automatic_desktop_visual_verification=False)
     active=[]
@@ -67,6 +68,11 @@ def main():
         env=os.environ|{"Z30_NATIVE_DATA_DIR":str(data),"PATH":str(windows/"System32")+";"+str(windows)}
         startup=subprocess.STARTUPINFO();startup.dwFlags|=subprocess.STARTF_USESHOWWINDOW;startup.wShowWindow=4
         for cycle in (1,2):
+            legacy_bytes=None
+            if cycle==2 and args.legacy_recovery:
+                legacy=json.loads((data/"session.json").read_text(encoding="utf8"));legacy['version']=1
+                for photo in legacy['photos']:photo.pop('recipe',None);photo.update(rating=4,flag=1)
+                legacy_bytes=json.dumps(legacy,ensure_ascii=False).encode('utf8');(data/"session.json").write_bytes(legacy_bytes)
             ready=root/f"ready{cycle}.json";stop=root/f"stop{cycle}.signal";log=root/f"stderr{cycle}.log"
             with log.open("w",encoding="utf8") as stream:
                 start=time.perf_counter();process=subprocess.Popen([str(exe),"--qa-ready",str(ready),"--qa-stop",str(stop),*([str(sample)] if cycle==1 else [])],
@@ -75,6 +81,11 @@ def main():
                 preview=wait_json(ready.with_suffix(".preview.json"),process)
                 session=json.loads((data/"session.json").read_text(encoding="utf8"))
                 assert len(session["photos"])==1 and os.path.samefile(session["photos"][0]["path"],sample)
+                if legacy_bytes is not None:
+                    assert session['version']==2 and session['photos'][0]['rating']==4 and session['photos'][0]['flag']==1
+                    assert session['photos'][0]['recipe']['white_balance']=='camera' and all(v==0 for v in session['photos'][0]['recipe']['parameters'].values())
+                    backups=list(data.glob('session-v1-backup-*.json'));assert len(backups)==1 and backups[0].read_bytes()==legacy_bytes
+                    result['legacy_migrated_with_exact_backup']=True
                 if cycle==1:
                     frozen=(data/"session.json").read_bytes();other=root/"duplicate.json";other_stop=root/"duplicate.signal"
                     duplicate=subprocess.run([str(exe),"--qa-ready",str(other),"--qa-stop",str(other_stop)],cwd=root,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=15)

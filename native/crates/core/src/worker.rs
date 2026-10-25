@@ -16,7 +16,7 @@ struct Shared<J, R> {
 }
 
 impl<J: Send + 'static, R: Send + 'static> LatestWorker<J, R> {
-    pub fn new(work: impl Fn(J) -> R + Send + 'static) -> Self {
+    pub fn new(mut work: impl FnMut(J) -> R + Send + 'static) -> Self {
         let shared = Arc::new(Shared {
             pending: Mutex::new(None),
             result: Mutex::new(None),
@@ -141,5 +141,17 @@ mod tests {
         }
         let (_, value) = wait_result(&worker);
         assert_eq!(value, 18);
+    }
+    #[test]
+    fn worker_owns_mutable_cache_state_without_shared_ui_locks() {
+        let mut count = 0;
+        let worker = LatestWorker::new(move |n: u32| {
+            count += 1;
+            (n, count)
+        });
+        worker.submit(10);
+        assert_eq!(wait_result(&worker).1, (10, 1));
+        worker.submit(20);
+        assert_eq!(wait_result(&worker).1, (20, 2));
     }
 }

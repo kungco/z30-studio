@@ -2,7 +2,9 @@
 pub mod frame;
 pub mod colour;
 pub mod raster;
+pub mod recipe;
 pub mod develop;
+pub mod editor;
 pub mod export;
 pub mod preview;
 #[cfg(windows)]

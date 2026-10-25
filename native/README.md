@@ -48,3 +48,5 @@ Slint 1.18.1 采用 Royalty-free Desktop License 2.0，并在顶层“关于”�
 阶段 2C 已把 JPEG/PNG 浮点 ICC 输入接入查看器，52 个合成输入和全尺寸数值/内存验证见 docs/reports/native-stage2c.md；矩阵/TRC ICC 缓存通过质量/速度复测，通用复杂 LUT 仍可能较慢；见 docs/reports/native-icc-performance.md。`-RasterProbe` 只编译开发探针。LittleCMS 与 MozJPEG 静态链接；This software is based in part on the work of the Independent JPEG Group.
 
 阶段 2D 的完整公开 NEF JPEG/PNG/TIFF16 文件已独立验证；JPEG 编码改用 MozJPEG，详见 docs/reports/native-stage2d-export.md。界面仍未接入导出，`-PhotoExportProbe` 是开发验收工具。
+
+原生草稿当前写 v2、读 v1/v2；第一次 v1→v2 保存前生成 session-v1-backup-*.json 原字节备份。此为原生草稿，仍不直接导入 Python .z30proj。2E 配方/50 步内存撤销/缓存接口已验证，编辑界面尚未接线；见 docs/reports/native-stage2e-foundation.md。

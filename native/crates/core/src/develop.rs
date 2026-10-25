@@ -46,7 +46,7 @@ fn in_gamut(p: [f32; 3]) -> bool {
     p.iter().all(|&v| (0.0..=1.0).contains(&v))
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct Parameters {
     pub exposure: f32,

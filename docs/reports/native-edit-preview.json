@@ -1,0 +1,40 @@
+{
+  "deterministic_repeat": true,
+  "edits_change_pixels": true,
+  "first_preview_seconds": 2.9896659,
+  "gui_editing_enabled": false,
+  "preview_height": 1600,
+  "preview_width": 1067,
+  "repeat_render_seconds": 0.7243006,
+  "reused_decode": true,
+  "shared_neutral": true,
+  "source_bits": 14,
+  "source_height": 5568,
+  "source_width": 3712,
+  "stage": "2E-edit-preview-core",
+  "success": true,
+  "warm_decode_resize_seconds": 0.0,
+  "warm_render_seconds": 0.7522908,
+  "peak_working_set_mib": 361.508,
+  "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded",
+  "source_unchanged": true,
+  "source_sha256": "03d94c1f184c4236ea8f890ab0fe30e91b65965e8b09cebecc397fba081a607f",
+  "probe_sha256": "7786b8c65d25e6cf0f17f27f484e74c72209b4f644d2b16b5a58c1814be3c7e1",
+  "parameters_sha256": "8475da080d653528960c87be0caffff60e31616b48b3c65b6886eb8e0b88ad0b",
+  "native_base_commit": "80b43bafa2ea1f13f3b99aefb9fd1e4c897b3466",
+  "native_tree_dirty": true,
+  "native_source_sha256": {
+    "native/crates/core/src/editor.rs": "2a6dbe9a3406edd5806d2c9e52b496277ba99982b9cc42477071ed9e60026a3b",
+    "native/crates/core/src/recipe.rs": "07b21a101555c23d58f56221668b05cd111eacb866df77e1713e4dc50923d282",
+    "native/crates/core/src/session.rs": "ced9a639bb0423fe0831a38ded88b04b1041299f7898f8dde4377ee584a7bc8f",
+    "native/crates/core/src/worker.rs": "6772f329b1d8136acf2547b27499e16d327fcdc848c9b3863d853991e16dd77f",
+    "native/crates/core/src/develop.rs": "c870c7153b4ff0a21d5a7808771b0248f62eb3e8568c3c8f7702c9294b51229c"
+  },
+  "limitations": [
+    "Core preview only; editing/export GUI is not enabled",
+    "Cold neutral and warm edited previews have different parameters; no equal-work speed ratio",
+    "Camera WB/public sample; other WB and user photos not accepted by this measurement",
+    "Cache keys use path, size, mtime, RAW WB; same-size/same-timestamp replacement needs explicit clear/reload",
+    "decode_resize_seconds excludes the initial filesystem metadata lookup"
+  ]
+}
