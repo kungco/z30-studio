@@ -8,6 +8,7 @@ param(
     [switch]$RasterProbe,
     [switch]$PhotoExportProbe,
     [switch]$EditProbe,
+    [switch]$FullCacheProbe,
     [string]$RawRuntime
 )
 $ErrorActionPreference='Stop'
@@ -83,6 +84,7 @@ try {
     if($RasterProbe){& $cargoTool build -p z30-core --example raster_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Raster probe build failed'}}
     if($PhotoExportProbe){& $cargoTool build -p z30-core --example photo_export_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Photo export probe build failed'}}
     if($EditProbe){& $cargoTool build -p z30-core --example edit_preview_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Edit preview probe build failed'}}
+    if($FullCacheProbe){& $cargoTool build -p z30-core --example full_cache_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Full-size cache probe build failed'}}
     $profile=if($DebugBuild){'debug'}else{'release'}
     if(((& git rev-parse HEAD).Trim() -ne $sourceCommit) -or ([bool]((& git status --porcelain) -join '') -ne $sourceDirty)){
         throw 'Source revision/cleanliness changed during build; rebuild before staging'

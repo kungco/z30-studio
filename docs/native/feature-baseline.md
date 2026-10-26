@@ -4,18 +4,18 @@
 
 | 能力 | Python 源码/测试 | 原生状态/阶段 |
 |---|---|---|
-| RAW 12/14 位、八方向、有效裁剪/半尺寸几何 | imaging.py、server.py；test_imaging.py | 2A 核心通过：raw.rs/raw_geometry.rs，四组真实样片逐像素一致、24 组冻结半尺寸几何；UI 未启用 |
-| JPEG/PNG ICC、无 ICC 策略、alpha、EXIF、输入位深 | imaging.py、colour_management.py；test_imaging.py/test_output.py | 未迁移 / 2 |
-| float32 tone/肩部/阴影、OKLab 护色、九参数/锐化 | processing.py、quality.py；test_processing.py/test_quality_cache.py | 2B 部分实现；中性通过，暖色真实样片失败，UI 关闭 |
+| RAW 12/14 位、八方向、有效裁剪/半尺寸几何 | imaging.py、server.py；test_imaging.py | 2A–2G 核心/原生 UI/随包 LibRaw 通过公开样片限定验收；真实 12/14 位全尺寸/半尺寸显式测试通过，用户自己的样片和干净 Windows 未验证 |
+| JPEG/PNG ICC、无 ICC 策略、alpha、EXIF、输入位深 | imaging.py、colour_management.py；test_imaging.py/test_output.py | 2C 核心和 UI 已迁移，52 个合成案例与浮点 CMS 数值/性能通过；CMYK/YCCK、损坏 ICC、cICP/HDR 等仍明确拒绝 |
+| float32 tone/肩部/阴影、OKLab 护色、九参数/锐化 | processing.py、quality.py；test_processing.py/test_quality_cache.py | 2B 暖色数值跳变已修正；修正 Python/Rust 四组对照 <一个 RGB16 码值，旧输出差异另报；2F 原生 UI 已接通 |
 | 曲线/HSL/分级/Kelvin/吸管/裁剪/拉直/细节 | darkroom.py；test_darkroom.py | 未迁移 / 2、6 |
 | 蒙版/范围/画笔、修复/克隆/降噪 | spatial.py；test_spatial.py/test_local_edits.py | 未迁移 / 5、6 |
 | 本机 SegFormer 主体/天空/人物与皮肤柔化 | local_vision.py；test_local_edits.py | 未迁移 / 5 |
 | Nikon Z Lensfun 数据/焦距插值/色差估计 | lens_tools.py、data/；test_lens_tools.py | 未迁移 / 6 |
-| 图库评分/旗标/关键词/比较/选择/参数分组同步 | photo_workflow.py；test_workflow.py、library-workflow.test.cjs | 未迁移 / 1、4、6 |
-| 草稿 SQLite CAS、快照/版本/项目打包 | drafts.py、projects.py；test_drafts.py/test_projects.py | 未迁移 / 1、4 |
-| 输出尺寸/水印/命名/锐化/元数据/ICC/TIFF16 | export_tools.py、colour_management.py；test_output.py | 2B 仅基本编码/ICC/不覆盖通过合成回归；全尺寸 NEF/工作流未验收 |
-| 后台导出/任务冻结/中断恢复/双路/进度 | export_jobs.py；test_export_jobs.py/test_lifecycle.py | 未迁移 / 4 |
-| 全尺寸 float 磁盘缓存、条带/租约/LRU | native_cache.py、processing.py；test_native_cache.py | 未迁移 / 2、4 |
+| 图库评分/旗标/关键词/比较/选择/参数分组同步 | photo_workflow.py；test_workflow.py、library-workflow.test.cjs | 原生已迁移评分、逐张选择、调整前后比较；旗标/关键词/多选/分组同步仍待阶段 6 |
+| 草稿 SQLite CAS、快照/版本/项目打包 | drafts.py、projects.py；test_drafts.py/test_projects.py | 原生 JSON 独占/CAS/v1→v2 备份/逐张参数恢复已接通；完整旧项目、版本/打包仍待迁移 |
+| 输出尺寸/水印/命名/锐化/元数据/ICC/TIFF16 | export_tools.py、colour_management.py；test_output.py | 2D–2G 全尺寸 NEF JPEG/PNG/TIFF16、sRGB ICC、原子不覆盖及后台 UI 通过；高级导出预设与广色域输出仍待迁移 |
+| 后台导出/任务冻结/中断恢复/双路/进度 | export_jobs.py；test_export_jobs.py/test_lifecycle.py | 4A–4C 原生持久顺序队列、逐张/公共配方、暂停/取消/重试/重启恢复/阶段进度通过；双路并行、ETA、批量 AI 未迁移 |
+| 全尺寸 float 磁盘缓存、条带/租约/LRU | native_cache.py、processing.py；test_native_cache.py | 4C 加入一张/320 MiB/30 秒浮点内存缓存，公开 RAW 重复导出字节一致与三轮速度/内存通过；磁盘/条带/租约/LRU 仍未迁移 |
 | Codex CLI 登录/九参数/取消/严格结构校验 | codex_assist.py；test_codex_assist.py（原 11 项保持） | 3A 原生接入：ai_cli.rs、ai.rs、main.slint/main.rs；离线 CLI 进程/公开 Z30 12/14 位 NEF 流程通过，真实云模型未验证 |
 | 可选兼容/本机模型、输入预览/费用估计/画质回退 | api_backend.py、ai_preflight.py、automation.py；test_ai_controls.py/test_automation.py | 3A 已迁移风格、目标、强度、发送内容说明、像素画质回退；3B 已接可选 DeepSeek/兼容图像接口和本机回环地址，只有模拟 HTTP 验证。精确输入预览、费用估计、真实云端/本机模型仍待后续 |
 | 生命周期、看门狗、日志/诊断、构建/实际 EXE smoke | desktop.py、shutdown_watchdog.py、tools/；test_shutdown.py/test_runtime.py | 采用原生生命周期重建 / 1、6 |

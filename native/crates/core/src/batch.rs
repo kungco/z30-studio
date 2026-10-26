@@ -4,7 +4,7 @@ use crate::{
     Error, MAX_SOURCE_BYTES, Result,
     editing::EditRequest,
     export::Format,
-    export_job::{ExportControl, ExportReceipt, ExportSource},
+    export_job::{ExportControl, ExportReceipt, ExportSource, FullFrameCache},
     recipe::Recipe,
     session::Photo,
 };
@@ -79,6 +79,19 @@ pub struct Job {
 }
 impl Job {
     pub fn run(&self, raw_dll: Option<&Path>, control: &ExportControl) -> Result<ExportReceipt> {
+        let source = self.prepare()?;
+        source.run(&self.destination, self.format, raw_dll, control)
+    }
+    pub fn run_reusing_cache(
+        &self,
+        raw_dll: Option<&Path>,
+        control: &ExportControl,
+        cache: &mut FullFrameCache,
+    ) -> Result<ExportReceipt> {
+        let source = self.prepare()?;
+        source.run_reusing_cache(&self.destination, self.format, raw_dll, control, cache)
+    }
+    fn prepare(&self) -> Result<ExportSource> {
         if self.state != JobState::Running {
             return Err(Error::Policy("批量任务尚未持久化为运行中".into()));
         }
@@ -97,7 +110,7 @@ impl Job {
         if SourceState::read(&self.source)? != self.source_state {
             return Err(Error::Policy("原片在启动批量导出时发生变化".into()));
         }
-        source.run(&self.destination, self.format, raw_dll, control)
+        Ok(source)
     }
 }
 

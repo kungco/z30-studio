@@ -18,7 +18,7 @@ use z30_core::{
     editing::{EditRequest, EditingSession},
     editor::PreviewEngine,
     export::Format,
-    export_job::{ExportControl, ExportReceipt, ExportSource},
+    export_job::{ExportControl, ExportReceipt, ExportSource, FullFrameCache},
     session::{Photo, Session, SessionStore},
     worker::LatestWorker,
 };
@@ -574,10 +574,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Serialize full-image computation so export + a new selection cannot hold
     // two full RAW decodes at once. The event loop remains independent.
     let compute = Arc::new(Mutex::new(()));
+    let full_cache = Arc::new(Mutex::new(FullFrameCache::default()));
     let preview_compute = Arc::clone(&compute);
     let preview_engine = Arc::clone(&engine);
+    let preview_full_cache = Arc::clone(&full_cache);
+    let preview_raw_dll = raw_dll.clone();
     let worker = Rc::new(LatestWorker::new(move |request: EditRequest| {
         let _guard = preview_compute.lock().unwrap_or_else(|e| e.into_inner());
+        preview_full_cache.lock().unwrap_or_else(|e| e.into_inner())
+            .discard_other_source(&request.path, request.recipe.white_balance, preview_raw_dll.as_deref());
         let mut engine = preview_engine.lock().unwrap_or_else(|e| e.into_inner());
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             engine
@@ -1129,10 +1134,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         state.export_control = Some(Arc::clone(&control));
                         ui.set_export_cancellable(true);
                         let compute = Arc::clone(&compute); let exports = exports.clone(); let dll = raw_dll.clone();
+                        let cache = Arc::clone(&full_cache);
                         std::thread::spawn(move || {
                             let _guard = compute.lock().unwrap_or_else(|e| e.into_inner());
+                            let mut cache = cache.lock().unwrap_or_else(|e| e.into_inner());
                             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(||
-                                source.run(&destination.unwrap(), format, dll.as_deref(), &control)
+                                source.run_with_cache(&destination.unwrap(), format, dll.as_deref(), &control, &mut cache)
                             )).unwrap_or_else(|_| Err(z30_core::Error::Policy("导出异常，原片保持不变".into())));
                             let _ = exports.send(result);
                         });
@@ -1142,7 +1149,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     state.borrow_mut().export_control = None;
                     ui.set_export_busy(false); ui.set_export_cancellable(false);
                     ui.set_export_status(match result {
-                        Ok(v) => format!("已导出 {} × {} · {:.1} 秒 · {}", v.width, v.height, v.seconds, v.destination.display()),
+                        Ok(v) => format!("已导出 {} × {} · {:.1} 秒（解码 {:.1} / 调色 {:.1} / 编码 {:.1}{}）· {}", v.width, v.height,
+                            v.seconds, v.decode_seconds, v.render_seconds, v.encode_seconds,
+                            if v.reused_decode { "，复用全尺寸缓存" } else { "" }, v.destination.display()),
                         Err(e) => format!("导出未完成：{e}"),
                     }.into());
                 }
@@ -1198,10 +1207,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                 let compute = Arc::clone(&compute);
                                 let sender = batch_results.clone();
                                 let dll = raw_dll.clone();
+                                let cache = Arc::clone(&full_cache);
                                 std::thread::spawn(move || {
                                     let _guard = compute.lock().unwrap_or_else(|e| e.into_inner());
+                                    let mut cache = cache.lock().unwrap_or_else(|e| e.into_inner());
                                     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(||
-                                        job.run(dll.as_deref(), &control)
+                                        job.run_reusing_cache(dll.as_deref(), &control, &mut cache)
                                     )).unwrap_or_else(|_| Err(z30_core::Error::Policy("批量显影异常；原片未修改".into())));
                                     let cancelled = control.cancelled.load(Ordering::Acquire);
                                     let _ = sender.send((job.id, cancelled, result));
@@ -1275,6 +1286,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         let _ = slint::quit_event_loop(); return;
                     }
                 }
+                if let Ok(mut cache) = full_cache.try_lock() { cache.evict_if_idle(); }
                 while let Some((revision, (request, result))) = worker.take_result() {
                     if !worker.current(revision) || state.borrow().edits.current().as_ref() != Some(&request) {
                         continue;
@@ -1396,6 +1408,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             object.insert("batch_status".into(), ui.get_batch_status().as_str().into());
                             object.insert("batch_paused".into(), ui.get_batch_paused().into());
                             object.insert("batch_protected".into(), ui.get_batch_protected().into());
+                            object.insert("full_cache_bytes".into(), serde_json::to_value(full_cache.try_lock().ok().map(|cache| cache.bytes())).unwrap_or_default());
                             serde_json::Value::Object(object)
                         } else { response };
                         if let Err(e) = qa.respond(id, response) { ui.set_status(format!("QA response: {e}").into()); }

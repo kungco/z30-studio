@@ -2,15 +2,15 @@
 
 更新：2026-10-26（Asia/Hong_Kong）。原生迁移总任务未完成。
 
-最新进展：阶段 4A 已提交 `c1b83e4`，批量队列持久化、源/参数快照、重启暂停、中断恢复及无覆盖保护通过核心测试。阶段 4B 已接入原生批量设置、顺序后台导出、进度、暂停/取消/重试和任务明细；三张合成 PNG 的本机窗口/回调端到端 14 项检查通过，含重启、目标冲突、取消后显式重试及原片哈希不变。实际窗口 1320×890 的批量按钮/设置弹窗布局已目视核对。真实 NEF 批量、性能/内存基准、干净 Windows 仍待阶段 4 后续验收；本条更新后的独立提交和干净包以 Git/检查点为准。见 `docs/reports/native-stage4b-batch-ui.md`。
+最新进展：阶段 4A `c1b83e4`、4B `d4900ff` 已独立提交；4C 加入有界全尺寸缓存并完成公开 Z30 12/14 位 RAW、速度与内存验收，源码提交和干净包以最新 Git/检查点为准。RAW 窗口 14 项、合成照片批量 14 项、原有编辑/导出 26 项通过；三轮重复 TIFF16 导出约 2.0→0.8 秒且所有字节一致。缓存核心峰值约 478→596 MiB；普通批量未命中不保留新缓存，窗口峰值约 551 MiB。阶段 4 为限定范围验收，磁盘缓存/并行/ETA/批量 AI 等仍待完整迁移。见 `docs/reports/native-stage4c-performance.md`。
 
-- 当前阶段：1 和 2A–2G 的限定验收完成；3A 独立提交 109ce83，干净 RAW 软件包、解压后 61 项 AI 检查及该提交的 Windows/Ubuntu/原生 CI 已通过。3B 已接通可选 DeepSeek Flash/OpenAI 兼容图像接口，本机模拟 HTTP 进程/回调/公开 RAW14 共 55 项检查通过；3B 的干净包和对应 CI 仍需在提交后核对。真实云端及本机大模型推理未验证，阶段 3 未全部完成。
+- 当前阶段：1、2A–2G 和 4A–4C 通过限定验收；3A/3B 原生 Codex CLI/可选兼容接口、干净包与离线模拟/对应 CI 已通过，真实云端及本机大模型仍未验证。阶段 5 人像与阶段 6 完整迁移未开始；下一步先完成 4C 干净包/解压复测/GitHub CI，再进入阶段 5。
 - 分支 feat/native-slint，草稿 PR https://github.com/kungco/z30-studio/pull/2；原 Python 基线 a2a2e089d760221a52c8774cca8a2e42f0a82269。最新 SHA 以 git rev-parse HEAD 和 .development/checkpoint.json 为准；不合并 main、不正式发布。
 - 已实现：原生查看器/评分/草稿/独占与 CAS，LibRaw 0.22.2 只读桥接、RGB16→float、八方向/裁剪/半尺寸，九参数 float 核心/滚动锐化，sRGB ICC JPEG/PNG/TIFF16 不覆盖输出。2F 将现成核心接到实际窗口，仍非完整迁移产品。
 - RAW 纯解码四组与原 Python 逐像素相同；提前释放上下文后全尺寸峰值约 561→361 MiB，半尺寸 174→115 MiB。全尺寸解码仍慢于 Python。见 docs/reports/native-stage2a.md。
 - 暖色根因：旧 float32 十轮色度搜索把两 ULP 的亮度误差放大成约 .008 蓝通道跳变。Python/Rust 同时改成精确色彩路径、24 轮及连续自适应内边界。独立三次多项式参考和微扰回归通过；未放宽误差阈值或原饱和度测试。见 docs/reports/native-gamut-stability.md。
 - 修正 Rust/修正 Python 四组暖色+锐化最大误差均 <7e-6（门槛 2e-5），均小于一个 RGB16 码值，无非有限值，原片 SHA 不变。旧失败报告保留；与固定原始 Python 的差异报告 success=false，最大约 .014–.063，必须单独审阅，不能宣称旧输出一致。
-- 当前验证：45 Rust 核心 + 2 原生桌面测试通过；真实 RAW 核心 fixture 默认 ignored，2G 已用随包 DLL 显式通过。171 Python：169 通过、2 个公开 RAW 测试在普通环境下跳过；31 Node 通过。3A 解压 Release 包的模拟 Codex CLI 61 项检查通过，含真实 Z30 12/14 位 NEF、退出取消、坏 JSON、画质回退、原片哈希。3B Debug 本机模拟 HTTP 55 项检查通过，含请求字段/凭证位置、取消/切图/退出、真实 RAW14；均无真实云推理请求。
+- 当前验证：49 Rust 核心 + 2 原生桌面测试通过，另用随包 DLL 显式通过 1 项真实 RAW 全尺寸/半尺寸 fixture。171 Python：169 通过、2 个公开 RAW 测试在普通环境下跳过；31 Node 通过。4C RAW/合成批量/原有编辑窗口流程分别 14/14/26 项通过。历史 3A 模拟 Codex CLI 61 项、3B 模拟 HTTP 55 项均已验证真实公开 RAW；没有真实云推理请求。
 - 2C：原生 ICC/PNG 元数据/Adobe EXIF/16 位 PNG、原地八方向/线性缩放已接入查看器。最终 MozJPEG 精确 DCT 的全尺寸无 ICC JPEG 两组与旧 Python 逐像素相同，约 .32 秒/302 MiB；带 ICC 优化由约 11.8 秒降至 .51 秒，逐点 CMS 质量对照通过。读 docs/reports/native-stage2c.md / native-raster-icc.json，报告 docs/reports/native-icc-performance.md；复杂 LUT 仍走通用 CMS。
 - sRGB 插值优化：35 Rust/200 万点解析参考通过，四组 RAW 暖色仍 <一个 RGB16 码值；全尺寸显影约 8.4→5.6–5.8 秒，完整最终文件重测通过。见 docs/reports/native-gamma-performance.md。
 - 历史性能仅单次：14 位全尺寸原生调色约 8.08 秒/479 MiB，修正 Python 13.91 秒/757 MiB；原始 Python 约 5.5 秒，不能宣称总体提速。另次原生测得约 10 秒，负载/频率变动尚未统计。
@@ -43,7 +43,7 @@
 2. 独立 Rust 1.99.1 GNU/w64devkit 位于 D:/codex/toolchains/z30-native；执行 tools/native_build.ps1 -ToolchainRoot D:/codex/toolchains/z30-native -Test -RawProbe -ExportProbe。不要重装或使用曾中断的版本化目录。
 3. 样片为 D:/codex/2026-10-23/ni-k/work/Z30-12bit.NEF、Z30-14bit.NEF；官方 DLL 在 work/native-libraw/LibRaw-0.22.2/bin/libraw.dll。不得提交/覆盖；Python 实拍测试设置 Z30_RAW_SAMPLES=work，Rust fixture 显式设置 Z30_LIBRAW_DLL/Z30_RAW_12/Z30_RAW_14 并用 -RawFixtures。
 4. 基准 tools/native_raw_benchmark.py 默认 --oracle-mode baseline 固定原始算法；修正实现对照显式用 --oracle-mode current，暖色参数见 native-stage2b.md。修正四组现场 .development/native-raw/run-b45b77eb14d04c15818b9cdc46c04aa4；旧算法差异 run-fd4235e248814befb8d294ad0ad02c13。
-5. 2G 和 3A 干净 ZIP、解压后复测、各自 GitHub CI 已完成；3B 用 tools/smoke_native_ai_http.py 的本机模拟服务验证兼容接口与公开 RAW14。3B 提交后核对干净 Release 包/CI；有实际 Key/用户样片时再经用户明确选择服务发起云端验收，不能自动产生收费请求。下一阶段依开发计划做批量/高级功能；有干净 Windows 环境时另做安装验收。ICC/CMYK/HDR/显示器的剩余范围按功能清单迁移。
+5. 2G、3A、3B 干净 ZIP、解压复测与对应 GitHub CI 已完成；4A–4C 的代码/测试已就绪，先完成当前提交的干净包、解压复测和 CI，再依开发计划进入人像与完整高级功能。有实际 Key/用户样片时再经用户明确选择服务发起云端验收，不能自动产生收费请求。干净 Windows、ICC/CMYK/HDR/显示器等剩余范围按功能清单迁移。
 6. 大任务前和阶段边界读 get_usage_limits，只保存去账户身份快照；剩余约 10% 时收尾/提交/检查点，不开新大任务。未知记未知。checkpoint 脚本不会自动启动 Codex。
 
 未启用额度重置自动续跑。不会自动花费推理额度、读取 auth.json、提交凭证/原片、合并 main、发布正式版或关机。

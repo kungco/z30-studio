@@ -12,7 +12,7 @@ use std::{
     time::{Instant, SystemTime},
 };
 
-#[derive(PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct Stamp {
     path: PathBuf,
     bytes: u64,
