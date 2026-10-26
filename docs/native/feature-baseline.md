@@ -16,8 +16,8 @@
 | 输出尺寸/水印/命名/锐化/元数据/ICC/TIFF16 | export_tools.py、colour_management.py；test_output.py | 2B 仅基本编码/ICC/不覆盖通过合成回归；全尺寸 NEF/工作流未验收 |
 | 后台导出/任务冻结/中断恢复/双路/进度 | export_jobs.py；test_export_jobs.py/test_lifecycle.py | 未迁移 / 4 |
 | 全尺寸 float 磁盘缓存、条带/租约/LRU | native_cache.py、processing.py；test_native_cache.py | 未迁移 / 2、4 |
-| Codex CLI 登录/九参数/取消/严格结构校验 | codex_assist.py；test_codex_assist.py（原 11 项保持） | 未迁移 / 3 |
-| 可选兼容/本机模型、输入预览/费用估计/画质回退 | api_backend.py、ai_preflight.py、automation.py；test_ai_controls.py/test_automation.py | 未迁移 / 3、4 |
+| Codex CLI 登录/九参数/取消/严格结构校验 | codex_assist.py；test_codex_assist.py（原 11 项保持） | 3A 原生接入：ai_cli.rs、ai.rs、main.slint/main.rs；离线 CLI 进程/公开 Z30 12/14 位 NEF 流程通过，真实云模型未验证 |
+| 可选兼容/本机模型、输入预览/费用估计/画质回退 | api_backend.py、ai_preflight.py、automation.py；test_ai_controls.py/test_automation.py | 3A 已迁移风格、目标、强度、发送内容说明、像素画质回退；可选兼容/本机后端、精确输入预览和费用估计仍待 3B/4 |
 | 生命周期、看门狗、日志/诊断、构建/实际 EXE smoke | desktop.py、shutdown_watchdog.py、tools/；test_shutdown.py/test_runtime.py | 采用原生生命周期重建 / 1、6 |
 
 ## 对照方法

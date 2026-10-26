@@ -4,10 +4,16 @@ use std::{
     cell::RefCell,
     path::PathBuf,
     rc::Rc,
-    sync::{Arc, Mutex, mpsc},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
     time::{Duration, Instant},
 };
 use z30_core::{
+    ai::{self, Advice, Options},
+    develop::Parameters,
     editing::{EditRequest, EditingSession},
     editor::PreviewEngine,
     export::Format,
@@ -16,6 +22,7 @@ use z30_core::{
     worker::LatestWorker,
 };
 slint::include_modules!();
+mod ai_cli;
 mod qa;
 
 struct State {
@@ -28,6 +35,31 @@ struct State {
     store: SessionStore,
     protected: bool,
     dirty: bool,
+    edit_revision: u64,
+    ai_control: Option<Arc<AtomicBool>>,
+    ai_suggestion: Option<AiSuggestion>,
+    close_after_ai: bool,
+}
+
+struct AiProduct {
+    advice: Advice,
+    parameters: Parameters,
+    preview: DisplayPreview,
+    used_strength: u32,
+    quality_note: String,
+}
+struct AiOutcome {
+    request: EditRequest,
+    source: ExportSource,
+    revision: u64,
+    auto_apply: bool,
+    result: z30_core::Result<AiProduct>,
+}
+struct AiSuggestion {
+    request: EditRequest,
+    source: ExportSource,
+    revision: u64,
+    product: AiProduct,
 }
 
 struct DisplayPreview {
@@ -123,6 +155,17 @@ fn flush_edits(state: &mut State, ui: &AppWindow) {
     }
     sync_recipe(state, ui);
 }
+fn invalidate_ai(state: &mut State, ui: &AppWindow) {
+    state.edit_revision = state.edit_revision.wrapping_add(1);
+    state.ai_suggestion = None;
+    ui.set_ai_suggestion_ready(false);
+    ui.set_ai_report("".into());
+    ui.set_ai_report_visible(false);
+    if let Some(control) = &state.ai_control {
+        control.store(true, Ordering::Release);
+        ui.set_ai_status("照片或参数已变化；正在取消旧 AI 任务…".into());
+    }
+}
 fn prepare_exit(state: &mut State, ui: &AppWindow, discard: bool) -> bool {
     flush_edits(state, ui);
     if state.dirty && !discard {
@@ -131,6 +174,13 @@ fn prepare_exit(state: &mut State, ui: &AppWindow, discard: bool) -> bool {
     }
     if discard {
         state.dirty = false;
+    }
+    if let Some(control) = &state.ai_control {
+        control.store(true, Ordering::Release);
+        state.close_after_ai = true;
+        ui.set_ai_status("退出前正在停止 Codex CLI 并清理预览临时文件…".into());
+        ui.set_exit_warning(false);
+        return false;
     }
     if let Some(control) = &state.export_control {
         control.cancel();
@@ -185,6 +235,157 @@ fn fingerprint(bytes: &[u8]) -> String {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     bytes.hash(&mut hasher);
     format!("{:016x}", hasher.finish())
+}
+fn evaluate_ai(
+    request: &EditRequest,
+    source: &ExportSource,
+    goal: &str,
+    options: Options,
+    current: &SharedPixelBuffer<Rgb8Pixel>,
+    neutral: &SharedPixelBuffer<Rgb8Pixel>,
+    compute: &Mutex<()>,
+    engine: &Mutex<PreviewEngine>,
+    cancel: &AtomicBool,
+) -> z30_core::Result<AiProduct> {
+    source.unchanged()?;
+    let current_jpeg = ai_cli::encode_jpeg(current)?;
+    let neutral_jpeg = ai_cli::encode_jpeg(neutral)?;
+    let raw = request
+        .path
+        .extension()
+        .is_some_and(|v| v.eq_ignore_ascii_case("nef"));
+    let advice = ai_cli::run(
+        request.recipe,
+        goal,
+        raw,
+        &neutral_jpeg,
+        &current_jpeg,
+        cancel,
+    )?;
+    let bounded = options.constrain(request.recipe.parameters, advice.adjustments.parameters())?;
+    let reference = ai::metrics(current.as_bytes(), current.width(), current.height())?;
+    let mut last_reasons = Vec::new();
+    let _guard = compute.lock().unwrap_or_else(|e| e.into_inner());
+    let mut engine = engine.lock().unwrap_or_else(|e| e.into_inner());
+    for fraction in [1.0, 0.75, 0.5, 0.25, 0.0] {
+        if cancel.load(Ordering::Acquire) {
+            return Err(z30_core::Error::Policy(
+                "AI 调色已取消；没有应用参数".into(),
+            ));
+        }
+        source.unchanged()?;
+        let parameters = ai::blend(request.recipe.parameters, bounded, fraction)?;
+        let recipe = z30_core::recipe::Recipe {
+            parameters,
+            ..request.recipe
+        };
+        let preview = engine.preview(&request.path, recipe)?;
+        let rgb: Vec<u8> = preview
+            .rendered
+            .pixels
+            .iter()
+            .flatten()
+            .map(|v| (v.clamp(0., 1.) * 255.).round_ties_even() as u8)
+            .collect();
+        let measure = ai::metrics(&rgb, preview.rendered.width, preview.rendered.height)?;
+        let reasons = ai::degradation(reference, measure);
+        if reasons.is_empty() || fraction == 0.0 {
+            source.unchanged()?;
+            let used_strength = (options.strength * fraction).round() as u32;
+            let quality_note = if last_reasons.is_empty() {
+                "画质检测通过".to_owned()
+            } else {
+                format!("画质回退至 {used_strength}%：{}", last_reasons.join("、"))
+            };
+            return Ok(AiProduct {
+                advice,
+                parameters,
+                preview: preview.into(),
+                used_strength,
+                quality_note,
+            });
+        }
+        last_reasons = reasons;
+    }
+    unreachable!("zero-strength candidate must be accepted")
+}
+
+fn display_ai_preview(
+    ui: &AppWindow,
+    preview: &DisplayPreview,
+    rows: &Rc<VecModel<PhotoView>>,
+    selected: Option<usize>,
+) {
+    ui.set_preview(slint_image(&preview.rgb, preview.width, preview.height));
+    ui.set_original_preview(slint_image(&preview.neutral, preview.width, preview.height));
+    ui.set_preview_fingerprint(fingerprint(&preview.rgb).into());
+    ui.set_neutral_fingerprint(fingerprint(&preview.neutral).into());
+    ui.set_has_preview(true);
+    ui.set_colour_info(preview.policy.clone().into());
+    if let Some(i) = selected {
+        if let Some(mut row) = rows.row_data(i) {
+            row.thumbnail = slint_image(
+                &preview.thumbnail,
+                preview.thumb_width,
+                preview.thumb_height,
+            );
+            rows.set_row_data(i, row);
+        }
+    }
+}
+
+fn ai_report(product: &AiProduct) -> String {
+    format!(
+        "{}\n\n{}\n\n画面观察\n{}\n\n建议局限\n{}\n\n{} · 实际强度 {}%",
+        product.advice.title,
+        product.advice.summary,
+        product
+            .advice
+            .observations
+            .iter()
+            .map(|s| format!("• {s}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        product.advice.limitations,
+        product.quality_note,
+        product.used_strength
+    )
+}
+
+fn apply_ai_product(
+    state: &mut State,
+    ui: &AppWindow,
+    rows: &Rc<VecModel<PhotoView>>,
+    product: AiProduct,
+) {
+    match state.edits.apply_ai(product.parameters) {
+        Ok(changed) => {
+            if changed {
+                state.edit_revision = state.edit_revision.wrapping_add(1);
+                state.last_edit = None;
+                state.pending_preview = None;
+                sync_recipe(state, ui);
+                display_ai_preview(ui, &product.preview, rows, state.edits.session.selected);
+                save_state(state, ui);
+            }
+            ui.set_ai_status(
+                format!(
+                    "AI {} · 强度 {}% · {} · {}",
+                    if changed {
+                        "已应用，可撤销"
+                    } else {
+                        "建议保持当前参数"
+                    },
+                    product.used_strength,
+                    product.advice.title,
+                    product.quality_note
+                )
+                .into(),
+            );
+            ui.set_ai_suggestion_ready(false);
+        }
+        Err(e) => ui.set_ai_status(format!("AI 建议未应用：{e}").into()),
+    }
 }
 fn data_root() -> PathBuf {
     std::env::var_os("Z30_NATIVE_DATA_DIR")
@@ -252,21 +453,29 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         store,
         protected,
         dirty: initial_dirty,
+        edit_revision: 0,
+        ai_control: None,
+        ai_suggestion: None,
+        close_after_ai: false,
     }));
     let ui = AppWindow::new()?;
+    ui.set_ai_ready(true);
     ui.set_photos(ModelRc::from(Rc::clone(&rows)));
     ui.set_can_import(!protected);
     ui.set_draft_status(restore_status.into());
     let raw_dll = z30_core::runtime::raw_library(
-        &std::env::current_exe()?, std::env::var_os("Z30_LIBRAW_DLL").as_deref(),
+        &std::env::current_exe()?,
+        std::env::var_os("Z30_LIBRAW_DLL").as_deref(),
     )?;
-    let mut engine = PreviewEngine::new(raw_dll.clone())?;
+    let engine = Arc::new(Mutex::new(PreviewEngine::new(raw_dll.clone())?));
     // Serialize full-image computation so export + a new selection cannot hold
     // two full RAW decodes at once. The event loop remains independent.
     let compute = Arc::new(Mutex::new(()));
     let preview_compute = Arc::clone(&compute);
+    let preview_engine = Arc::clone(&engine);
     let worker = Rc::new(LatestWorker::new(move |request: EditRequest| {
         let _guard = preview_compute.lock().unwrap_or_else(|e| e.into_inner());
+        let mut engine = preview_engine.lock().unwrap_or_else(|e| e.into_inner());
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             engine
                 .preview(&request.path, request.recipe)
@@ -281,6 +490,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (destinations, selected_destinations) =
         mpsc::channel::<(ExportSource, Format, Option<PathBuf>)>();
     let (exports, completed_exports) = mpsc::channel::<z30_core::Result<ExportReceipt>>();
+    let (ai_results, completed_ai) = mpsc::channel::<AiOutcome>();
     // Only the explicitly enabled local QA harness can inject a save-dialog
     // choice. The same production callback captures and starts the job.
     let export_override = Rc::new(RefCell::new(None::<PathBuf>));
@@ -320,6 +530,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     return;
                 }
             };
+            invalidate_ai(&mut state, &ui);
             state.last_edit = None;
             state.pending_preview = None;
             ui.set_photo_name(state.edits.session.photos[index].name().into());
@@ -362,8 +573,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let state = Rc::clone(&state);
         ui.on_cancel_preview(move || {
             worker.cancel();
-            state.borrow_mut().pending_preview = None;
+            let mut state = state.borrow_mut();
+            state.pending_preview = None;
             if let Some(ui) = weak.upgrade() {
+                invalidate_ai(&mut state, &ui);
                 ui.set_busy(false);
                 ui.set_has_preview(false);
                 ui.set_engine_ready(false);
@@ -383,6 +596,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             match state.edits.adjust(name.as_str(), value) {
                 Ok(true) => {
+                    invalidate_ai(&mut state, &ui);
                     state.dirty = true;
                     state.last_edit = Some(Instant::now());
                     state.pending_preview = state.edits.current();
@@ -418,6 +632,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             };
             match changed {
                 Ok(true) => {
+                    invalidate_ai(&mut state, &ui);
                     state.pending_preview = None;
                     state.last_edit = None;
                     sync_recipe(&state, &ui);
@@ -447,6 +662,118 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(i) = selected {
                 ui.invoke_select_photo(i as i32);
             }
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        let state = Rc::clone(&state);
+        let ai_results = ai_results.clone();
+        let compute = Arc::clone(&compute);
+        let engine = Arc::clone(&engine);
+        ui.on_auto_grade(move || {
+            let Some(ui)=weak.upgrade() else {return};
+            if !ui.get_has_preview() || ui.get_busy() || ui.get_ai_busy() {return}
+            let user_goal=ui.get_ai_goal();
+            if user_goal.chars().count()>350 {
+                ui.set_ai_status("补充目标最多 350 字；没有发送照片".into());return;
+            }
+            let style=match ui.get_ai_style() {
+                1=>"柔和人像，保持自然肤色和面部层次，不增加生硬对比或过度饱和。",
+                2=>"温暖但克制的胶片氛围，柔和高光，保留暗部层次，不声称复刻特定胶片。",
+                3=>"产品与静物，保持物体颜色可信、背景干净，避免强制把暖光白色变成纯白。",
+                4=>"保留夜景与低调氛围，控制灯光溢出，不把夜景整体变成白天，不承诺降噪。",
+                _=>"自然通透，保持现场氛围与真实色彩。",
+            };
+            let goal=format!("{} 风格偏好：{} 用户补充风格数据：{}",ai::AUTO_GOAL,style,user_goal);
+            let options=Options{strength:ui.get_ai_strength(),..Options::default()};
+            if let Err(e)=options.validate() {ui.set_ai_status(e.to_string().into());return}
+            let Some(current)=ui.get_preview().to_rgb8() else {
+                ui.set_ai_status("无法读取当前预览；没有发送照片".into());return;
+            };
+            let Some(neutral)=ui.get_original_preview().to_rgb8() else {
+                ui.set_ai_status("无法读取中性预览；没有发送照片".into());return;
+            };
+            if (current.width(),current.height())!=(neutral.width(),neutral.height()) {
+                ui.set_ai_status("中性与当前预览尺寸不一致；没有发送照片".into());return;
+            }
+            let mut state=state.borrow_mut();
+            if state.protected || state.ai_control.is_some() {
+                ui.set_ai_status("AI 任务正在结束，或草稿处于只读保护；请稍后手动重试".into());return;
+            }
+            let Some(request)=state.edits.current() else {return};
+            let source=match ExportSource::new(request.clone()) {
+                Ok(v)=>v, Err(e)=>{ui.set_ai_status(e.to_string().into());return;}
+            };
+            let revision=state.edit_revision;
+            let auto_apply=ui.get_ai_mode()==0;
+            state.ai_suggestion=None;
+            ui.set_ai_suggestion_ready(false);
+            ui.set_ai_report("".into());
+            ui.set_ai_report_visible(false);
+            let cancel=Arc::new(AtomicBool::new(false));
+            state.ai_control=Some(Arc::clone(&cancel));
+            ui.set_ai_busy(true);
+            ui.set_ai_status("Codex CLI 分析中：仅发送两张无 EXIF 的 sRGB JPEG 预览、当前九参数与目标；原片不上传。可取消。".into());
+            let sender=ai_results.clone();
+            let compute=Arc::clone(&compute);
+            let engine=Arc::clone(&engine);
+            std::thread::spawn(move || {
+                let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(||
+                    evaluate_ai(&request,&source,&goal,options,&current,&neutral,&compute,&engine,&cancel)
+                )).unwrap_or_else(|_|Err(z30_core::Error::Policy("AI 后台任务异常；没有应用参数".into())));
+                let _=sender.send(AiOutcome{request,source,revision,auto_apply,result});
+            });
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        let state = Rc::clone(&state);
+        ui.on_cancel_ai(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            if let Some(control) = &state.borrow().ai_control {
+                control.store(true, Ordering::Release);
+                ui.set_ai_status("正在停止 Codex CLI 并删除临时预览…".into());
+            }
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        let state = Rc::clone(&state);
+        ui.on_dismiss_ai_suggestion(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let mut state = state.borrow_mut();
+            if state.ai_control.is_some() {
+                return;
+            }
+            state.ai_suggestion = None;
+            ui.set_ai_suggestion_ready(false);
+            ui.set_ai_status("".into());
+            ui.set_ai_report("".into());
+            ui.set_ai_report_visible(false);
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        let state = Rc::clone(&state);
+        let rows = Rc::clone(&rows);
+        ui.on_apply_ai_suggestion(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let mut state = state.borrow_mut();
+            let Some(suggestion) = state.ai_suggestion.take() else {
+                return;
+            };
+            ui.set_ai_suggestion_ready(false);
+            if state.edit_revision != suggestion.revision
+                || state.edits.current().as_ref() != Some(&suggestion.request)
+            {
+                ui.set_ai_status("照片或参数已变化，旧建议已失效；请手动重新分析".into());
+                return;
+            }
+            if let Err(e) = suggestion.source.unchanged() {
+                ui.set_ai_status(format!("原片已变化，旧建议不再适用：{e}").into());
+                return;
+            }
+            apply_ai_product(&mut state, &ui, &rows, suggestion.product);
         });
     }
     {
@@ -600,6 +927,49 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         Err(e) => format!("导出未完成：{e}"),
                     }.into());
                 }
+                for outcome in completed_ai.try_iter() {
+                    let mut state=state.borrow_mut();
+                    let cancelled=state.ai_control.as_ref().is_some_and(|v|v.load(Ordering::Acquire));
+                    state.ai_control=None;
+                    ui.set_ai_busy(false);
+                    if state.close_after_ai {
+                        state.ai_suggestion=None;
+                        ui.set_ai_suggestion_ready(false);
+                        if let Some(control)=&state.export_control {
+                            control.cancel(); state.close_after_export=true;
+                        }
+                        if state.export_dialog {state.close_after_export=true;}
+                        if !state.export_dialog && state.export_control.is_none() && !state.dirty {
+                            let _=slint::quit_event_loop();return;
+                        }
+                        continue;
+                    }
+                    if cancelled {
+                        ui.set_ai_status("AI 调色已取消；未应用参数，可手动重试".into());
+                        continue;
+                    }
+                    if state.edit_revision!=outcome.revision || state.edits.current().as_ref()!=Some(&outcome.request) {
+                        ui.set_ai_status("照片或参数已变化；旧 AI 结果已丢弃，可手动重试".into());
+                        continue;
+                    }
+                    if let Err(e)=outcome.source.unchanged() {
+                        ui.set_ai_status(format!("原片已变化；AI 结果已丢弃：{e}").into());
+                        continue;
+                    }
+                    match outcome.result {
+                        Ok(product) if outcome.auto_apply => {
+                            ui.set_ai_report(ai_report(&product).into());
+                            apply_ai_product(&mut state,&ui,&rows,product)
+                        },
+                        Ok(product) => {
+                            ui.set_ai_report(ai_report(&product).into());
+                            ui.set_ai_status(format!("AI 建议已就绪 · 强度 {}% · {} · {}。点击应用建议或关闭。",product.used_strength,product.advice.title,product.quality_note).into());
+                            state.ai_suggestion=Some(AiSuggestion{request:outcome.request,source:outcome.source,revision:outcome.revision,product});
+                            ui.set_ai_suggestion_ready(true);
+                        }
+                        Err(e) => ui.set_ai_status(format!("AI 调色失败：{e}；可手动重试").into()),
+                    }
+                }
                 {
                     let state = state.borrow();
                     if let Some(control) = &state.export_control {
@@ -608,7 +978,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         } else { format!("{} · 全尺寸 sRGB · 可继续编辑照片", control.stage()) };
                         ui.set_export_status(message.into());
                     }
-                    if state.close_after_export && !state.export_dialog && state.export_control.is_none() && !state.dirty {
+                    if state.close_after_export && !state.export_dialog && state.export_control.is_none() && state.ai_control.is_none() && !state.dirty {
                         let _ = slint::quit_event_loop(); return;
                     }
                 }
@@ -681,6 +1051,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             qa::Command::CancelPreview => ui.invoke_cancel_preview(),
                             qa::Command::RetryPreview => ui.invoke_retry_preview(),
                             qa::Command::CancelExport => ui.invoke_cancel_export(),
+                            qa::Command::AiStart { mode, strength, goal } => {
+                                if let Some(v)=mode {ui.set_ai_mode(v);}
+                                if let Some(v)=strength {ui.set_ai_strength(v);}
+                                if let Some(v)=goal {ui.set_ai_goal(v.into());}
+                                ui.invoke_auto_grade();
+                            }
+                            qa::Command::AiCancel => ui.invoke_cancel_ai(),
+                            qa::Command::AiApply => ui.invoke_apply_ai_suggestion(),
+                            qa::Command::AiDismiss => ui.invoke_dismiss_ai_suggestion(),
                             qa::Command::Compare { enabled } => { if ui.get_has_preview() { ui.set_compare(enabled); } }
                             qa::Command::Export { destination, format } => {
                                 if destination.is_absolute() && (0..=2).contains(&format) {
@@ -698,7 +1077,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             "neutral_fingerprint":ui.get_neutral_fingerprint().as_str(),"exposure":ui.get_exposure(),
                             "temperature":ui.get_temperature(),"status":ui.get_status().as_str(),
                             "draft_status":ui.get_draft_status().as_str(),"export_busy":ui.get_export_busy(),
-                            "export_status":ui.get_export_status().as_str(),"exit_warning":ui.get_exit_warning()});
+                            "export_status":ui.get_export_status().as_str(),"exit_warning":ui.get_exit_warning(),
+                            "ai_busy":ui.get_ai_busy(),"ai_status":ui.get_ai_status().as_str(),
+                            "ai_suggestion_ready":ui.get_ai_suggestion_ready()});
                         if let Err(e) = qa.respond(id, response) { ui.set_status(format!("QA response: {e}").into()); }
                     }
                     Err(e) => ui.set_status(format!("QA command: {e}").into()),

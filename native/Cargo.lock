@@ -5688,11 +5688,13 @@ dependencies = [
 name = "z30-desktop"
 version = "0.1.0"
 dependencies = [
+ "image",
  "rfd",
  "serde",
  "serde_json",
  "slint",
  "slint-build",
+ "tempfile",
  "z30-core",
 ]
 

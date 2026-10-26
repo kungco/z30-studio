@@ -1,6 +1,7 @@
 //! Photo-owned history and immutable preview requests; no UI or worker locks.
 use crate::{
     Error, Result,
+    develop::Parameters,
     recipe::{EditHistory, Recipe},
     session::Session,
 };
@@ -76,6 +77,28 @@ impl EditingSession {
                 .record(current.recipe)?;
         }
         Ok(())
+    }
+    /// Apply a validated AI suggestion as one undoable edit, keeping the
+    /// source photo and white-balance policy owned by the current session.
+    pub fn apply_ai(&mut self, parameters: Parameters) -> Result<bool> {
+        parameters.validate()?;
+        let Some(current) = self.current() else {
+            return Ok(false);
+        };
+        if current.recipe.parameters == parameters {
+            return Ok(false);
+        }
+        self.commit()?;
+        let next = Recipe {
+            parameters,
+            ..current.recipe
+        };
+        self.histories
+            .get_mut(&current.path)
+            .unwrap()
+            .record(next)?;
+        self.session.photos[self.session.selected.unwrap()].recipe = next;
+        Ok(true)
     }
     pub fn can_undo(&self) -> bool {
         self.current().is_some_and(|v| {
@@ -195,5 +218,33 @@ mod tests {
         assert!(!restored.can_undo());
         assert!(s.select(999).unwrap().is_none());
         assert_eq!(s.current(), before);
+    }
+    #[test]
+    fn ai_edit_is_one_undo_step_and_keeps_the_photo_white_balance() {
+        let mut s = state();
+        s.adjust("exposure", 0.3).unwrap();
+        let before = s.current().unwrap();
+        let next = Parameters {
+            exposure: 0.7,
+            contrast: 12.,
+            ..before.recipe.parameters
+        };
+        assert!(s.apply_ai(next).unwrap());
+        assert_eq!(
+            s.current().unwrap().recipe.white_balance,
+            before.recipe.white_balance
+        );
+        assert!(s.undo().unwrap());
+        assert_eq!(s.current().unwrap(), before);
+        assert!(s.redo().unwrap());
+        assert_eq!(s.current().unwrap().recipe.parameters, next);
+        let invalid = Parameters {
+            exposure: f32::INFINITY,
+            ..next
+        };
+        assert!(s.apply_ai(invalid).is_err());
+        assert_eq!(s.current().unwrap().recipe.parameters, next);
+        s.select(1).unwrap();
+        assert!(!s.can_undo());
     }
 }

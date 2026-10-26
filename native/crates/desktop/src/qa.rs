@@ -19,16 +19,34 @@ pub struct Harness {
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Command {
     Snapshot,
-    Adjust { parameter: String, value: f32 },
-    Select { index: i32 },
+    Adjust {
+        parameter: String,
+        value: f32,
+    },
+    Select {
+        index: i32,
+    },
     Undo,
     Redo,
     Reset,
     CancelPreview,
     RetryPreview,
     CancelExport,
-    Compare { enabled: bool },
-    Export { destination: PathBuf, format: i32 },
+    AiStart {
+        mode: Option<i32>,
+        strength: Option<f32>,
+        goal: Option<String>,
+    },
+    AiCancel,
+    AiApply,
+    AiDismiss,
+    Compare {
+        enabled: bool,
+    },
+    Export {
+        destination: PathBuf,
+        format: i32,
+    },
 }
 impl Harness {
     pub fn arguments() -> io::Result<(Self, Vec<PathBuf>)> {

@@ -46,7 +46,7 @@ impl ExportSource {
         let stamp = Stamp::read(&edit.path, edit.recipe.white_balance)?;
         Ok(Self { edit, stamp })
     }
-    fn unchanged(&self) -> Result<()> {
+    pub fn unchanged(&self) -> Result<()> {
         if Stamp::read(&self.edit.path, self.edit.recipe.white_balance)? != self.stamp {
             Err(Error::Policy(
                 "原片在选择导出后发生变化，请重新预览并导出".into(),
@@ -79,7 +79,9 @@ impl ExportSource {
         {
             #[cfg(windows)]
             {
-                let dll = raw_dll.ok_or_else(|| Error::Policy("缺少 RAW 解码组件，请完整解压软件包并保留 raw 文件夹".into()))?;
+                let dll = raw_dll.ok_or_else(|| {
+                    Error::Policy("缺少 RAW 解码组件，请完整解压软件包并保留 raw 文件夹".into())
+                })?;
                 crate::raw::LibRaw::load(dll)?
                     .decode(&self.edit.path, false, self.edit.recipe.white_balance)?
                     .frame
