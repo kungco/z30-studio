@@ -1,5 +1,6 @@
 //! UI-independent contracts. Python remains the image-quality oracle during migration.
 pub mod ai;
+pub mod batch;
 pub mod colour;
 pub mod develop;
 pub mod editing;

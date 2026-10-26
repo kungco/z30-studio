@@ -5,13 +5,15 @@ use image::{
     ExtendedColorType, ImageEncoder,
     codecs::{png::PngEncoder, tiff::TiffEncoder},
 };
+use serde::{Deserialize, Serialize};
 use std::{
     io::{Seek, SeekFrom, Write},
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
 };
 pub const SRGB_ICC: &[u8] = include_bytes!("../assets/srgb.icc");
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum Format {
     Jpeg,
     Png,
