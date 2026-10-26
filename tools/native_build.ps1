@@ -83,7 +83,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $repoRoot 'native\licenses') -Destination (Join-Path $staging 'licenses') -Recurse
     Copy-Item -LiteralPath (Join-Path $repoRoot 'native\README.md') -Destination (Join-Path $staging '使用说明.md')
     $buildInfo=[ordered]@{
-        app='Z30 Studio Native';version='0.1.0-stage2e';profile=$profile
+        app='Z30 Studio Native';version='0.1.0-stage2f';profile=$profile
         source_commit=(& git rev-parse HEAD).Trim()
         source_tree_dirty=[bool]((& git status --porcelain) -join '')
         compiler=(& $rustcTool --version)

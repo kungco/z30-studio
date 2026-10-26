@@ -5,7 +5,9 @@ pub mod raster;
 pub mod recipe;
 pub mod develop;
 pub mod editor;
+pub mod editing;
 pub mod export;
+pub mod export_job;
 pub mod preview;
 #[cfg(windows)]
 pub mod raw;

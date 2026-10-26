@@ -5,9 +5,13 @@ use image::{
     ExtendedColorType, ImageEncoder,
     codecs::{png::PngEncoder, tiff::TiffEncoder},
 };
-use std::{io::Write, path::Path};
+use std::{
+    io::{Seek, SeekFrom, Write},
+    path::Path,
+    sync::atomic::{AtomicBool, Ordering},
+};
 pub const SRGB_ICC: &[u8] = include_bytes!("../assets/srgb.icc");
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Format {
     Jpeg,
     Png,
@@ -15,6 +19,64 @@ pub enum Format {
 }
 
 pub fn save(frame: &SrgbFrame, destination: &Path, format: Format, jpeg_quality: u8) -> Result<()> {
+    save_guarded(
+        frame,
+        destination,
+        format,
+        jpeg_quality,
+        &AtomicBool::new(false),
+        || Ok(()),
+    )
+}
+
+pub(crate) fn check_cancel(cancel: &AtomicBool) -> Result<()> {
+    if cancel.load(Ordering::Acquire) {
+        Err(Error::Policy("导出已取消，未发布新文件".into()))
+    } else {
+        Ok(())
+    }
+}
+
+struct CheckedWriter<'a> {
+    file: &'a mut std::fs::File,
+    cancel: &'a AtomicBool,
+}
+impl CheckedWriter<'_> {
+    fn check(&self) -> std::io::Result<()> {
+        // Interrupted would cause write_all to retry indefinitely.
+        if self.cancel.load(Ordering::Acquire) {
+            Err(std::io::Error::other("导出已取消"))
+        } else {
+            Ok(())
+        }
+    }
+}
+impl Write for CheckedWriter<'_> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.check()?;
+        self.file.write(bytes)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.check()?;
+        self.file.flush()
+    }
+}
+impl Seek for CheckedWriter<'_> {
+    fn seek(&mut self, from: SeekFrom) -> std::io::Result<u64> {
+        self.check()?;
+        self.file.seek(from)
+    }
+}
+
+pub(crate) fn save_guarded(
+    frame: &SrgbFrame,
+    destination: &Path,
+    format: Format,
+    jpeg_quality: u8,
+    cancel: &AtomicBool,
+    before_publish: impl FnOnce() -> Result<()>,
+) -> Result<()> {
+    check_cancel(cancel)?;
     if !destination.is_absolute() || !(1..=100).contains(&jpeg_quality) {
         return Err(Error::Policy(
             "导出路径必须为绝对路径，JPEG 质量范围为 1–100".into(),
@@ -70,7 +132,10 @@ pub fn save(frame: &SrgbFrame, destination: &Path, format: Format, jpeg_quality:
                 .flatten()
                 .map(|v| (v.clamp(0.0, 1.0) * 65535.0).round_ties_even() as u16)
                 .collect();
-            let mut encoder = TiffEncoder::new(temporary.as_file_mut());
+            let mut encoder = TiffEncoder::new(CheckedWriter {
+                file: temporary.as_file_mut(),
+                cancel,
+            });
             encoder
                 .set_icc_profile(SRGB_ICC.to_vec())
                 .map_err(image::ImageError::Unsupported)?;
@@ -90,14 +155,20 @@ pub fn save(frame: &SrgbFrame, destination: &Path, format: Format, jpeg_quality:
                 .collect();
             if matches!(format, Format::Jpeg) {
                 encode_jpeg(
-                    temporary.as_file_mut(),
+                    CheckedWriter {
+                        file: temporary.as_file_mut(),
+                        cancel,
+                    },
                     &data,
                     frame.width,
                     frame.height,
                     jpeg_quality,
                 )?;
             } else {
-                let mut encoder = PngEncoder::new(temporary.as_file_mut());
+                let mut encoder = PngEncoder::new(CheckedWriter {
+                    file: temporary.as_file_mut(),
+                    cancel,
+                });
                 encoder
                     .set_icc_profile(SRGB_ICC.to_vec())
                     .map_err(image::ImageError::Unsupported)?;
@@ -107,6 +178,8 @@ pub fn save(frame: &SrgbFrame, destination: &Path, format: Format, jpeg_quality:
     }
     temporary.as_file_mut().flush()?;
     temporary.as_file().sync_all()?;
+    before_publish()?;
+    check_cancel(cancel)?;
     // This is the final atomic no-replace operation, including races after
     // try_exists. On failure the still-owned temporary file is cleaned up.
     temporary
@@ -148,6 +221,44 @@ fn encode_jpeg(
 mod tests {
     use super::*;
     use image::{ImageDecoder, ImageReader};
+    #[test]
+    fn cancelled_or_changed_source_never_publishes_and_cleans_temporary() {
+        for (extension, format) in [
+            ("jpg", Format::Jpeg),
+            ("png", Format::Png),
+            ("tif", Format::Tiff16),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let destination = root.path().join(format!("cancelled.{extension}"));
+            let cancel = AtomicBool::new(false);
+            assert!(
+                save_guarded(&frame(), &destination, format, 95, &cancel, || {
+                    cancel.store(true, Ordering::Release);
+                    Ok(())
+                })
+                .is_err()
+            );
+            assert!(!destination.exists());
+            assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+            cancel.store(false, Ordering::Release);
+            assert!(
+                save_guarded(&frame(), &destination, format, 95, &cancel, || Err(
+                    Error::Policy("source changed".into())
+                ))
+                .is_err()
+            );
+            assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+            // A destination created after preflight must also survive intact.
+            assert!(
+                save_guarded(&frame(), &destination, format, 95, &cancel, || {
+                    std::fs::write(&destination, b"concurrent file")?;
+                    Ok(())
+                })
+                .is_err()
+            );
+            assert_eq!(std::fs::read(&destination).unwrap(), b"concurrent file");
+        }
+    }
     // Check the TIFF IFD directly as well as the image adapter below; this
     // avoids conflating metadata-read errors with a profile absent on disk.
     fn icc(path: &Path, format: Format) -> Vec<u8> {

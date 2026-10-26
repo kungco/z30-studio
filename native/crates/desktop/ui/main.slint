@@ -1,4 +1,4 @@
-import { Button, Slider, ScrollView, ListView, AboutSlint } from "std-widgets.slint";
+import { Button, Slider, ScrollView, ListView, AboutSlint, ComboBox } from "std-widgets.slint";
 
 export struct PhotoView {
     name: string,
@@ -14,6 +14,7 @@ component ToolButton inherits Rectangle {
     callback triggered();
     height: 34px;
     min-width: 72px;
+    horizontal-stretch: 0;
     border-radius: 6px;
     background: !root.active ? #20242a : root.primary ? #e6bd65 : pointer.has-hover ? #343b45 : #272d35;
     border-color: root.primary ? #e6bd65 : #414851;
@@ -22,7 +23,7 @@ component ToolButton inherits Rectangle {
     accessible-role: button;
     accessible-label: root.label;
     accessible-action-default => { if root.active { root.triggered(); } }
-    Text { text: root.label; color: root.primary ? #191d22 : #d8dce3; font-size: 13px; horizontal-alignment: center; vertical-alignment: center; }
+    Text { text: root.label; color: !root.active ? #a4adb9 : root.primary ? #191d22 : #d8dce3; font-size: 13px; horizontal-alignment: center; vertical-alignment: center; }
     pointer := TouchArea { enabled: root.active; mouse-cursor: MouseCursor.pointer; clicked => { root.triggered(); } }
 }
 
@@ -51,6 +52,15 @@ export component AppWindow inherits Window {
     in property <[PhotoView]> photos;
     in property <int> selected-index: -1;
     in property <image> preview;
+    in property <image> original-preview;
+    in property <string> preview-fingerprint;
+    in property <string> neutral-fingerprint;
+    in property <bool> can-undo: false;
+    in property <bool> can-redo: false;
+    in property <bool> export-busy: false;
+    in property <bool> export-cancellable: false;
+    in property <string> export-status: "";
+    in-out property <int> export-format: 0;
     in property <bool> has-preview: false;
     in property <bool> busy: false;
     in property <bool> can-import: true;
@@ -80,6 +90,10 @@ export component AppWindow inherits Window {
     callback cancel-preview();
     callback adjust(string, float);
     callback reset-edits();
+    callback undo-edit();
+    callback redo-edit();
+    callback retry-preview();
+    callback cancel-export();
     callback export-photo();
     callback auto-grade();
     callback confirm-exit();
@@ -89,16 +103,17 @@ export component AppWindow inherits Window {
         Rectangle {
             height: 70px; background: #20252d;
             HorizontalLayout {
-                padding-left: 22px; padding-right: 22px; spacing: 12px;
+                padding-left: 22px; padding-right: 22px; padding-top: 16px; padding-bottom: 16px; spacing: 12px;
                 VerticalLayout {
                     alignment: center; spacing: 2px;
                     Text { text: "Z30  STUDIO"; color: #f0d39b; font-size: 23px; font-weight: 700; }
                     Text { text: "你的摄影暗房"; color: #969faa; font-size: 10px; }
                 }
                 Rectangle { horizontal-stretch: 1; background: transparent; }
-                ToolButton { label: "＋ 导入照片"; active: root.can-import; triggered => { root.import-files(); } }
-                ToolButton { label: "AI 自动调色"; active: root.ai-ready && root.has-preview; triggered => { root.auto-grade(); } }
-                ToolButton { label: "导出照片"; primary: true; active: root.engine-ready && root.has-preview; triggered => { root.export-photo(); } }
+                ToolButton { label: "＋ 导入照片"; min-width: 108px; active: root.can-import; triggered => { root.import-files(); } }
+                ToolButton { label: "AI 自动调色"; min-width: 100px; active: root.ai-ready && root.has-preview; triggered => { root.auto-grade(); } }
+                ComboBox { width: 145px; height: 34px; model: ["JPEG · 95", "PNG · 8 位", "TIFF · 16 位"]; current-index <=> root.export-format; enabled: !root.export-busy; }
+                ToolButton { label: "导出照片"; primary: true; active: root.engine-ready && root.has-preview && !root.busy && !root.export-busy; triggered => { root.export-photo(); } }
                 ToolButton { label: "关于"; min-width: 54px; triggered => { root.about-visible = true; } }
             }
         }
@@ -139,7 +154,7 @@ export component AppWindow inherits Window {
                         }
                     }
                     Text { text: root.draft-status; color: #929da9; font-size: 10px; wrap: word-wrap; }
-                    Text { text: "原生查看器 · ICC / 16 位 PNG\nRAW 编辑与导出仍在迁移"; color: #7b8796; font-size: 10px; wrap: word-wrap; }
+                    Text { text: "本机浮点显影 · 原片只读\n逐张保存参数 · 全尺寸 sRGB 导出"; color: #7b8796; font-size: 10px; wrap: word-wrap; }
                 }
             }
             Rectangle {
@@ -148,26 +163,26 @@ export component AppWindow inherits Window {
                     padding: 16px; spacing: 12px;
                     HorizontalLayout {
                         Text { text: root.photo-name; color: #d8dee7; font-size: 12px; overflow: elide; }
-                        ToolButton { label: root.compare ? "显示编辑" : "原片对比"; active: root.engine-ready; triggered => { root.compare = !root.compare; } }
+                        ToolButton { label: root.compare ? "显示调整后" : "查看调整前"; active: root.has-preview; triggered => { root.compare = !root.compare; } }
                         ToolButton { label: root.zoom == 1 ? "放大" : "适合窗口"; active: root.has-preview; triggered => { root.zoom = root.zoom == 1 ? 1.5 : 1; } }
                     }
                     Rectangle {
                         vertical-stretch: 1; background: #101318; clip: true;
                         if root.has-preview: Image {
-                            source: root.preview; image-fit: contain;
+                            source: root.compare ? root.original-preview : root.preview; image-fit: contain;
                             width: parent.width * root.zoom; height: parent.height * root.zoom;
                             x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
                         }
                         if !root.has-preview: VerticalLayout {
                             alignment: center; padding: 50px; spacing: 14px;
                             Text { text: "光影，从这里开始"; color: #e7cf9f; font-size: 25px; horizontal-alignment: center; }
-                            Text { text: "导入照片，开始本机查看。\n原生 RAW / 调色引擎正在迁移，Python 版本保留作对照。"; color: #8e99a6; font-size: 13px; horizontal-alignment: center; wrap: word-wrap; }
+                            Text { text: "导入照片，在本机调整光线与色彩。\n导出为新文件，原片保持不变。"; color: #8e99a6; font-size: 13px; horizontal-alignment: center; wrap: word-wrap; }
                             ToolButton { label: "选择照片"; primary: true; active: root.can-import; triggered => { root.import-files(); } }
                         }
                         if root.busy: Rectangle {
                             x: 12px; y: 12px; width: 140px; height: 33px;
                             border-radius: 5px; background: #292d34;
-                            Text { text: "正在读取照片…"; color: #e6c783; horizontal-alignment: center; vertical-alignment: center; }
+                            Text { text: "正在更新预览…"; color: #e6c783; horizontal-alignment: center; vertical-alignment: center; }
                         }
                     }
                     Text { text: root.photo-info; color: #a2adba; font-size: 11px; overflow: elide; }
@@ -177,7 +192,7 @@ export component AppWindow inherits Window {
                         Text { text: "评分"; color: #929da9; vertical-alignment: center; }
                         for rating in 6: ToolButton { label: rating == 0 ? "清除" : "" + rating + " ★"; min-width: 42px; active: root.selected-index >= 0; triggered => { root.rate-photo(rating); } }
                         Rectangle { horizontal-stretch: 1; background: transparent; }
-                        ToolButton { label: "取消读取"; active: root.busy; triggered => { root.cancel-preview(); } }
+                        ToolButton { label: root.busy ? "取消预览" : "重新预览"; active: root.selected-index >= 0; triggered => { if root.busy { root.cancel-preview(); } else { root.retry-preview(); } } }
                     }
                 }
             }
@@ -189,7 +204,12 @@ export component AppWindow inherits Window {
                         Text { text: "显影调整"; color: #e0e5ed; font-size: 15px; font-weight: 600; }
                         ToolButton { label: "重置"; min-width: 50px; active: root.engine-ready; triggered => { root.reset-edits(); } }
                     }
-                    Text { text: root.engine-ready ? "浮点显影 · 本机处理" : "调色引擎迁移中，当前只查看原片。\n未验收功能保持关闭。"; color: #b19c76; font-size: 11px; wrap: word-wrap; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        ToolButton { label: "撤销"; active: root.can-undo; triggered => { root.undo-edit(); } }
+                        ToolButton { label: "重做"; active: root.can-redo; triggered => { root.redo-edit(); } }
+                    }
+                    Text { text: root.engine-ready ? "浮点显影 · 参数自动保存\n连续调整约半秒后记为一步撤销" : "选择照片并等待预览后即可调整"; color: #b19c76; font-size: 11px; wrap: word-wrap; }
                     ScrollView {
                         VerticalLayout {
                             spacing: 12px; padding-right: 6px;
@@ -209,6 +229,11 @@ export component AppWindow inherits Window {
                     }
                 }
             }
+        }
+        if root.export-status != "": HorizontalLayout {
+            height: 40px; padding-left: 18px; padding-right: 18px; spacing: 8px;
+            Text { text: root.export-status; color: #d8bd86; font-size: 11px; overflow: elide; vertical-alignment: center; }
+            ToolButton { label: "取消导出"; width: 90px; active: root.export-cancellable; triggered => { root.cancel-export(); } }
         }
         Rectangle {
             height: 34px; background: #20252d;
@@ -234,7 +259,7 @@ export component AppWindow inherits Window {
         VerticalLayout {
             alignment: center; padding: 90px; spacing: 20px;
             Text { text: "有尚未成功保存的改动"; color: #f0d39b; font-size: 24px; horizontal-alignment: center; }
-            Text { text: "原片保持不变。返回后可以检查保存错误，或明确放弃未保存的评分/选择。"; color: #c0c8d3; wrap: word-wrap; horizontal-alignment: center; }
+            Text { text: "原片保持不变。返回后可以检查保存错误，或明确放弃未保存的参数、评分与选择。"; color: #c0c8d3; wrap: word-wrap; horizontal-alignment: center; }
             ToolButton { label: "返回检查"; primary: true; triggered => { root.exit-warning = false; } }
             ToolButton { label: "放弃未保存改动并退出"; triggered => { root.confirm-exit(); } }
         }

@@ -13,14 +13,14 @@ use std::{
 };
 
 #[derive(PartialEq, Eq)]
-struct Stamp {
+pub(crate) struct Stamp {
     path: PathBuf,
     bytes: u64,
     modified: SystemTime,
     white_balance: WhiteBalance,
 }
 impl Stamp {
-    fn read(path: &Path, white_balance: WhiteBalance) -> Result<Self> {
+    pub(crate) fn read(path: &Path, white_balance: WhiteBalance) -> Result<Self> {
         let path = path.canonicalize()?;
         let info = path.metadata()?;
         if !info.is_file() || info.len() == 0 || info.len() > MAX_SOURCE_BYTES {

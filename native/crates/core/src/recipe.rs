@@ -40,6 +40,12 @@ impl EditHistory {
     pub fn current(&self) -> Recipe {
         self.states[self.position]
     }
+    pub fn can_undo(&self) -> bool {
+        self.position > 0
+    }
+    pub fn can_redo(&self) -> bool {
+        self.position + 1 < self.states.len()
+    }
     pub fn record(&mut self, recipe: Recipe) -> Result<bool> {
         recipe.validate()?;
         if self.current() == recipe {

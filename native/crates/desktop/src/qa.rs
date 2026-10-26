@@ -12,6 +12,23 @@ pub struct Harness {
     stop: Option<PathBuf>,
     wrote_ready: bool,
     wrote_preview: bool,
+    control: Option<PathBuf>,
+    next_command: u32,
+}
+#[derive(serde::Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Command {
+    Snapshot,
+    Adjust { parameter: String, value: f32 },
+    Select { index: i32 },
+    Undo,
+    Redo,
+    Reset,
+    CancelPreview,
+    RetryPreview,
+    CancelExport,
+    Compare { enabled: bool },
+    Export { destination: PathBuf, format: i32 },
 }
 impl Harness {
     pub fn arguments() -> io::Result<(Self, Vec<PathBuf>)> {
@@ -34,6 +51,13 @@ impl Harness {
                             .into(),
                     )
                 }
+                Some("--qa-control") => {
+                    harness.control = Some(
+                        args.next()
+                            .ok_or_else(|| io::Error::other("Missing QA control directory"))?
+                            .into(),
+                    );
+                }
                 Some(flag) if flag.starts_with("--") => {
                     return Err(io::Error::other("Unknown native option"));
                 }
@@ -42,6 +66,18 @@ impl Harness {
         }
         if harness.ready.is_some() != harness.stop.is_some() {
             return Err(io::Error::other("QA requires both marker paths"));
+        }
+        if let Some(control) = &harness.control {
+            if harness.ready.is_none()
+                || !control.is_absolute()
+                || !control.is_dir()
+                || fs::read_dir(control)?.next().is_some()
+            {
+                return Err(io::Error::other(
+                    "QA control requires ready/stop flags and a new empty absolute directory",
+                ));
+            }
+            harness.next_command = 1;
         }
         if let (Some(ready), Some(stop)) = (&harness.ready, &harness.stop) {
             if !ready.is_absolute()
@@ -58,6 +94,37 @@ impl Harness {
             }
         }
         Ok((harness, photos))
+    }
+    pub fn command(&mut self) -> io::Result<Option<(u32, Command)>> {
+        let Some(root) = &self.control else {
+            return Ok(None);
+        };
+        let id = self.next_command;
+        let path = root.join(format!("{id:06}.json"));
+        if !path.exists() {
+            return Ok(None);
+        }
+        let file = fs::File::open(path)?;
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        file.take(8193).read_to_end(&mut bytes)?;
+        if bytes.len() > 8192 {
+            return Err(io::Error::other("QA command too large"));
+        }
+        let command = serde_json::from_slice(&bytes)?;
+        self.next_command += 1;
+        Ok(Some((id, command)))
+    }
+    pub fn respond(&self, id: u32, value: serde_json::Value) -> io::Result<()> {
+        let Some(root) = &self.control else {
+            return Ok(());
+        };
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(root.join(format!("{id:06}.result.json")))?;
+        file.write_all(&serde_json::to_vec(&value)?)?;
+        file.sync_all()
     }
     pub fn poll(&mut self, launched: Instant) -> io::Result<bool> {
         if !self.wrote_ready {
