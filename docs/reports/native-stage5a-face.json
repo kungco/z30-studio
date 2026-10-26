@@ -1,0 +1,533 @@
+{
+  "stage": "5A-local-face-detector-core",
+  "python_onnxruntime": "1.31.0",
+  "public_image_sha256": "88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5",
+  "probe_sha256": "545f56d142b817e7f69d8d9f8b610d0e260170566370d016fbe9e1c98c5b8b32",
+  "model_sha256": "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
+  "coordinate_tolerance": 0.0002,
+  "cases": [
+    {
+      "name": "original",
+      "native": {
+        "cloud_requests": 0,
+        "first": {
+          "faces": [
+            {
+              "confidence": 0.9436302781105042,
+              "landmarks": [
+                {
+                  "x": 0.39363306760787964,
+                  "y": 0.20478323101997375
+                },
+                {
+                  "x": 0.4790111184120178,
+                  "y": 0.20461013913154602
+                },
+                {
+                  "x": 0.4311541020870209,
+                  "y": 0.24839401245117188
+                },
+                {
+                  "x": 0.3982422947883606,
+                  "y": 0.2837776839733124
+                },
+                {
+                  "x": 0.4732034206390381,
+                  "y": 0.2834901213645935
+                }
+              ],
+              "rect": [
+                0.34924545884132385,
+                0.12277153879404068,
+                0.17762288451194763,
+                0.217422753572464
+              ]
+            }
+          ],
+          "inference_seconds": 0.0081416,
+          "local_only": true,
+          "postprocess_seconds": 0.0001593,
+          "prepare_seconds": 0.0057486,
+          "source_height": 512,
+          "source_width": 512
+        },
+        "identity_recognition": false,
+        "model_load_seconds": 0.0786575,
+        "repeat": {
+          "faces": [
+            {
+              "confidence": 0.9436302781105042,
+              "landmarks": [
+                {
+                  "x": 0.39363306760787964,
+                  "y": 0.20478323101997375
+                },
+                {
+                  "x": 0.4790111184120178,
+                  "y": 0.20461013913154602
+                },
+                {
+                  "x": 0.4311541020870209,
+                  "y": 0.24839401245117188
+                },
+                {
+                  "x": 0.3982422947883606,
+                  "y": 0.2837776839733124
+                },
+                {
+                  "x": 0.4732034206390381,
+                  "y": 0.2834901213645935
+                }
+              ],
+              "rect": [
+                0.34924545884132385,
+                0.12277153879404068,
+                0.17762288451194763,
+                0.217422753572464
+              ]
+            }
+          ],
+          "inference_seconds": 0.0058312,
+          "local_only": true,
+          "postprocess_seconds": 0.0001292,
+          "prepare_seconds": 0.0057792,
+          "source_height": 512,
+          "source_width": 512
+        },
+        "peak_working_set_mib": 51.262,
+        "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+      },
+      "reference_max_error": 1.7881393449270533e-08,
+      "neutral_vs_source_max_difference": 0.08130639791488647,
+      "actual_float_input_sha256": "8c55f4810065fa092340e2750000989d671ce22a00a577afe97740ff6d8f8a32",
+      "source_sha256": "95ba1930f7e27eecd162cb53585fbc1f1eb3672d6dbc8c7cd9bebaa539979804",
+      "success": true
+    },
+    {
+      "name": "wide",
+      "native": {
+        "cloud_requests": 0,
+        "first": {
+          "faces": [
+            {
+              "confidence": 0.9430229067802429,
+              "landmarks": [
+                {
+                  "x": 0.43017053604125977,
+                  "y": 0.1990368813276291
+                },
+                {
+                  "x": 0.487006276845932,
+                  "y": 0.19851939380168915
+                },
+                {
+                  "x": 0.45803767442703247,
+                  "y": 0.24255774915218353
+                },
+                {
+                  "x": 0.4347051978111267,
+                  "y": 0.28041285276412964
+                },
+                {
+                  "x": 0.48482125997543335,
+                  "y": 0.27773618698120117
+                }
+              ],
+              "rect": [
+                0.4009130895137787,
+                0.12553851306438446,
+                0.11745080351829529,
+                0.2210763543844223
+              ]
+            }
+          ],
+          "inference_seconds": 0.007997,
+          "local_only": true,
+          "postprocess_seconds": 9.93e-05,
+          "prepare_seconds": 0.0040848,
+          "source_height": 512,
+          "source_width": 768
+        },
+        "identity_recognition": false,
+        "model_load_seconds": 0.0802163,
+        "repeat": {
+          "faces": [
+            {
+              "confidence": 0.9430229067802429,
+              "landmarks": [
+                {
+                  "x": 0.43017053604125977,
+                  "y": 0.1990368813276291
+                },
+                {
+                  "x": 0.487006276845932,
+                  "y": 0.19851939380168915
+                },
+                {
+                  "x": 0.45803767442703247,
+                  "y": 0.24255774915218353
+                },
+                {
+                  "x": 0.4347051978111267,
+                  "y": 0.28041285276412964
+                },
+                {
+                  "x": 0.48482125997543335,
+                  "y": 0.27773618698120117
+                }
+              ],
+              "rect": [
+                0.4009130895137787,
+                0.12553851306438446,
+                0.11745080351829529,
+                0.2210763543844223
+              ]
+            }
+          ],
+          "inference_seconds": 0.0056855,
+          "local_only": true,
+          "postprocess_seconds": 8.69e-05,
+          "prepare_seconds": 0.0040505,
+          "source_height": 512,
+          "source_width": 768
+        },
+        "peak_working_set_mib": 55.754,
+        "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+      },
+      "reference_max_error": 1.3540165211267663e-08,
+      "neutral_vs_source_max_difference": 0.08126318454742432,
+      "actual_float_input_sha256": "310c8fd9ba80256074c3c2a6bd7e8700c0f20999aa81064a5a86da70f61aaae8",
+      "source_sha256": "78abff332997650e560799fc82a907a78dcc6608e79021f0e2168518090d8e64",
+      "success": true
+    },
+    {
+      "name": "tall",
+      "native": {
+        "cloud_requests": 0,
+        "first": {
+          "faces": [
+            {
+              "confidence": 0.9353161454200745,
+              "landmarks": [
+                {
+                  "x": 0.39033347368240356,
+                  "y": 0.3051653802394867
+                },
+                {
+                  "x": 0.479740172624588,
+                  "y": 0.30381232500076294
+                },
+                {
+                  "x": 0.4350479543209076,
+                  "y": 0.3328474164009094
+                },
+                {
+                  "x": 0.39951929450035095,
+                  "y": 0.35504522919654846
+                },
+                {
+                  "x": 0.47758883237838745,
+                  "y": 0.3546857237815857
+                }
+              ],
+              "rect": [
+                0.3483588993549347,
+                0.2510901987552643,
+                0.1754647195339203,
+                0.14499488472938538
+              ]
+            }
+          ],
+          "inference_seconds": 0.0084113,
+          "local_only": true,
+          "postprocess_seconds": 0.0001067,
+          "prepare_seconds": 0.0041778,
+          "source_height": 768,
+          "source_width": 512
+        },
+        "identity_recognition": false,
+        "model_load_seconds": 0.0793445,
+        "repeat": {
+          "faces": [
+            {
+              "confidence": 0.9353161454200745,
+              "landmarks": [
+                {
+                  "x": 0.39033347368240356,
+                  "y": 0.3051653802394867
+                },
+                {
+                  "x": 0.479740172624588,
+                  "y": 0.30381232500076294
+                },
+                {
+                  "x": 0.4350479543209076,
+                  "y": 0.3328474164009094
+                },
+                {
+                  "x": 0.39951929450035095,
+                  "y": 0.35504522919654846
+                },
+                {
+                  "x": 0.47758883237838745,
+                  "y": 0.3546857237815857
+                }
+              ],
+              "rect": [
+                0.3483588993549347,
+                0.2510901987552643,
+                0.1754647195339203,
+                0.14499488472938538
+              ]
+            }
+          ],
+          "inference_seconds": 0.0057318,
+          "local_only": true,
+          "postprocess_seconds": 8.64e-05,
+          "prepare_seconds": 0.0041252,
+          "source_height": 768,
+          "source_width": 512
+        },
+        "peak_working_set_mib": 55.758,
+        "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+      },
+      "reference_max_error": 1.4866263886581521e-08,
+      "neutral_vs_source_max_difference": 0.08126318454742432,
+      "actual_float_input_sha256": "6cc02d03573253c5da9909f79a22aa2a2b5362676eb9cf762532936b4831da1a",
+      "source_sha256": "941dbdb7158874980b4aba2277495754187a2bd913dd29c165088151daf1aae1",
+      "success": true
+    },
+    {
+      "name": "mirror",
+      "native": {
+        "cloud_requests": 0,
+        "first": {
+          "faces": [
+            {
+              "confidence": 0.9469565749168396,
+              "landmarks": [
+                {
+                  "x": 0.5153429508209229,
+                  "y": 0.20740492641925812
+                },
+                {
+                  "x": 0.6019509434700012,
+                  "y": 0.2037438154220581
+                },
+                {
+                  "x": 0.5598044991493225,
+                  "y": 0.24946966767311096
+                },
+                {
+                  "x": 0.5219423174858093,
+                  "y": 0.2868073582649231
+                },
+                {
+                  "x": 0.6019532680511475,
+                  "y": 0.2843379080295563
+                }
+              ],
+              "rect": [
+                0.4710167348384857,
+                0.12334974855184555,
+                0.17806270718574524,
+                0.22187748551368713
+              ]
+            }
+          ],
+          "inference_seconds": 0.0079998,
+          "local_only": true,
+          "postprocess_seconds": 0.0001027,
+          "prepare_seconds": 0.0056286,
+          "source_height": 512,
+          "source_width": 512
+        },
+        "identity_recognition": false,
+        "model_load_seconds": 0.0790134,
+        "repeat": {
+          "faces": [
+            {
+              "confidence": 0.9469565749168396,
+              "landmarks": [
+                {
+                  "x": 0.5153429508209229,
+                  "y": 0.20740492641925812
+                },
+                {
+                  "x": 0.6019509434700012,
+                  "y": 0.2037438154220581
+                },
+                {
+                  "x": 0.5598044991493225,
+                  "y": 0.24946966767311096
+                },
+                {
+                  "x": 0.5219423174858093,
+                  "y": 0.2868073582649231
+                },
+                {
+                  "x": 0.6019532680511475,
+                  "y": 0.2843379080295563
+                }
+              ],
+              "rect": [
+                0.4710167348384857,
+                0.12334974855184555,
+                0.17806270718574524,
+                0.22187748551368713
+              ]
+            }
+          ],
+          "inference_seconds": 0.0056711,
+          "local_only": true,
+          "postprocess_seconds": 9.83e-05,
+          "prepare_seconds": 0.0056111,
+          "source_height": 512,
+          "source_width": 512
+        },
+        "peak_working_set_mib": 54.566,
+        "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+      },
+      "reference_max_error": 1.788139347702611e-08,
+      "neutral_vs_source_max_difference": 0.08130639791488647,
+      "actual_float_input_sha256": "0f7b2be8e1df0cd1de6474db47389458c3bf15dc8000873d9136e9940068b230",
+      "source_sha256": "47ea886f7320a06d9e70dccec58ab14e7781a95100fbbf96486c52bfbb7fef82",
+      "success": true
+    },
+    {
+      "name": "blank",
+      "native": {
+        "cloud_requests": 0,
+        "first": {
+          "faces": [],
+          "inference_seconds": 0.0081787,
+          "local_only": true,
+          "postprocess_seconds": 9.84e-05,
+          "prepare_seconds": 0.0037411,
+          "source_height": 480,
+          "source_width": 640
+        },
+        "identity_recognition": false,
+        "model_load_seconds": 0.0800655,
+        "repeat": {
+          "faces": [],
+          "inference_seconds": 0.0058105,
+          "local_only": true,
+          "postprocess_seconds": 0.0001529,
+          "prepare_seconds": 0.0035186,
+          "source_height": 480,
+          "source_width": 640
+        },
+        "peak_working_set_mib": 51.461,
+        "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+      },
+      "reference_max_error": 0.0,
+      "neutral_vs_source_max_difference": 1.4901161193847656e-08,
+      "actual_float_input_sha256": "a8fac1a1dba923611bd43aa8c6eb15a5fab3c2691508b485ce057dba837e8ad1",
+      "source_sha256": "9c001e4eb9c9c64e9783048eab66f116faec855ff992200048b4dc89f3037271",
+      "success": true
+    }
+  ],
+  "real_cloud_requests": 0,
+  "portrait_retouch_verified": false,
+  "corrupted_model_rejected_before_loading_runtime": true,
+  "corrupted_runtime_rejected_before_loading_native_code": true,
+  "public_source_unchanged": true,
+  "success": true,
+  "source_base_commit": "0539886df0eb244fb34a92ec51844428ea6b977d",
+  "measured_tree_dirty": true,
+  "initial_wrong_input_comparison": {
+    "success": false,
+    "observed_error": "original: geometry/score mismatch 0.0008733689785003773",
+    "coordinate_tolerance": 0.0002,
+    "reference_input": "PNG byte samples converted to float sRGB",
+    "native_input": "raster decode followed by the existing default develop() output",
+    "next": "Dump actual neutral float input and compare identical pixels; investigate any remaining mismatch without relaxing tolerance"
+  },
+  "initial_comparison_cause": "PNG bytes were compared with the native develop() output, whose existing highlight shoulder changes neutral display pixels; the matched-input test keeps the original tolerance",
+  "asset_manifest": {
+    "version": 1,
+    "model": {
+      "name": "face_detection_yunet_2023mar.onnx",
+      "repository": "https://github.com/opencv/opencv_zoo",
+      "revision": "48b10fa505aeb51fbd127fc60a5c660040e823b7",
+      "url": "https://media.githubusercontent.com/media/opencv/opencv_zoo/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
+      "bytes": 232589,
+      "sha256": "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
+      "license": "MIT",
+      "license_url": "https://github.com/opencv/opencv_zoo/blob/48b10fa505aeb51fbd127fc60a5c660040e823b7/models/face_detection_yunet/LICENSE"
+    },
+    "runtime": {
+      "version": "1.31.0",
+      "url": "https://github.com/microsoft/onnxruntime/releases/download/v1.31.0/onnxruntime-win-x64-1.31.0.zip",
+      "archive_bytes": 82887349,
+      "archive_sha256": "3958d8a44984160692c1b4ffd0de3cb48f8c39f9d34bb31e433db06e30b82195",
+      "name": "onnxruntime.dll",
+      "bytes": 17253176,
+      "sha256": "0c42dc4e278f0968fdf9ebf1b1e54a74c657a9942e70803e453c91993451cf4c",
+      "license": "MIT",
+      "license_url": "https://github.com/microsoft/onnxruntime/blob/v1.31.0/LICENSE"
+    },
+    "input": {
+      "width": 640,
+      "height": 640,
+      "channels": "BGR",
+      "layout": "NCHW",
+      "range": "0..255"
+    },
+    "outputs": "cls/obj/bbox/kps at strides 8,16,32; five points per face",
+    "execution": "CPU only; no automatic download or remote inference",
+    "dependency_audit": "Optional runtime has MSVC runtime and delay imports; clean Windows and optional-pack dependency audit remain required"
+  },
+  "runtime_dependencies": {
+    "kind": "optional-yunet-cpu-component",
+    "model_sha256": "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
+    "runtime_sha256": "0c42dc4e278f0968fdf9ebf1b1e54a74c657a9942e70803e453c91993451cf4c",
+    "dependencies": {
+      "normal": [
+        "advapi32.dll",
+        "api-ms-win-core-path-l1-1-0.dll",
+        "api-ms-win-crt-convert-l1-1-0.dll",
+        "api-ms-win-crt-filesystem-l1-1-0.dll",
+        "api-ms-win-crt-heap-l1-1-0.dll",
+        "api-ms-win-crt-locale-l1-1-0.dll",
+        "api-ms-win-crt-math-l1-1-0.dll",
+        "api-ms-win-crt-runtime-l1-1-0.dll",
+        "api-ms-win-crt-stdio-l1-1-0.dll",
+        "api-ms-win-crt-string-l1-1-0.dll",
+        "api-ms-win-crt-time-l1-1-0.dll",
+        "dbghelp.dll",
+        "dxgi.dll",
+        "kernel32.dll",
+        "msvcp140.dll",
+        "msvcp140_1.dll",
+        "setupapi.dll",
+        "vcruntime140.dll",
+        "vcruntime140_1.dll"
+      ],
+      "delay": [
+        "shell32.dll"
+      ]
+    },
+    "dependency_policy": "Explicit runtime, dependencies restricted to System32",
+    "external_vc_runtime_required": true,
+    "clean_windows_verified": false,
+    "cpu_inference_validation": "Run tools/validate_native_faces.py separately; preparation is not inference acceptance"
+  },
+  "validation_scope": "Independent NumPy preprocessing/postprocessing with Python ONNX Runtime 1.31.0 on the exact dumped native float input; not an independent model-accuracy study",
+  "tests": {
+    "rust_default_passed": 55,
+    "rust_default_ignored": 2,
+    "explicit_public_face_fixture_passed": 1,
+    "new_asset_preparation_python_tests_passed": 3,
+    "full_python_total": 174,
+    "full_python_skipped": 2
+  },
+  "limitations": [
+    "Developer core/probe only; no desktop face-detection control yet",
+    "No skin parsing/retouch/blemish/contour editing yet",
+    "One public portrait and padding/mirror variants; not user portraits, crowd/pose/skin calibration",
+    "CPU only; no GPU or clean Windows validation",
+    "Optional runtime requires separate MSVC x64 runtime; model component is not a standalone certification"
+  ]
+}

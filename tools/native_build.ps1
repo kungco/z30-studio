@@ -9,6 +9,8 @@ param(
     [switch]$PhotoExportProbe,
     [switch]$EditProbe,
     [switch]$FullCacheProbe,
+    [switch]$VisionProbe,
+    [switch]$VisionFixtures,
     [string]$RawRuntime
 )
 $ErrorActionPreference='Stop'
@@ -75,6 +77,7 @@ try {
     if($LASTEXITCODE -ne 0){throw 'Rust toolchain unavailable'}
     if($Test){& $cargoTool test --workspace --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Native tests failed'}}
     if($RawFixtures){& $cargoTool test -p z30-core --release --locked raw::tests::real_z30_12_and_14_bit_full_and_half -- --ignored --test-threads=1;if($LASTEXITCODE -ne 0){throw 'Explicit RAW fixture tests failed'}}
+    if($VisionFixtures){& $cargoTool test -p z30-vision --release --locked real_pinned_cpu_model_on_an_explicit_public_photo -- --ignored --test-threads=1;if($LASTEXITCODE -ne 0){throw 'Explicit local face fixture tests failed'}}
     $buildArgs=@('build','--workspace','--locked','-j','4')
     if(-not $DebugBuild){$buildArgs+='--release'}
     & $cargoTool @buildArgs
@@ -85,6 +88,7 @@ try {
     if($PhotoExportProbe){& $cargoTool build -p z30-core --example photo_export_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Photo export probe build failed'}}
     if($EditProbe){& $cargoTool build -p z30-core --example edit_preview_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Edit preview probe build failed'}}
     if($FullCacheProbe){& $cargoTool build -p z30-core --example full_cache_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Full-size cache probe build failed'}}
+    if($VisionProbe){& $cargoTool build -p z30-vision --example face_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Face detector probe build failed'}}
     $profile=if($DebugBuild){'debug'}else{'release'}
     if(((& git rev-parse HEAD).Trim() -ne $sourceCommit) -or ([bool]((& git status --porcelain) -join '') -ne $sourceDirty)){
         throw 'Source revision/cleanliness changed during build; rebuild before staging'

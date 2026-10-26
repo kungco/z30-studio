@@ -9,7 +9,7 @@
 | float32 tone/肩部/阴影、OKLab 护色、九参数/锐化 | processing.py、quality.py；test_processing.py/test_quality_cache.py | 2B 暖色数值跳变已修正；修正 Python/Rust 四组对照 <一个 RGB16 码值，旧输出差异另报；2F 原生 UI 已接通 |
 | 曲线/HSL/分级/Kelvin/吸管/裁剪/拉直/细节 | darkroom.py；test_darkroom.py | 未迁移 / 2、6 |
 | 蒙版/范围/画笔、修复/克隆/降噪 | spatial.py；test_spatial.py/test_local_edits.py | 未迁移 / 5、6 |
-| 本机 SegFormer 主体/天空/人物与皮肤柔化 | local_vision.py；test_local_edits.py | 未迁移 / 5 |
+| 本机 SegFormer 主体/天空/人物与皮肤柔化 | local_vision.py；test_local_edits.py | 5A 新增可选 YuNet 人脸/五点 CPU 定位核心与实际推理对照，未接 UI；原 SegFormer 场景蒙版/人物区域与皮肤柔化仍待迁移 |
 | Nikon Z Lensfun 数据/焦距插值/色差估计 | lens_tools.py、data/；test_lens_tools.py | 未迁移 / 6 |
 | 图库评分/旗标/关键词/比较/选择/参数分组同步 | photo_workflow.py；test_workflow.py、library-workflow.test.cjs | 原生已迁移评分、逐张选择、调整前后比较；旗标/关键词/多选/分组同步仍待阶段 6 |
 | 草稿 SQLite CAS、快照/版本/项目打包 | drafts.py、projects.py；test_drafts.py/test_projects.py | 原生 JSON 独占/CAS/v1→v2 备份/逐张参数恢复已接通；完整旧项目、版本/打包仍待迁移 |

@@ -75,3 +75,5 @@ Slint 1.18.1 采用 Royalty-free Desktop License 2.0，并在顶层“关于”�
 `tools/smoke_native_editing.py --exe ... --out 新报告.json [--raw 样片.NEF --dll 固定库.dll]` 通过显式 QA 文件协议驱动同一组 Slint 回调，在隔离草稿和新文件名下验证调色/切图/导出/取消/退出/恢复，不启用 HTTP 服务。它不是鼠标或截图验收；2F 另用 Computer Use 实际检查过窗口、曝光/对比和文件保存对话框。
 
 随包验收改用 `--raw 样片.NEF --bundled-raw`，明确移除 RAW 环境变量、仅保留系统 PATH，并从不同的中文工作目录启动。探针会核对进程内嵌提交/脏标记与 build-info.json，避免 Cargo 缓存造成旧构建来源标记。
+
+阶段 5A 仅新增开发者可用的 `z30-vision` 人脸/五点定位核心和 `-VisionProbe` / `-VisionFixtures` 验证入口，桌面人像按钮和修饰功能尚未接通。模型/运行库不随当前基础包提供；可选组件还需要本机 Microsoft VC++ x64 运行库，未验证干净 Windows。基础编辑启动不加载它。见 docs/reports/native-stage5a-face.md。

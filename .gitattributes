@@ -6,3 +6,5 @@
 native/vendor/libraw/libraw/** -text -whitespace
 native/vendor/libraw/LICENSE.* -text -whitespace
 native/vendor/libraw/COPYRIGHT -text -whitespace
+native/vendor/vision/*-LICENSE.txt -text -whitespace
+native/vendor/vision/ONNXRuntime-ThirdPartyNotices.txt -text -whitespace
