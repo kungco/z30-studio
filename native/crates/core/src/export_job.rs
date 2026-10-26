@@ -79,7 +79,7 @@ impl ExportSource {
         {
             #[cfg(windows)]
             {
-                let dll = raw_dll.ok_or_else(|| Error::Policy("尚未配置 RAW 运行库".into()))?;
+                let dll = raw_dll.ok_or_else(|| Error::Policy("缺少 RAW 解码组件，请完整解压软件包并保留 raw 文件夹".into()))?;
                 crate::raw::LibRaw::load(dll)?
                     .decode(&self.edit.path, false, self.edit.recipe.white_balance)?
                     .frame

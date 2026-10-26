@@ -23,11 +23,15 @@ def main():
     parser.add_argument('--out', required=True, type=Path)
     parser.add_argument('--raw', type=Path)
     parser.add_argument('--dll', type=Path)
+    parser.add_argument('--bundled-raw', action='store_true', help='Test executable-relative RAW support without an environment override')
     args = parser.parse_args()
     if args.out.exists() or args.out.suffix != '.json':
         parser.error('Choose a new JSON report path')
-    if bool(args.raw) != bool(args.dll):
-        parser.error('--raw and --dll must be used together')
+    if args.bundled_raw:
+        if not args.raw or args.dll:
+            parser.error('--bundled-raw requires --raw and forbids --dll')
+    elif bool(args.raw) != bool(args.dll):
+        parser.error('--raw requires --dll or --bundled-raw')
     workspace = Path(__file__).resolve().parents[1] / '.development/native-editing'
     workspace.mkdir(parents=True, exist_ok=True)
     root = Path(tempfile.mkdtemp(prefix='UI 编辑 ', dir=workspace)).resolve()
@@ -50,8 +54,13 @@ def main():
     else:
         env.pop('Z30_LIBRAW_DLL', None)
     result = dict(stage='native-editing-callback-process', exe_sha256=digest(args.exe),
+        raw_runtime_mode='bundled' if args.bundled_raw else ('explicit' if args.dll else 'none'),
+        raw_environment_override='Z30_LIBRAW_DLL' in env,
         qa_directory=str(root), checks=[], timings={}, physical_clicks_verified=False,
         screenshot_visual_acceptance=False, real_cloud_inference_requests=0)
+    build_info_path = args.exe.resolve().parent/'build-info.json'
+    build_info = json.loads(build_info_path.read_text(encoding='utf-8')) if build_info_path.exists() else None
+    result['build_provenance_checked'] = build_info is not None
     active = []
     def check(name, condition):
         if not condition:
@@ -70,6 +79,11 @@ def main():
                     env=env, cwd=root, stdout=log, stderr=log, startupinfo=startup)
                 active.append((process, stop))
                 result[f'build{cycle}'] = wait_json(ready, process)
+                if build_info is not None:
+                    check(f'process {cycle} provenance matches staged build',
+                          result[f'build{cycle}']['source_commit'] == build_info['source_commit']
+                          and result[f'build{cycle}']['source_dirty'] == build_info['source_tree_dirty']
+                          and result['exe_sha256'] == build_info['exe_sha256'])
                 wait_json(ready.with_suffix('.preview.json'), process, 40)
                 sequence = 0
                 def command(action='snapshot', **kwargs):

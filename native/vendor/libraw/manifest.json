@@ -12,6 +12,16 @@
     "libraw_types.h": "294f6d0c904d017d4b047fd30890e16dbd4a6b7665911b5aa1b99df7bde0aa20",
     "libraw_version.h": "b693f77b382dc4b9920625cc30671c99f336b16ba8bd4601474cebc1e7b3d0c5"
   },
-  "binary_redistributed": false,
-  "runtime_prerequisite": "Official MSVC build needs Microsoft VC++ 2015-2022 x64 runtime; clean-machine redistribution not yet verified"
+  "binary_redistributed": true,
+  "reference_dll_note": "dll_sha256 above identifies the unchanged official MSVC comparison baseline, not the portable runtime",
+  "portable_runtime": {
+    "builder": "tools/build_native_libraw.py",
+    "compiler": "GNU GCC 16.2.0, w64devkit",
+    "verified_dll_sha256": "da6562e67df6f05d84081d0256594faae9c2d15af7a353e861c824f2c71bcdd1",
+    "distribution_license": "CDDL-1.0",
+    "corresponding_source": "sources/LibRaw-0.22.2-Win64.zip",
+    "optional_codecs": [],
+    "openmp": false
+  },
+  "runtime_prerequisite": "Portable GNU build imports only KERNEL32.dll, msvcrt.dll and WS2_32.dll. Clean Windows VM not yet verified."
 }

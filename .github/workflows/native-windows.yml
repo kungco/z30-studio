@@ -1,9 +1,9 @@
 name: Native Windows migration
 on:
   push:
-    paths: ['native/**', 'tools/native_build.ps1', '.github/workflows/native-windows.yml']
+    paths: ['native/**', 'tools/native_build.ps1', 'tools/build_native_libraw.py', 'tools/package_native.py', 'tools/compare_native_libraw.py', '.github/workflows/native-windows.yml']
   pull_request:
-    paths: ['native/**', 'tools/native_build.ps1', '.github/workflows/native-windows.yml']
+    paths: ['native/**', 'tools/native_build.ps1', 'tools/build_native_libraw.py', 'tools/package_native.py', 'tools/compare_native_libraw.py', '.github/workflows/native-windows.yml']
   workflow_dispatch:
 permissions:
   contents: read

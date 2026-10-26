@@ -8,7 +8,20 @@ fn main() {
             .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
             .unwrap_or_default()
     }
-    let commit = git(&["rev-parse", "HEAD"]);
+    for name in ["Z30_BUILD_SOURCE_COMMIT", "Z30_BUILD_SOURCE_DIRTY"] {
+        println!("cargo:rerun-if-env-changed={name}");
+    }
+    for path in [
+        "src",
+        "../core/src",
+        "../core/build.rs",
+        "Cargo.toml",
+        "../../Cargo.lock",
+    ] {
+        println!("cargo:rerun-if-changed={path}");
+    }
+    let commit =
+        std::env::var("Z30_BUILD_SOURCE_COMMIT").unwrap_or_else(|_| git(&["rev-parse", "HEAD"]));
     println!(
         "cargo:rustc-env=Z30_SOURCE_COMMIT={}",
         if commit.is_empty() {
@@ -17,10 +30,11 @@ fn main() {
             &commit
         }
     );
-    println!(
-        "cargo:rustc-env=Z30_SOURCE_DIRTY={}",
-        !git(&["status", "--porcelain"]).is_empty()
-    );
+    let dirty = std::env::var("Z30_BUILD_SOURCE_DIRTY").unwrap_or_else(|_| {
+        let status = git(&["status", "--porcelain"]);
+        (!status.is_empty()).to_string()
+    });
+    println!("cargo:rustc-env=Z30_SOURCE_DIRTY={dirty}");
     for file in [
         "HEAD".to_owned(),
         "index".to_owned(),

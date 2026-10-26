@@ -4,7 +4,7 @@
 
 当前开发版可在原生窗口中调节九个全局参数、逐张保存配方、撤销/重做、重置、查看调整前后，以及后台导出全尺寸 JPEG（质量 95）、PNG8、真正的 TIFF16。导出均带 sRGB ICC，并拒绝覆盖任何已有文件。连续拖动约 450 ms 停顿后合并为一步撤销；历史最多 50 步且仅保留在当前进程，最终参数会自动保存并在重启后恢复。
 
-JPEG/PNG 输入支持已有 ICC 策略及 RGB16 PNG。NEF 使用已验证的 LibRaw 0.22.2，**当前仍需显式设置 Z30_LIBRAW_DLL 为 DLL 绝对路径**；它尚未随 ZIP 分发，缺失时显示错误。公开 Z30 12/14 位实拍样片的界面显影和全尺寸输出已验证，用户自己的样片、干净 Windows、显示器 ICC/校准肤色/打印尚未验证。损坏 ICC、CMYK/YCCK、cICP/HDR 等不支持的输入仍明确拒绝。
+JPEG/PNG 输入支持已有 ICC 策略及 RGB16 PNG。2G 完整软件包包含 LibRaw 0.22.2，**解压整个 ZIP 后直接运行 Z30Studio.exe，无需配置 RAW 环境变量或另装 VC++ 运行库**。请保留同目录的 raw、sources 和 licenses 文件夹。程序只从自身目录读取随包解码器，不搜索工作目录/PATH。开发者仍可用绝对路径 Z30_LIBRAW_DLL 显式覆盖。公开 Z30 12/14 位实拍样片已验证；用户自己的样片、干净 Windows、显示器 ICC/校准肤色/打印尚未验证。损坏 ICC、CMYK/YCCK、cICP/HDR 等不支持的输入仍明确拒绝。
 
 导出捕获点击时的照片和配方，之后切图或编辑不会改写正在导出的任务。关闭窗口会先保存参数，再请求取消导出并清理临时文件；取消按处理阶段和写入边界生效，不会强杀线程。极端解码器/文件系统阻塞尚无独立进程硬超时保证。崩溃恢复导出队列和批量将在后续阶段迁移。
 
@@ -25,7 +25,18 @@ JPEG/PNG 输入支持已有 ICC 策略及 RGB16 PNG。NEF 使用已验证的 Lib
 
 显式真实 RAW 测试（不将照片或 DLL 提交到 Git）：设置 `Z30_LIBRAW_DLL` 为固定 0.22.2 DLL 的绝对路径，`Z30_RAW_12`、`Z30_RAW_14` 为两份公开样片路径，再执行构建脚本加 `-Test -RawProbe -RawFixtures`。未提供这些文件时常规测试明确显示 ignored；不能当成真实 RAW 已验证。对照命令为 `python tools/native_raw_benchmark.py --dll ... --raw12 ... --raw14 ...`，只在新的 .development 目录写探针数据。
 
-头文件、上游许可证和下载/文件校验在 vendor/libraw/。官方 Windows DLL 需要 Microsoft VC++ 2015–2022 x64 运行库；当前探针在本机验证，未将该 DLL 放进基础查看器分发。最终动态库/对应源码/许可和运行库交付尚待完成，不宣称干净 Windows 已可运行 RAW。
+头文件、上游许可证和下载/文件校验在 vendor/libraw/。随包 DLL 从固定 SHA-256 的官方 0.22.2 源码构建，静态链接 GCC 运行库，仅导入 Windows 系统库；对应完整 SDK 源码、构建脚本、CDDL/GCC 运行库例外及版权声明均在包内。官方 MSVC DLL 保留为对照基准。见 docs/reports/native-stage2g-runtime.md；未使用干净 Windows 虚拟机验收。
+
+构建包含 RAW 的完整预览包（Python 仅为开发打包工具，不随应用运行）：
+
+```powershell
+python tools/build_native_libraw.py --archive LibRaw-0.22.2-Win64.zip --toolchain-bin '你的w64devkit/bin' --out .development/raw-runtime
+./tools/native_build.ps1 -ToolchainRoot '你的独立工具链目录' -Test -RawRuntime .development/raw-runtime
+# 提交并确保 git status 干净后重新构建，再使用返回的 stage 路径
+python tools/package_native.py pack --stage native/dist/stage-实际编号 --out native/dist/Z30Studio-native.zip
+```
+
+RAW 构建目录和 ZIP 必须是新路径。打包器拒绝脏构建、缺失源码/许可、非系统 DLL 依赖、哈希不一致及覆盖现有 ZIP。解压后可执行 `python tools/package_native.py verify --stage 解压目录` 检查完整性；校验和不是数字签名。普通构建未传 `-RawRuntime` 时仍只生成开发阶段目录，不能通过完整 ZIP 打包门槛。
 
 本机验证的是 Rust GNU + 便携 w64devkit 2.10.1：Rust 自带 CRT/链接库与便携 dlltool/汇编器配合，构建脚本仅修改子进程环境，不改全局 PATH。Windows Actions 使用 MSVC；不能在 CI 完成前宣称两条编译链均已验证。
 
@@ -35,7 +46,7 @@ JPEG/PNG 输入支持已有 ICC 策略及 RGB16 PNG。NEF 使用已验证的 Lib
 
 程序按路径只读引用原片，当前本机草稿位于 `%LOCALAPPDATA%/Z30StudioNative`。工作目录独占锁防止两个新版实例同时写入；保存前检查磁盘版本，冲突或坏 JSON 明确阻止覆盖。旧开发构建没有该锁，升级时先关闭旧构建，不要跨版本同时编辑同一草稿。
 
-`Z30_NATIVE_DATA_DIR` 仅用于显式选择独立工作目录/测试；新原生草稿不是 Python .z30proj 的替代格式。高级项目、版本、后台批量、RAW 独立分发和人物精修须逐项迁移，不静默抛弃旧参数。
+`Z30_NATIVE_DATA_DIR` 仅用于显式选择独立工作目录/测试；新原生草稿不是 Python .z30proj 的替代格式。高级项目、版本、后台批量和人物精修须逐项迁移，不静默抛弃旧参数。
 
 `tools/smoke_native.py` 使用隔离中文目录、系统 PATH、进程标记测试启动/预览就绪、退出、重复实例拒绝和重启恢复。事件循环标记不是屏幕首帧指标；报告不能当成完整 RAW 显影性能或专业画质验收。
 
@@ -54,3 +65,5 @@ Slint 1.18.1 采用 Royalty-free Desktop License 2.0，并在顶层“关于”�
 原生草稿当前写 v2、读 v1/v2；第一次 v1→v2 保存前生成 session-v1-backup-*.json 原字节备份。此为原生草稿，仍不直接导入 Python .z30proj。2E 配方/50 步内存撤销/缓存接口已验证，现已接线到 2F 界面；见 docs/reports/native-stage2e-foundation.md 与 native-stage2f-ui.md。
 
 `tools/smoke_native_editing.py --exe ... --out 新报告.json [--raw 样片.NEF --dll 固定库.dll]` 通过显式 QA 文件协议驱动同一组 Slint 回调，在隔离草稿和新文件名下验证调色/切图/导出/取消/退出/恢复，不启用 HTTP 服务。它不是鼠标或截图验收；2F 另用 Computer Use 实际检查过窗口、曝光/对比和文件保存对话框。
+
+随包验收改用 `--raw 样片.NEF --bundled-raw`，明确移除 RAW 环境变量、仅保留系统 PATH，并从不同的中文工作目录启动。探针会核对进程内嵌提交/脏标记与 build-info.json，避免 Cargo 缓存造成旧构建来源标记。

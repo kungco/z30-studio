@@ -149,7 +149,7 @@ impl LibRaw {
             )
             .map_err(|e| {
                 policy(format!(
-                    "无法加载 LibRaw：{e}；官方版本需要 VC++ x64 运行库"
+                    "无法加载 RAW 解码组件：{e}；请重新完整解压软件包，或检查自定义运行库的依赖"
                 ))
             })?
             .into();

@@ -94,7 +94,7 @@ impl PreviewEngine {
                 #[cfg(windows)]
                 {
                     let dll = self.raw_dll.as_ref().ok_or_else(|| {
-                        Error::Policy("此开发版尚未配置 RAW 运行库；原片未修改".into())
+                        Error::Policy("缺少 RAW 解码组件，请完整解压软件包并保留 raw 文件夹；原片未修改".into())
                     })?;
                     let decoded = crate::raw::LibRaw::load(dll)?.decode(&stamp.path, false, wb)?;
                     (

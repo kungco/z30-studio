@@ -7,10 +7,14 @@ param(
     [switch]$ExportProbe,
     [switch]$RasterProbe,
     [switch]$PhotoExportProbe,
-    [switch]$EditProbe
+    [switch]$EditProbe,
+    [string]$RawRuntime
 )
 $ErrorActionPreference='Stop'
 $repoRoot=Split-Path -Parent $PSScriptRoot
+if($RawRuntime){$runtimePath=(Resolve-Path -LiteralPath $RawRuntime).Path}
+$sourceCommit=(& git -C $repoRoot rev-parse HEAD).Trim()
+$sourceDirty=[bool]((& git -C $repoRoot status --porcelain) -join '')
 $cargoTool='cargo'
 $rustcTool='rustc'
 if($ToolchainRoot){
@@ -60,8 +64,12 @@ if($ToolchainRoot){
     }
 }
 if(-not (Get-Command $cargoTool -ErrorAction SilentlyContinue)){throw 'Install Rust or pass -ToolchainRoot. No global PATH changes are made.'}
+$previousBuildCommit=$env:Z30_BUILD_SOURCE_COMMIT
+$previousBuildDirty=$env:Z30_BUILD_SOURCE_DIRTY
 Push-Location (Join-Path $repoRoot 'native')
 try {
+    $env:Z30_BUILD_SOURCE_COMMIT=$sourceCommit
+    $env:Z30_BUILD_SOURCE_DIRTY=$sourceDirty.ToString().ToLowerInvariant()
     & $rustcTool -Vv
     if($LASTEXITCODE -ne 0){throw 'Rust toolchain unavailable'}
     if($Test){& $cargoTool test --workspace --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Native tests failed'}}
@@ -76,25 +84,39 @@ try {
     if($PhotoExportProbe){& $cargoTool build -p z30-core --example photo_export_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Photo export probe build failed'}}
     if($EditProbe){& $cargoTool build -p z30-core --example edit_preview_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Edit preview probe build failed'}}
     $profile=if($DebugBuild){'debug'}else{'release'}
+    if(((& git rev-parse HEAD).Trim() -ne $sourceCommit) -or ([bool]((& git status --porcelain) -join '') -ne $sourceDirty)){
+        throw 'Source revision/cleanliness changed during build; rebuild before staging'
+    }
     $binary=Join-Path (Get-Location) "target\$profile\z30-native.exe"
     $staging=Join-Path $repoRoot ('native\dist\stage-'+[Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $staging | Out-Null
     Copy-Item -LiteralPath $binary -Destination (Join-Path $staging 'Z30Studio.exe')
     Copy-Item -LiteralPath (Join-Path $repoRoot 'native\licenses') -Destination (Join-Path $staging 'licenses') -Recurse
     Copy-Item -LiteralPath (Join-Path $repoRoot 'native\README.md') -Destination (Join-Path $staging '使用说明.md')
+    if($RawRuntime){
+        $packPython=Join-Path $repoRoot '.venv\Scripts\python.exe'
+        if(-not (Test-Path -LiteralPath $packPython)){$packPython='python'}
+        & $packPython (Join-Path $repoRoot 'tools\package_native.py') install-runtime --stage $staging --runtime $runtimePath
+        if($LASTEXITCODE -ne 0){throw 'RAW runtime distribution verification failed'}
+    }
     $buildInfo=[ordered]@{
-        app='Z30 Studio Native';version='0.1.0-stage2f';profile=$profile
-        source_commit=(& git rev-parse HEAD).Trim()
-        source_tree_dirty=[bool]((& git status --porcelain) -join '')
+        app='Z30 Studio Native';version='0.1.0-stage2g';profile=$profile
+        source_commit=$sourceCommit
+        source_tree_dirty=$sourceDirty
         compiler=(& $rustcTool --version)
         exe_bytes=(Get-Item -LiteralPath $binary).Length
         exe_sha256=(Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
         full_feature_migration_complete=$false
         models_bundled=$false
+        raw_bundled=[bool]$RawRuntime
         runtime='Windows system DLLs and OS UI fonts; no Python/browser/local HTTP server'
     }
     [System.IO.File]::WriteAllText((Join-Path $staging 'build-info.json'),($buildInfo|ConvertTo-Json -Depth 5),[System.Text.UTF8Encoding]::new($false))
     Get-Item -LiteralPath $binary | Select-Object FullName,Length
     Get-FileHash -LiteralPath $binary -Algorithm SHA256
     Write-Output "Staged app: $staging\Z30Studio.exe"
-} finally {Pop-Location}
+} finally {
+    [System.Environment]::SetEnvironmentVariable('Z30_BUILD_SOURCE_COMMIT',$previousBuildCommit,'Process')
+    [System.Environment]::SetEnvironmentVariable('Z30_BUILD_SOURCE_DIRTY',$previousBuildDirty,'Process')
+    Pop-Location
+}

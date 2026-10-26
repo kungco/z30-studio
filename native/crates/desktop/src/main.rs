@@ -257,7 +257,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     ui.set_photos(ModelRc::from(Rc::clone(&rows)));
     ui.set_can_import(!protected);
     ui.set_draft_status(restore_status.into());
-    let raw_dll = std::env::var_os("Z30_LIBRAW_DLL").map(PathBuf::from);
+    let raw_dll = z30_core::runtime::raw_library(
+        &std::env::current_exe()?, std::env::var_os("Z30_LIBRAW_DLL").as_deref(),
+    )?;
     let mut engine = PreviewEngine::new(raw_dll.clone())?;
     // Serialize full-image computation so export + a new selection cannot hold
     // two full RAW decodes at once. The event loop remains independent.
