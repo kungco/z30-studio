@@ -100,7 +100,7 @@ try {
         if($LASTEXITCODE -ne 0){throw 'RAW runtime distribution verification failed'}
     }
     $buildInfo=[ordered]@{
-        app='Z30 Studio Native';version='0.1.0-stage2g';profile=$profile
+        app='Z30 Studio Native';version='0.1.0-native-preview';profile=$profile
         source_commit=$sourceCommit
         source_tree_dirty=$sourceDirty
         compiler=(& $rustcTool --version)
