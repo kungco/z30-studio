@@ -219,8 +219,14 @@ pub fn run(
                 "Codex CLI 调色超过 180 秒，已停止；可手动重试".into(),
             ));
         }
-        if let Some(status) = child.try_wait()? {
-            break status;
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {}
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(Error::Policy("Codex CLI 进程状态异常；没有应用参数".into()));
+            }
         }
         std::thread::sleep(Duration::from_millis(25));
     };

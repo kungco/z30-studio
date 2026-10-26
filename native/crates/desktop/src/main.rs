@@ -23,7 +23,13 @@ use z30_core::{
 };
 slint::include_modules!();
 mod ai_cli;
+mod ai_http;
 mod qa;
+
+enum AiBackend {
+    Codex,
+    Compatible(ai_http::Config),
+}
 
 struct State {
     edits: EditingSession,
@@ -178,7 +184,7 @@ fn prepare_exit(state: &mut State, ui: &AppWindow, discard: bool) -> bool {
     if let Some(control) = &state.ai_control {
         control.store(true, Ordering::Release);
         state.close_after_ai = true;
-        ui.set_ai_status("退出前正在停止 Codex CLI 并清理预览临时文件…".into());
+        ui.set_ai_status("退出前正在停止 AI 请求并清理预览临时文件…".into());
         ui.set_exit_warning(false);
         return false;
     }
@@ -239,6 +245,7 @@ fn fingerprint(bytes: &[u8]) -> String {
 fn evaluate_ai(
     request: &EditRequest,
     source: &ExportSource,
+    backend: &AiBackend,
     goal: &str,
     options: Options,
     current: &SharedPixelBuffer<Rgb8Pixel>,
@@ -254,14 +261,25 @@ fn evaluate_ai(
         .path
         .extension()
         .is_some_and(|v| v.eq_ignore_ascii_case("nef"));
-    let advice = ai_cli::run(
-        request.recipe,
-        goal,
-        raw,
-        &neutral_jpeg,
-        &current_jpeg,
-        cancel,
-    )?;
+    let advice = match backend {
+        AiBackend::Codex => ai_cli::run(
+            request.recipe,
+            goal,
+            raw,
+            &neutral_jpeg,
+            &current_jpeg,
+            cancel,
+        )?,
+        AiBackend::Compatible(config) => ai_http::run(
+            config,
+            request.recipe,
+            goal,
+            raw,
+            &neutral_jpeg,
+            &current_jpeg,
+            cancel,
+        )?,
+    };
     let bounded = options.constrain(request.recipe.parameters, advice.adjustments.parameters())?;
     let reference = ai::metrics(current.as_bytes(), current.width(), current.height())?;
     let mut last_reasons = Vec::new();
@@ -687,6 +705,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let goal=format!("{} 风格偏好：{} 用户补充风格数据：{}",ai::AUTO_GOAL,style,user_goal);
             let options=Options{strength:ui.get_ai_strength(),..Options::default()};
             if let Err(e)=options.validate() {ui.set_ai_status(e.to_string().into());return}
+            let backend=match ui.get_ai_provider() {
+                0 => AiBackend::Codex,
+                selected => match ai_http::Config::from_selection(selected,
+                    &ui.get_ai_api_base(),&ui.get_ai_model(),&ui.get_ai_api_key()) {
+                    Ok(config)=>AiBackend::Compatible(config),
+                    Err(error)=>{ui.set_ai_status(error.to_string().into());return;}
+                },
+            };
+            let backend_name=if matches!(&backend,AiBackend::Codex) {"Codex CLI"} else {"兼容接口"};
             let Some(current)=ui.get_preview().to_rgb8() else {
                 ui.set_ai_status("无法读取当前预览；没有发送照片".into());return;
             };
@@ -713,13 +740,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let cancel=Arc::new(AtomicBool::new(false));
             state.ai_control=Some(Arc::clone(&cancel));
             ui.set_ai_busy(true);
-            ui.set_ai_status("Codex CLI 分析中：仅发送两张无 EXIF 的 sRGB JPEG 预览、当前九参数与目标；原片不上传。可取消。".into());
+            if !matches!(&backend,AiBackend::Codex) {ui.set_ai_api_key("".into());}
+            ui.set_ai_status(format!("{backend_name} 分析中：仅发送两张无 EXIF 的 sRGB JPEG 预览、当前九参数与目标；原片不上传。可取消。").into());
             let sender=ai_results.clone();
             let compute=Arc::clone(&compute);
             let engine=Arc::clone(&engine);
             std::thread::spawn(move || {
                 let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(||
-                    evaluate_ai(&request,&source,&goal,options,&current,&neutral,&compute,&engine,&cancel)
+                    evaluate_ai(&request,&source,&backend,&goal,options,&current,&neutral,&compute,&engine,&cancel)
                 )).unwrap_or_else(|_|Err(z30_core::Error::Policy("AI 后台任务异常；没有应用参数".into())));
                 let _=sender.send(AiOutcome{request,source,revision,auto_apply,result});
             });
@@ -732,7 +760,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let Some(ui) = weak.upgrade() else { return };
             if let Some(control) = &state.borrow().ai_control {
                 control.store(true, Ordering::Release);
-                ui.set_ai_status("正在停止 Codex CLI 并删除临时预览…".into());
+                ui.set_ai_status("正在停止 AI 请求并删除临时预览…".into());
             }
         });
     }
@@ -1051,10 +1079,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             qa::Command::CancelPreview => ui.invoke_cancel_preview(),
                             qa::Command::RetryPreview => ui.invoke_retry_preview(),
                             qa::Command::CancelExport => ui.invoke_cancel_export(),
-                            qa::Command::AiStart { mode, strength, goal } => {
+                            qa::Command::AiStart { mode, strength, goal, provider, base_url, model, key } => {
                                 if let Some(v)=mode {ui.set_ai_mode(v);}
                                 if let Some(v)=strength {ui.set_ai_strength(v);}
                                 if let Some(v)=goal {ui.set_ai_goal(v.into());}
+                                if let Some(v)=provider {ui.set_ai_provider(v);}
+                                if let Some(v)=base_url {ui.set_ai_api_base(v.into());}
+                                if let Some(v)=model {ui.set_ai_model(v.into());}
+                                if let Some(v)=key {ui.set_ai_api_key(v.into());}
                                 ui.invoke_auto_grade();
                             }
                             qa::Command::AiCancel => ui.invoke_cancel_ai(),
