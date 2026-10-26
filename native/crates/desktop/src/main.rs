@@ -13,12 +13,13 @@ use std::{
 };
 use z30_core::{
     ai::{self, Advice, Options},
+    batch::{self, Queue as BatchQueue, RecipeMode, Store as BatchStore},
     develop::Parameters,
     editing::{EditRequest, EditingSession},
     editor::PreviewEngine,
     export::Format,
     export_job::{ExportControl, ExportReceipt, ExportSource},
-    session::{Session, SessionStore},
+    session::{Photo, Session, SessionStore},
     worker::LatestWorker,
 };
 slint::include_modules!();
@@ -38,6 +39,12 @@ struct State {
     export_control: Option<Arc<ExportControl>>,
     export_dialog: bool,
     close_after_export: bool,
+    batch: BatchQueue,
+    batch_store: BatchStore,
+    batch_protected: bool,
+    batch_dialog: bool,
+    batch_control: Option<(u64, Arc<ExportControl>)>,
+    close_after_batch: bool,
     store: SessionStore,
     protected: bool,
     dirty: bool,
@@ -181,6 +188,18 @@ fn prepare_exit(state: &mut State, ui: &AppWindow, discard: bool) -> bool {
     if discard {
         state.dirty = false;
     }
+    if !state.batch.paused && !state.batch_protected {
+        let _ = change_batch(state, ui, |queue| { queue.pause(); Ok(()) });
+    }
+    if let Some((_, control)) = &state.batch_control {
+        control.cancel();
+        state.close_after_batch = true;
+        ui.set_batch_status("退出前正在取消当前批量照片；其余任务已暂停…".into());
+    }
+    if state.batch_dialog {
+        state.close_after_batch = true;
+        ui.set_batch_status("请关闭批量目录对话框，随后退出".into());
+    }
     if let Some(control) = &state.ai_control {
         control.store(true, Ordering::Release);
         state.close_after_ai = true;
@@ -200,7 +219,58 @@ fn prepare_exit(state: &mut State, ui: &AppWindow, discard: bool) -> bool {
         ui.set_export_status("请关闭保存对话框，随后退出；此次不再导出".into());
         return false;
     }
+    if state.batch_control.is_some() || state.batch_dialog {
+        return false;
+    }
     true
+}
+
+fn refresh_batch(state: &State, ui: &AppWindow) {
+    let counts = state.batch.counts();
+    ui.set_batch_paused(state.batch.paused);
+    ui.set_batch_running(state.batch_control.is_some() || state.batch_dialog);
+    ui.set_batch_has_queued(counts.queued > 0);
+    ui.set_batch_has_retry(state.batch.jobs.iter().any(|job| {
+        matches!(job.state, batch::JobState::Failed | batch::JobState::Interrupted | batch::JobState::Cancelled)
+            && job.attempts < 5 && !job.destination.exists()
+    }));
+    ui.set_batch_has_records(counts.total > 0);
+    ui.set_batch_protected(state.batch_protected);
+    if counts.total == 0 && !state.batch_protected {
+        ui.set_batch_status("".into());
+        ui.set_batch_report("".into());
+        return;
+    }
+    let summary = format!(
+        "批量 {}/{} 完成 · {} 运行 · {} 待处理 · {} 失败/中断 · {} 取消{}{}",
+        counts.done, counts.total, counts.running, counts.queued,
+        counts.failed + counts.interrupted, counts.cancelled,
+        if state.batch.paused { " · 已暂停" } else { "" },
+        if state.batch_protected { " · 队列只读，请检查磁盘记录" } else { "" },
+    );
+    ui.set_batch_status(summary.into());
+    let details = state.batch.jobs.iter().map(|job| {
+        let name = job.source.file_name().unwrap_or_default().to_string_lossy();
+        format!("#{:03} {:?} · {} → {}{}", job.id, job.state, name,
+            job.destination.display(), if job.last_error.is_empty() { String::new() } else { format!("\n  {}", job.last_error) })
+    }).collect::<Vec<_>>().join("\n");
+    ui.set_batch_report(details.into());
+}
+
+fn change_batch<T>(state: &mut State, ui: &AppWindow, update: impl FnOnce(&mut BatchQueue) -> z30_core::Result<T>) -> z30_core::Result<T> {
+    if state.batch_protected {
+        return Err(z30_core::Error::Policy("批量队列读取/保存失败；未覆盖原记录".into()));
+    }
+    let mut next = state.batch.clone();
+    let value = update(&mut next)?;
+    if let Err(error) = state.batch_store.save(&next) {
+        state.batch_protected = true;
+        refresh_batch(state, ui);
+        return Err(error);
+    }
+    state.batch = next;
+    refresh_batch(state, ui);
+    Ok(value)
 }
 
 fn save_state(state: &mut State, ui: &AppWindow) {
@@ -447,6 +517,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         ),
     };
     let mut initial_dirty = false;
+    let batch_store = BatchStore::new(data_root())?;
+    let (batch, batch_protected, batch_load_error) = match batch_store.load() {
+        Ok(queue) => (queue, false, None),
+        Err(error) => (BatchQueue::default(), true, Some(error.to_string())),
+    };
     if !protected && !initial_photos.is_empty() {
         for path in initial_photos {
             if let Err(e) = session.add(&path) {
@@ -468,6 +543,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         export_control: None,
         export_dialog: false,
         close_after_export: false,
+        batch,
+        batch_store,
+        batch_protected,
+        batch_dialog: false,
+        batch_control: None,
+        close_after_batch: false,
         store,
         protected,
         dirty: initial_dirty,
@@ -481,6 +562,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     ui.set_photos(ModelRc::from(Rc::clone(&rows)));
     ui.set_can_import(!protected);
     ui.set_draft_status(restore_status.into());
+    refresh_batch(&state.borrow(), &ui);
+    if let Some(error) = batch_load_error {
+        ui.set_batch_status(format!("批量记录读取失败，原文件已保留：{error}").into());
+    }
     let raw_dll = z30_core::runtime::raw_library(
         &std::env::current_exe()?,
         std::env::var_os("Z30_LIBRAW_DLL").as_deref(),
@@ -508,10 +593,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (destinations, selected_destinations) =
         mpsc::channel::<(ExportSource, Format, Option<PathBuf>)>();
     let (exports, completed_exports) = mpsc::channel::<z30_core::Result<ExportReceipt>>();
+    let (batch_destinations, selected_batch_destinations) =
+        mpsc::channel::<(Vec<Photo>, Format, RecipeMode, Option<PathBuf>)>();
+    let (batch_results, completed_batch) =
+        mpsc::channel::<(u64, bool, z30_core::Result<ExportReceipt>)>();
     let (ai_results, completed_ai) = mpsc::channel::<AiOutcome>();
     // Only the explicitly enabled local QA harness can inject a save-dialog
     // choice. The same production callback captures and starts the job.
     let export_override = Rc::new(RefCell::new(None::<PathBuf>));
+    let batch_override = Rc::new(RefCell::new(None::<PathBuf>));
     let (picked, files) = mpsc::channel::<Vec<PathBuf>>();
     {
         let weak = ui.as_weak();
@@ -724,7 +814,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 ui.set_ai_status("中性与当前预览尺寸不一致；没有发送照片".into());return;
             }
             let mut state=state.borrow_mut();
-            if state.protected || state.ai_control.is_some() {
+            if state.protected || state.ai_control.is_some() || state.batch_control.is_some() || state.batch_dialog {
                 ui.set_ai_status("AI 任务正在结束，或草稿处于只读保护；请稍后手动重试".into());return;
             }
             let Some(request)=state.edits.current() else {return};
@@ -816,6 +906,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 || !ui.get_has_preview()
                 || state.export_dialog
                 || state.export_control.is_some()
+                || state.batch_control.is_some()
+                || state.batch_dialog
             {
                 return;
             }
@@ -871,6 +963,105 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(ui) = weak.upgrade() {
                 ui.set_export_status("正在取消；等待当前处理阶段结束…".into());
             }
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        let state = Rc::clone(&state);
+        let batch_destinations = batch_destinations.clone();
+        let batch_override = Rc::clone(&batch_override);
+        ui.on_batch_export(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let mut state = state.borrow_mut();
+            if state.protected || state.batch_protected || state.batch_dialog
+                || state.batch_control.is_some() || state.export_dialog
+                || state.export_control.is_some() || state.ai_control.is_some()
+                || state.edits.session.photos.is_empty()
+            { return; }
+            flush_edits(&mut state, &ui);
+            if state.dirty {
+                ui.set_batch_status("请先解决草稿保存失败，再创建批量任务".into());
+                return;
+            }
+            let mode = if ui.get_batch_mode() == 1 {
+                let Some(request) = state.edits.current() else {
+                    ui.set_batch_status("请先选择公共配方照片".into());
+                    return;
+                };
+                RecipeMode::Shared(request.recipe)
+            } else { RecipeMode::PerPhoto };
+            let photos = state.edits.session.photos.clone();
+            let (format, label) = match ui.get_export_format() {
+                1 => (Format::Png, "PNG"),
+                2 => (Format::Tiff16, "TIFF16"),
+                _ => (Format::Jpeg, "JPEG"),
+            };
+            state.batch_dialog = true;
+            refresh_batch(&state, &ui);
+            ui.set_batch_status(format!("选择 {label} 批量输出目录…").into());
+            let chosen = batch_override.borrow_mut().take();
+            let sender = batch_destinations.clone();
+            std::thread::spawn(move || {
+                let path = chosen.or_else(|| rfd::FileDialog::new()
+                    .set_title("选择批量输出目录（不会覆盖已有文件）")
+                    .pick_folder());
+                let _ = sender.send((photos, format, mode, path));
+            });
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        let state = Rc::clone(&state);
+        ui.on_batch_pause_resume(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let mut state = state.borrow_mut();
+            let result = change_batch(&mut state, &ui, |queue| {
+                if queue.paused { queue.resume(); } else { queue.pause(); }
+                Ok(())
+            });
+            if let Err(error) = result { ui.set_batch_status(format!("批量暂停/继续失败：{error}").into()); }
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        let state = Rc::clone(&state);
+        ui.on_batch_cancel(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let mut state = state.borrow_mut();
+            if let Some((_, control)) = &state.batch_control { control.cancel(); }
+            match change_batch(&mut state, &ui, |queue| Ok(queue.cancel_pending())) {
+                Ok(count) => ui.set_batch_status(format!("已取消 {count} 个待处理任务；当前照片正在停止…").into()),
+                Err(error) => ui.set_batch_status(format!("批量取消记录失败：{error}").into()),
+            }
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        let state = Rc::clone(&state);
+        ui.on_batch_retry(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let mut state = state.borrow_mut();
+            match change_batch(&mut state, &ui, |queue| {
+                let count = queue.retry_failed();
+                if count > 0 { queue.resume(); }
+                Ok(count)
+            }) {
+                Ok(0) => ui.set_batch_status("无可重试任务；已有目标不会覆盖，请查看明细".into()),
+                Ok(_) => {},
+                Err(error) => ui.set_batch_status(format!("重试失败：{error}").into()),
+            }
+        });
+    }
+    {
+        let weak = ui.as_weak();
+        let state = Rc::clone(&state);
+        ui.on_batch_clear(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            let mut state = state.borrow_mut();
+            if let Err(error) = change_batch(&mut state, &ui, |queue| Ok(queue.clear_finished())) {
+                ui.set_batch_status(format!("清理记录失败：{error}").into());
+            }
+            if state.batch.jobs.is_empty() { ui.set_batch_report_visible(false); }
         });
     }
     let timer = slint::Timer::default();
@@ -955,6 +1146,76 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         Err(e) => format!("导出未完成：{e}"),
                     }.into());
                 }
+                for (photos, format, mode, directory) in selected_batch_destinations.try_iter() {
+                    let mut state = state.borrow_mut();
+                    state.batch_dialog = false;
+                    if state.close_after_batch || directory.is_none() {
+                        refresh_batch(&state, &ui);
+                        ui.set_batch_status("已取消选择批量输出目录".into());
+                        continue;
+                    }
+                    let directory = directory.unwrap();
+                    match change_batch(&mut state, &ui, |queue| {
+                        let added = queue.enqueue(&photos, &directory, format, mode)?;
+                        queue.resume();
+                        Ok(added)
+                    }) {
+                        Ok(added) => ui.set_batch_status(format!("已保存 {added} 个批量任务，开始顺序导出…").into()),
+                        Err(error) => ui.set_batch_status(format!("未创建批量任务：{error}").into()),
+                    }
+                }
+                for (id, cancelled, result) in completed_batch.try_iter() {
+                    let mut state = state.borrow_mut();
+                    if state.batch_control.as_ref().is_none_or(|(active, _)| *active != id) {
+                        ui.set_batch_status("收到不匹配的批量结果；队列已停止".into());
+                        state.batch_protected = true;
+                        continue;
+                    }
+                    state.batch_control = None;
+                    match change_batch(&mut state, &ui, |queue| queue.finish(id, &result, cancelled)) {
+                        Ok(()) => {
+                            if let Err(error) = result {
+                                ui.set_batch_status(format!("第 {id} 张导出未完成：{error}；详情见任务明细").into());
+                            }
+                        }
+                        Err(error) => ui.set_batch_status(format!("批量结果保存失败；重启后会标为中断：{error}").into()),
+                    }
+                }
+                {
+                    let mut state = state.borrow_mut();
+                    if !state.batch.paused && !state.batch_protected
+                        && state.batch.counts().queued > 0
+                        && state.batch_control.is_none() && !state.batch_dialog
+                        && state.export_control.is_none() && !state.export_dialog
+                        && state.ai_control.is_none() && !state.close_after_batch
+                        && !state.close_after_export && !state.close_after_ai
+                    {
+                        match change_batch(&mut state, &ui, |queue| queue.start_next()) {
+                            Ok(Some(job)) => {
+                                let control = Arc::new(ExportControl::default());
+                                state.batch_control = Some((job.id, Arc::clone(&control)));
+                                refresh_batch(&state, &ui);
+                                let compute = Arc::clone(&compute);
+                                let sender = batch_results.clone();
+                                let dll = raw_dll.clone();
+                                std::thread::spawn(move || {
+                                    let _guard = compute.lock().unwrap_or_else(|e| e.into_inner());
+                                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(||
+                                        job.run(dll.as_deref(), &control)
+                                    )).unwrap_or_else(|_| Err(z30_core::Error::Policy("批量显影异常；原片未修改".into())));
+                                    let cancelled = control.cancelled.load(Ordering::Acquire);
+                                    let _ = sender.send((job.id, cancelled, result));
+                                });
+                            }
+                            Ok(None) => {},
+                            Err(error) => ui.set_batch_status(format!("批量启动失败：{error}").into()),
+                        }
+                    }
+                    if let Some((id, control)) = &state.batch_control {
+                        ui.set_batch_status(format!("批量第 {id} 张 · {} · {}", control.stage(),
+                            if state.batch.paused { "本张结束后暂停" } else { "可继续编辑照片" }).into());
+                    }
+                }
                 for outcome in completed_ai.try_iter() {
                     let mut state=state.borrow_mut();
                     let cancelled=state.ai_control.as_ref().is_some_and(|v|v.load(Ordering::Acquire));
@@ -967,7 +1228,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             control.cancel(); state.close_after_export=true;
                         }
                         if state.export_dialog {state.close_after_export=true;}
-                        if !state.export_dialog && state.export_control.is_none() && !state.dirty {
+                        if !state.export_dialog && state.export_control.is_none()
+                            && !state.batch_dialog && state.batch_control.is_none() && !state.dirty {
                             let _=slint::quit_event_loop();return;
                         }
                         continue;
@@ -1006,7 +1268,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         } else { format!("{} · 全尺寸 sRGB · 可继续编辑照片", control.stage()) };
                         ui.set_export_status(message.into());
                     }
-                    if state.close_after_export && !state.export_dialog && state.export_control.is_none() && state.ai_control.is_none() && !state.dirty {
+                    if (state.close_after_export || state.close_after_batch || state.close_after_ai)
+                        && !state.export_dialog && state.export_control.is_none()
+                        && !state.batch_dialog && state.batch_control.is_none()
+                        && state.ai_control.is_none() && !state.dirty {
                         let _ = slint::quit_event_loop(); return;
                     }
                 }
@@ -1079,6 +1344,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             qa::Command::CancelPreview => ui.invoke_cancel_preview(),
                             qa::Command::RetryPreview => ui.invoke_retry_preview(),
                             qa::Command::CancelExport => ui.invoke_cancel_export(),
+                            qa::Command::BatchStart { directory, format, mode } => {
+                                if directory.is_absolute() && (0..=2).contains(&format) && (0..=1).contains(&mode) {
+                                    *batch_override.borrow_mut() = Some(directory);
+                                    ui.set_export_format(format);
+                                    ui.set_batch_mode(mode);
+                                    ui.invoke_batch_export();
+                                    batch_override.borrow_mut().take();
+                                }
+                            }
+                            qa::Command::BatchPauseResume => ui.invoke_batch_pause_resume(),
+                            qa::Command::BatchCancel => ui.invoke_batch_cancel(),
+                            qa::Command::BatchRetry => ui.invoke_batch_retry(),
+                            qa::Command::BatchClear => ui.invoke_batch_clear(),
                             qa::Command::AiStart { mode, strength, goal, provider, base_url, model, key } => {
                                 if let Some(v)=mode {ui.set_ai_mode(v);}
                                 if let Some(v)=strength {ui.set_ai_strength(v);}
@@ -1112,6 +1390,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             "export_status":ui.get_export_status().as_str(),"exit_warning":ui.get_exit_warning(),
                             "ai_busy":ui.get_ai_busy(),"ai_status":ui.get_ai_status().as_str(),
                             "ai_suggestion_ready":ui.get_ai_suggestion_ready()});
+                        let response = if let Some(object) = response.as_object() {
+                            let mut object = object.clone();
+                            object.insert("batch".into(), serde_json::to_value(&s.batch).unwrap_or_default());
+                            object.insert("batch_status".into(), ui.get_batch_status().as_str().into());
+                            object.insert("batch_paused".into(), ui.get_batch_paused().into());
+                            object.insert("batch_protected".into(), ui.get_batch_protected().into());
+                            serde_json::Value::Object(object)
+                        } else { response };
                         if let Err(e) = qa.respond(id, response) { ui.set_status(format!("QA response: {e}").into()); }
                     }
                     Err(e) => ui.set_status(format!("QA command: {e}").into()),

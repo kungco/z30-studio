@@ -11,7 +11,7 @@
 | 1 基线/GUI/检查点 | 原 Python 基线 | 功能矩阵、158/31 复测、Rust/Slint 实际 Windows 构建、原生三栏界面/后台读取/生命周期；构建/测试/恢复说明 | 限定范围已验收，见 docs/reports/native-stage1.md |
 | 2 RAW/画质 | 1 | LibRaw 安全边界，16 位/float 中间数据，方向/裁剪/ICC，基础九参数，JPEG/PNG/RGB16 TIFF；新旧真实 NEF 与合成方向/色彩/数值回归 | 2A RAW 核心通过；2B 暖色色域稳定性修复及修正实现四组对照通过，旧输出差异另报；2C 浮点 ICC 输入/52 案例及矩阵缓存质量/性能通过；2D 全尺寸 NEF 最终文件和 JPEG 编码优化通过；2E 配方/迁移/撤销/缓存核心通过；2F 编辑/导出 UI 及公开 RAW 文件输出通过限定验收；2G RAW 随包构建/源码许可/依赖校验与四组像素对照通过；干净 Windows 验收仍待完成 |
 | 3 AI 调色 | 2 | 现有 CLI 登录/九参数契约，照片预览/模式/自然语言/强度，严格参数验证、撤销、手动重试、可选 API/本机后端；无云端强制依赖 | 3A 原生 Codex CLI 与离线端到端/公开 12、14 位 RAW 验收通过；3B 可选 DeepSeek Flash/兼容图像 HTTP 接口及本机回环流程通过模拟服务验收。真实云端、真实本机模型、用户样片与干净 Windows 验收待做，阶段 3 未完成。见 docs/reports/native-stage3a-ai-cli.md、native-stage3b-compatible.md |
-| 4 批量 | 2、3 | 持久任务队列、逐张参数/公共预设，进度、暂停/取消/重试、全尺寸缓存与内存基准 | 4A 队列核心与崩溃恢复测试通过；桌面流程、性能基准尚待完成，见 docs/reports/native-stage4a-batch-queue.md |
+| 4 批量 | 2、3 | 持久任务队列、逐张参数/公共预设，进度、暂停/取消/重试、全尺寸缓存与内存基准 | 4A 队列核心、4B 原生桌面交互及本机端到端测试通过；公开 RAW 批量、性能/内存基准和干净 Windows 仍待完成，见 docs/reports/native-stage4a-batch-queue.md、native-stage4b-batch-ui.md |
 | 5 人像 | 2、4 | 许可兼容的可选模型；人脸/关键点/皮肤，纹理保留磨皮、瑕疵、均匀肤色与受限轮廓形变；强度/对比/撤销；CPU 与可选 GPU | 未开始 |
 | 6 完整迁移/交付 | 前述阶段 | 原功能矩阵核对、UI/高 DPI/快捷键、稳定性/画质/性能/体积，完整打包/Actions/中文文档/风险 | 未开始 |
 

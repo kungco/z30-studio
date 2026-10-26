@@ -32,6 +32,15 @@ pub enum Command {
     CancelPreview,
     RetryPreview,
     CancelExport,
+    BatchStart {
+        directory: PathBuf,
+        format: i32,
+        mode: i32,
+    },
+    BatchPauseResume,
+    BatchCancel,
+    BatchRetry,
+    BatchClear,
     AiStart {
         mode: Option<i32>,
         strength: Option<f32>,

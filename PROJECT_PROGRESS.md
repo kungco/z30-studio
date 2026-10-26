@@ -2,6 +2,8 @@
 
 更新：2026-10-26（Asia/Hong_Kong）。原生迁移总任务未完成。
 
+最新进展：阶段 4A 已提交 `c1b83e4`，批量队列持久化、源/参数快照、重启暂停、中断恢复及无覆盖保护通过核心测试。阶段 4B 已接入原生批量设置、顺序后台导出、进度、暂停/取消/重试和任务明细；三张合成 PNG 的本机窗口/回调端到端 14 项检查通过，含重启、目标冲突、取消后显式重试及原片哈希不变。实际窗口 1320×890 的批量按钮/设置弹窗布局已目视核对。真实 NEF 批量、性能/内存基准、干净 Windows 仍待阶段 4 后续验收；本条更新后的独立提交和干净包以 Git/检查点为准。见 `docs/reports/native-stage4b-batch-ui.md`。
+
 - 当前阶段：1 和 2A–2G 的限定验收完成；3A 独立提交 109ce83，干净 RAW 软件包、解压后 61 项 AI 检查及该提交的 Windows/Ubuntu/原生 CI 已通过。3B 已接通可选 DeepSeek Flash/OpenAI 兼容图像接口，本机模拟 HTTP 进程/回调/公开 RAW14 共 55 项检查通过；3B 的干净包和对应 CI 仍需在提交后核对。真实云端及本机大模型推理未验证，阶段 3 未全部完成。
 - 分支 feat/native-slint，草稿 PR https://github.com/kungco/z30-studio/pull/2；原 Python 基线 a2a2e089d760221a52c8774cca8a2e42f0a82269。最新 SHA 以 git rev-parse HEAD 和 .development/checkpoint.json 为准；不合并 main、不正式发布。
 - 已实现：原生查看器/评分/草稿/独占与 CAS，LibRaw 0.22.2 只读桥接、RGB16→float、八方向/裁剪/半尺寸，九参数 float 核心/滚动锐化，sRGB ICC JPEG/PNG/TIFF16 不覆盖输出。2F 将现成核心接到实际窗口，仍非完整迁移产品。

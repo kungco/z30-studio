@@ -60,6 +60,17 @@ export component AppWindow inherits Window {
     in property <bool> export-busy: false;
     in property <bool> export-cancellable: false;
     in property <string> export-status: "";
+    in property <string> batch-status: "";
+    in property <string> batch-report: "";
+    in property <bool> batch-running: false;
+    in property <bool> batch-paused: true;
+    in property <bool> batch-has-queued: false;
+    in property <bool> batch-has-retry: false;
+    in property <bool> batch-has-records: false;
+    in property <bool> batch-protected: false;
+    in-out property <bool> batch-settings-visible: false;
+    in-out property <bool> batch-report-visible: false;
+    in-out property <int> batch-mode: 0;
     in-out property <int> export-format: 0;
     in property <bool> has-preview: false;
     in property <bool> busy: false;
@@ -109,6 +120,11 @@ export component AppWindow inherits Window {
     callback retry-preview();
     callback cancel-export();
     callback export-photo();
+    callback batch-export();
+    callback batch-pause-resume();
+    callback batch-cancel();
+    callback batch-retry();
+    callback batch-clear();
     callback auto-grade();
     callback cancel-ai();
     callback apply-ai-suggestion();
@@ -128,10 +144,11 @@ export component AppWindow inherits Window {
                 }
                 Rectangle { horizontal-stretch: 1; background: transparent; }
                 ToolButton { label: "＋ 导入照片"; min-width: 108px; active: root.can-import; triggered => { root.import-files(); } }
-                ToolButton { label: "一键 AI 调色"; min-width: 105px; active: root.ai-ready && root.has-preview && !root.busy && !root.ai-busy; triggered => { root.auto-grade(); } }
+                ToolButton { label: "一键 AI 调色"; min-width: 105px; active: root.ai-ready && root.has-preview && !root.busy && !root.ai-busy && !root.batch-running; triggered => { root.auto-grade(); } }
                 ToolButton { label: "AI 设置"; min-width: 68px; triggered => { root.ai-settings-visible = true; } }
                 ComboBox { width: 145px; height: 34px; model: ["JPEG · 95", "PNG · 8 位", "TIFF · 16 位"]; current-index <=> root.export-format; enabled: !root.export-busy; }
-                ToolButton { label: "导出照片"; primary: true; active: root.engine-ready && root.has-preview && !root.busy && !root.export-busy; triggered => { root.export-photo(); } }
+                ToolButton { label: "导出照片"; primary: true; active: root.engine-ready && root.has-preview && !root.busy && !root.export-busy && !root.batch-running; triggered => { root.export-photo(); } }
+                ToolButton { label: "批量导出"; min-width: 84px; active: root.photos.length > 0 && !root.batch-protected && !root.batch-running && !root.export-busy && !root.ai-busy; triggered => { root.batch-settings-visible = true; } }
                 ToolButton { label: "关于"; min-width: 54px; triggered => { root.about-visible = true; } }
             }
         }
@@ -261,6 +278,14 @@ export component AppWindow inherits Window {
             Text { text: root.export-status; color: #d8bd86; font-size: 11px; overflow: elide; vertical-alignment: center; }
             ToolButton { label: "取消导出"; width: 90px; active: root.export-cancellable; triggered => { root.cancel-export(); } }
         }
+        if root.batch-status != "": HorizontalLayout {
+            height: 42px; padding-left: 18px; padding-right: 18px; spacing: 8px;
+            Text { text: root.batch-status; color: #d6c294; font-size: 11px; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; }
+            ToolButton { label: root.batch-paused ? "继续队列" : "暂停队列"; width: 80px; active: !root.batch-protected && root.batch-has-queued; triggered => { root.batch-pause-resume(); } }
+            ToolButton { label: "取消批量"; width: 80px; active: !root.batch-protected && (root.batch-has-queued || root.batch-running); triggered => { root.batch-cancel(); } }
+            ToolButton { label: "重试失败"; width: 80px; active: !root.batch-protected && root.batch-has-retry && !root.batch-running; triggered => { root.batch-retry(); } }
+            ToolButton { label: "明细"; width: 55px; active: root.batch-has-records; triggered => { root.batch-report-visible = true; } }
+        }
         Rectangle {
             height: 34px; background: #20252d;
             HorizontalLayout {
@@ -280,6 +305,45 @@ export component AppWindow inherits Window {
                 Text { text: "AI 画面分析"; color: #f0d39b; font-size: 22px; font-weight: 700; }
                 ScrollView { Text { text: root.ai-report; color: #d4dde6; font-size: 13px; wrap: word-wrap; } }
                 ToolButton { label: "返回暗房"; triggered => { root.ai-report-visible = false; } }
+            }
+        }
+    }
+    if root.batch-settings-visible: Rectangle {
+        background: #101318ec;
+        Rectangle {
+            width: 560px; height: 360px; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+            border-radius: 10px; border-width: 1px; border-color: #675e4b; background: #222831;
+            VerticalLayout {
+                padding: 24px; spacing: 15px;
+                Text { text: "批量导出全部照片"; color: #f0d39b; font-size: 22px; font-weight: 700; }
+                Text { text: "每张照片全尺寸导出到新目录，任务会先保存到本机。重启后保持暂停，需要手动继续。已有文件和原片不会覆盖。"; color: #bec8d2; font-size: 12px; wrap: word-wrap; }
+                Text { text: "调色配方"; color: #d1d9e1; }
+                ComboBox { model: ["每张照片各自的参数", "所有照片使用当前照片参数"]; current-index <=> root.batch-mode; }
+                Text { text: "输出格式沿用顶部的 JPEG / PNG / TIFF16 选择。暂停会在当前照片完成后生效；取消会停止当前编码并取消未开始任务。"; color: #9ba9b7; font-size: 11px; wrap: word-wrap; }
+                Rectangle { vertical-stretch: 1; background: transparent; }
+                HorizontalLayout {
+                    ToolButton { label: "返回"; triggered => { root.batch-settings-visible = false; } }
+                    Rectangle { horizontal-stretch: 1; background: transparent; }
+                    ToolButton { label: "选择输出目录并开始"; min-width: 170px; primary: true; triggered => { root.batch-settings-visible = false; root.batch-export(); } }
+                }
+            }
+        }
+    }
+    if root.batch-report-visible: Rectangle {
+        background: #101318ec;
+        Rectangle {
+            width: 720px; height: min(590px, parent.height - 30px);
+            x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+            border-radius: 10px; border-width: 1px; border-color: #675e4b; background: #222831;
+            VerticalLayout {
+                padding: 22px; spacing: 12px;
+                Text { text: "批量任务明细"; color: #f0d39b; font-size: 22px; font-weight: 700; }
+                ScrollView { vertical-stretch: 1; Text { text: root.batch-report; color: #d4dde6; font-size: 12px; wrap: word-wrap; } }
+                HorizontalLayout {
+                    ToolButton { label: "清理已结束记录"; min-width: 122px; active: !root.batch-protected; triggered => { root.batch-clear(); } }
+                    Rectangle { horizontal-stretch: 1; background: transparent; }
+                    ToolButton { label: "返回暗房"; triggered => { root.batch-report-visible = false; } }
+                }
             }
         }
     }
