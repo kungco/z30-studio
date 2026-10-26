@@ -41,6 +41,11 @@ pub enum Command {
     BatchCancel,
     BatchRetry,
     BatchClear,
+    FaceAssets { directory: PathBuf },
+    DetectFace,
+    CancelFace,
+    NextFace,
+    ClearPortrait,
     AiStart {
         mode: Option<i32>,
         strength: Option<f32>,

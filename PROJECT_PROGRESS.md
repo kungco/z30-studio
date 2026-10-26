@@ -2,13 +2,13 @@
 
 更新：2026-10-26（Asia/Hong_Kong）。原生迁移总任务未完成。
 
-当前新增 5A：固定 YuNet + ONNX Runtime CPU 的原生人脸/五点定位核心已实现；新组件目录/模型与 DLL 哈希校验、独立依赖审计、实际原生探针及 NumPy/Python ORT 五组同浮点输入对照通过，误差约 1.8e-8。默认 Rust 55 通过/2 ignored，显式人脸样片通过；完整 Python 174（2 跳过）。5A 尚未连接桌面控件，皮肤修饰/瑕疵/轮廓/GPU 等待后续，不能宣称人像工作流完成。见 `docs/reports/native-stage5a-face.md`。
+当前新增 5B：桌面面部定位、原片绑定的保守柔化、撤销/重启恢复和 TIFF16/逐张批量已实现。新增核心几何/色彩/绑定回归，Rust 66 通过、2 ignored；完整 Python 175（2 跳过）、Node 31 通过；人像窗口 18、RAW/批量/编辑 14/14/26、离线 CLI/HTTP 61/45 项通过，并实际点击/复看窗口。关闭修饰时两份 RAW TIFF16 与 4C 逐字节一致。可选组件已接入打包，仍依赖系统 VC++ x64；语义皮肤/瑕疵/肤色/轮廓/GPU 尚未完成。提交前验证与最终干净包/CI 分开记录，最终状态见 .development/checkpoint.json；详见 docs/reports/native-stage5b-portrait.md。
 
 阶段 4 最终交付：`0539886` 干净 RAW ZIP 已解压完整性验证，随后 RAW/批量/编辑 14/14/26 项全部通过，进程来源标记与包清单一致；该 SHA 的 Windows/Ubuntu/原生 MSVC CI 全部成功。ZIP 为 `native/dist/Z30Studio-native-stage4c-0539886.zip`，12,460,164 字节，SHA-256 `7d0419c0c3bca9f6532be434dc81d55aab2f0bed284734929f69e60c20657179`。阶段 5A 不改变该历史交付包。
 
 最新进展：阶段 4A `c1b83e4`、4B `d4900ff` 已独立提交；4C 加入有界全尺寸缓存并完成公开 Z30 12/14 位 RAW、速度与内存验收，源码提交和干净包以最新 Git/检查点为准。RAW 窗口 14 项、合成照片批量 14 项、原有编辑/导出 26 项通过；三轮重复 TIFF16 导出约 2.0→0.8 秒且所有字节一致。缓存核心峰值约 478→596 MiB；普通批量未命中不保留新缓存，窗口峰值约 551 MiB。阶段 4 为限定范围验收，磁盘缓存/并行/ETA/批量 AI 等仍待完整迁移。见 `docs/reports/native-stage4c-performance.md`。
 
-- 当前阶段：1、2A–2G 和 4A–4C 通过限定验收，4C 干净包/解压复测/CI 已完成。3A/3B 接口与离线模拟通过，真实云端/本机大模型未验证。5A 本机人脸定位核心通过限定验证，下一步接会话/桌面与皮肤精修；阶段 6 完整迁移未开始。
+- 当前阶段：1、2A–2G 和 4A–4C 通过限定验收，4C 干净包/解压复测/CI 已完成。3A/3B 接口与离线模拟通过，真实云端/本机大模型未验证。5A/5B 本机面部定位与几何柔化通过限定验证，下一步补可靠皮肤区域和其他精修；阶段 6 完整迁移未开始。
 - 分支 feat/native-slint，草稿 PR https://github.com/kungco/z30-studio/pull/2；原 Python 基线 a2a2e089d760221a52c8774cca8a2e42f0a82269。最新 SHA 以 git rev-parse HEAD 和 .development/checkpoint.json 为准；不合并 main、不正式发布。
 - 已实现：原生查看器/评分/草稿/独占与 CAS，LibRaw 0.22.2 只读桥接、RGB16→float、八方向/裁剪/半尺寸，九参数 float 核心/滚动锐化，sRGB ICC JPEG/PNG/TIFF16 不覆盖输出。2F 将现成核心接到实际窗口，仍非完整迁移产品。
 - RAW 纯解码四组与原 Python 逐像素相同；提前释放上下文后全尺寸峰值约 561→361 MiB，半尺寸 174→115 MiB。全尺寸解码仍慢于 Python。见 docs/reports/native-stage2a.md。
@@ -47,7 +47,7 @@
 2. 独立 Rust 1.99.1 GNU/w64devkit 位于 D:/codex/toolchains/z30-native；执行 tools/native_build.ps1 -ToolchainRoot D:/codex/toolchains/z30-native -Test -RawProbe -ExportProbe。不要重装或使用曾中断的版本化目录。
 3. 样片为 D:/codex/2026-10-23/ni-k/work/Z30-12bit.NEF、Z30-14bit.NEF；官方 DLL 在 work/native-libraw/LibRaw-0.22.2/bin/libraw.dll。不得提交/覆盖；Python 实拍测试设置 Z30_RAW_SAMPLES=work，Rust fixture 显式设置 Z30_LIBRAW_DLL/Z30_RAW_12/Z30_RAW_14 并用 -RawFixtures。
 4. 基准 tools/native_raw_benchmark.py 默认 --oracle-mode baseline 固定原始算法；修正实现对照显式用 --oracle-mode current，暖色参数见 native-stage2b.md。修正四组现场 .development/native-raw/run-b45b77eb14d04c15818b9cdc46c04aa4；旧算法差异 run-fd4235e248814befb8d294ad0ad02c13。
-5. 2G、3A、3B、4C 干净 ZIP/解压复测/对应 GitHub CI 已完成。5A 核心探针和五组公开图对照通过，显式 Z30_VISION_DIR / Z30_VISION_IMAGE 可复跑固定 CPU 模型；可选运行库还有 VC++ 依赖。下一步接人像会话/桌面与纹理修饰，再做完整高级功能。有实际 Key/用户样片时再经用户明确选择服务发起云端验收，不能自动产生收费请求。干净 Windows、ICC/CMYK/HDR/显示器等剩余范围按功能清单迁移。
+5. 2G、3A、3B、4C 干净 ZIP/解压复测/对应 GitHub CI 已完成。5A 核心探针和五组公开图对照、5B 会话/桌面/几何柔化及可选打包通过限定验收；显式 Z30_VISION_DIR / Z30_VISION_IMAGE 可复跑固定 CPU 模型，可选运行库仍有 VC++ 依赖。下一步补语义皮肤区域、其他精修与完整高级功能。有实际 Key/用户样片时再经用户明确选择服务发起云端验收，不能自动产生收费请求。干净 Windows、ICC/CMYK/HDR/显示器等剩余范围按功能清单迁移。
 6. 大任务前和阶段边界读 get_usage_limits，只保存去账户身份快照；剩余约 10% 时收尾/提交/检查点，不开新大任务。未知记未知。checkpoint 脚本不会自动启动 Codex。
 
 未启用额度重置自动续跑。不会自动花费推理额度、读取 auth.json、提交凭证/原片、合并 main、发布正式版或关机。

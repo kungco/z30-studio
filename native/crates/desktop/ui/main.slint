@@ -6,6 +6,7 @@ export struct PhotoView {
     stars: string,
     thumbnail: image,
 }
+export struct FacePoint { x: float, y: float }
 
 component ToolButton inherits Rectangle {
     in property <string> label;
@@ -55,6 +56,21 @@ export component AppWindow inherits Window {
     in property <image> original-preview;
     in property <string> preview-fingerprint;
     in property <string> neutral-fingerprint;
+    in property <float> preview-aspect: 1;
+    in property <bool> face-assets-ready: false;
+    in property <bool> face-busy: false;
+    in property <bool> has-face: false;
+    in property <bool> portrait-ready: false;
+    in property <bool> multiple-faces: false;
+    in property <string> face-status: "";
+    in property <string> face-selection: "尚未定位面部";
+    in property <float> face-x;
+    in property <float> face-y;
+    in property <float> face-w;
+    in property <float> face-h;
+    in property <[FacePoint]> face-points;
+    in-out property <bool> show-face-box: false;
+    in-out property <float> skin-smooth: 0;
     in property <bool> can-undo: false;
     in property <bool> can-redo: false;
     in property <bool> export-busy: false;
@@ -125,6 +141,11 @@ export component AppWindow inherits Window {
     callback batch-cancel();
     callback batch-retry();
     callback batch-clear();
+    callback choose-face-assets();
+    callback detect-face();
+    callback cancel-face();
+    callback next-face();
+    callback clear-portrait();
     callback auto-grade();
     callback cancel-ai();
     callback apply-ai-suggestion();
@@ -147,8 +168,8 @@ export component AppWindow inherits Window {
                 ToolButton { label: "一键 AI 调色"; min-width: 105px; active: root.ai-ready && root.has-preview && !root.busy && !root.ai-busy && !root.batch-running; triggered => { root.auto-grade(); } }
                 ToolButton { label: "AI 设置"; min-width: 68px; triggered => { root.ai-settings-visible = true; } }
                 ComboBox { width: 145px; height: 34px; model: ["JPEG · 95", "PNG · 8 位", "TIFF · 16 位"]; current-index <=> root.export-format; enabled: !root.export-busy; }
-                ToolButton { label: "导出照片"; primary: true; active: root.engine-ready && root.has-preview && !root.busy && !root.export-busy && !root.batch-running; triggered => { root.export-photo(); } }
-                ToolButton { label: "批量导出"; min-width: 84px; active: root.photos.length > 0 && !root.batch-protected && !root.batch-running && !root.export-busy && !root.ai-busy; triggered => { root.batch-settings-visible = true; } }
+                ToolButton { label: "导出照片"; primary: true; active: root.engine-ready && root.has-preview && !root.busy && !root.export-busy && !root.batch-running && !root.face-busy; triggered => { root.export-photo(); } }
+                ToolButton { label: "批量导出"; min-width: 84px; active: root.photos.length > 0 && !root.batch-protected && !root.batch-running && !root.export-busy && !root.ai-busy && !root.face-busy; triggered => { root.batch-settings-visible = true; } }
                 ToolButton { label: "关于"; min-width: 54px; triggered => { root.about-visible = true; } }
             }
         }
@@ -174,7 +195,7 @@ export component AppWindow inherits Window {
                                 padding: 8px; spacing: 8px;
                                 Rectangle {
                                     width: 54px; background: #161a20; border-radius: 3px;
-                                    Image { source: photo.thumbnail; image-fit: contain; }
+                                    Image { width: parent.width; height: parent.height; source: photo.thumbnail; image-fit: contain; }
                                 }
                                 VerticalLayout {
                                     alignment: center; spacing: 5px;
@@ -201,12 +222,26 @@ export component AppWindow inherits Window {
                         ToolButton { label: root.compare ? "显示调整后" : "查看调整前"; active: root.has-preview; triggered => { root.compare = !root.compare; } }
                         ToolButton { label: root.zoom == 1 ? "放大" : "适合窗口"; active: root.has-preview; triggered => { root.zoom = root.zoom == 1 ? 1.5 : 1; } }
                     }
-                    Rectangle {
+                    picture := Rectangle {
                         vertical-stretch: 1; background: #101318; clip: true;
+                        property <length> fit-width: min(self.width, self.height * root.preview-aspect) * root.zoom;
+                        property <length> fit-height: self.fit-width / max(0.01, root.preview-aspect);
                         if root.has-preview: Image {
                             source: root.compare ? root.original-preview : root.preview; image-fit: contain;
-                            width: parent.width * root.zoom; height: parent.height * root.zoom;
+                            width: picture.fit-width; height: picture.fit-height;
                             x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+                        }
+                        if root.show-face-box && root.has-face && root.has-preview: Rectangle {
+                            x: (picture.width - picture.fit-width)/2 + root.face-x*picture.fit-width;
+                            y: (picture.height - picture.fit-height)/2 + root.face-y*picture.fit-height;
+                            width: root.face-w*picture.fit-width; height: root.face-h*picture.fit-height;
+                            background: transparent; border-width: 1px; border-color: #f2cc74;
+                        }
+                        for point in root.face-points: Rectangle {
+                            visible: root.show-face-box && root.has-face && root.has-preview;
+                            x: (picture.width - picture.fit-width)/2 + point.x*picture.fit-width - 2px;
+                            y: (picture.height - picture.fit-height)/2 + point.y*picture.fit-height - 2px;
+                            width: 4px; height: 4px; border-radius: 2px; background: #7be2c6;
                         }
                         if !root.has-preview: VerticalLayout {
                             alignment: center; padding: 50px; spacing: 14px;
@@ -260,6 +295,20 @@ export component AppWindow inherits Window {
                             Adjustment { label: "自然饱和度"; value <=> root.vibrance; active: root.engine-ready; adjusted(v) => { root.adjust("vibrance", v); } }
                             Text { text: "细节"; color: #e7d0a4; font-size: 12px; }
                             Adjustment { label: "锐化"; minimum: 0; value <=> root.sharpen; active: root.engine-ready; adjusted(v) => { root.adjust("sharpen", v); } }
+                            Text { text: "本机人像"; color: #e7d0a4; font-size: 13px; }
+                            HorizontalLayout { spacing: 6px;
+                                ToolButton { label: "选择组件"; active: !root.face-busy; triggered => { root.choose-face-assets(); } }
+                                ToolButton { label: root.face-busy ? "取消定位" : "定位面部"; active: root.face-busy || (root.face-assets-ready && root.selected-index >= 0 && !root.busy && !root.ai-busy && !root.batch-running && !root.export-busy); triggered => { if root.face-busy { root.cancel-face(); } else { root.detect-face(); } } }
+                            }
+                            Text { text: root.face-selection; color: #d8c08c; font-size: 11px; }
+                            HorizontalLayout { spacing: 6px;
+                                ToolButton { label: "下一面部"; active: root.multiple-faces && !root.face-busy; triggered => { root.next-face(); } }
+                                ToolButton { label: "清除人像"; active: root.has-face && !root.face-busy; triggered => { root.clear-portrait(); } }
+                            }
+                            Adjustment { label: "面部柔化"; minimum: 0; value <=> root.skin-smooth; active: root.engine-ready && root.portrait-ready && !root.face-busy; adjusted(v) => { root.adjust("skin_smooth", v); } }
+                            ToolButton { label: root.show-face-box ? "隐藏定位框" : "显示定位框"; active: root.has-face; triggered => { root.show-face-box = !root.show-face-box; } }
+                            Text { text: root.face-status; color: #aab6c4; font-size: 11px; wrap: word-wrap; }
+                            Text { text: "当前只处理选中的一张脸。区域由外框和五点估计，保护眼口并保留细纹；请检查头发、眼镜与边缘。定位本机运行，组件需要 VC++ x64 运行库。"; color: #8d99a7; font-size: 10px; wrap: word-wrap; }
                         }
                     }
                 }
@@ -318,7 +367,7 @@ export component AppWindow inherits Window {
                 Text { text: "批量导出全部照片"; color: #f0d39b; font-size: 22px; font-weight: 700; }
                 Text { text: "每张照片全尺寸导出到新目录，任务会先保存到本机。重启后保持暂停，需要手动继续。已有文件和原片不会覆盖。"; color: #bec8d2; font-size: 12px; wrap: word-wrap; }
                 Text { text: "调色配方"; color: #d1d9e1; }
-                ComboBox { model: ["每张照片各自的参数", "所有照片使用当前照片参数"]; current-index <=> root.batch-mode; }
+                ComboBox { model: ["每张照片各自的参数", "统一当前全局调色，保留逐张人像"]; current-index <=> root.batch-mode; }
                 Text { text: "输出格式沿用顶部的 JPEG / PNG / TIFF16 选择。暂停会在当前照片完成后生效；取消会停止当前编码并取消未开始任务。"; color: #9ba9b7; font-size: 11px; wrap: word-wrap; }
                 Rectangle { vertical-stretch: 1; background: transparent; }
                 HorizontalLayout {

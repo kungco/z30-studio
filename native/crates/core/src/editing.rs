@@ -57,9 +57,16 @@ impl EditingSession {
             "saturation" => p.saturation = value,
             "vibrance" => p.vibrance = value,
             "sharpen" => p.sharpen = value,
+            "skin_smooth" => next.portrait.smooth = value,
             _ => return Err(Error::Policy("未知调色参数".into())),
         }
         next.validate()?;
+        if name == "skin_smooth" && value > 0. {
+            let binding = next.portrait.binding.unwrap();
+            if !binding.matches_source(&current.path)? {
+                return Err(Error::Policy("原片已变化，请重新检测面部后再柔化".into()));
+            }
+        }
         if current.recipe == next {
             return Ok(false);
         }
@@ -91,6 +98,31 @@ impl EditingSession {
         self.commit()?;
         let next = Recipe {
             parameters,
+            ..current.recipe
+        };
+        self.histories
+            .get_mut(&current.path)
+            .unwrap()
+            .record(next)?;
+        self.session.photos[self.session.selected.unwrap()].recipe = next;
+        Ok(true)
+    }
+    pub fn apply_portrait(&mut self, portrait: crate::portrait::Portrait) -> Result<bool> {
+        portrait.validate()?;
+        let Some(current) = self.current() else {
+            return Ok(false);
+        };
+        if let Some(binding) = portrait.binding {
+            if !binding.matches_source(&current.path)? {
+                return Err(Error::Policy("人像结果不属于当前原片，未应用".into()));
+            }
+        }
+        if current.recipe.portrait == portrait {
+            return Ok(false);
+        }
+        self.commit()?;
+        let next = Recipe {
+            portrait,
             ..current.recipe
         };
         self.histories
@@ -137,10 +169,10 @@ impl EditingSession {
         let Some(current) = self.current() else {
             return Ok(false);
         };
-        // Reset the nine sliders; keep the selected RAW white-balance policy.
+        // Reset displayed global/portrait adjustments; keep the RAW WB policy.
         let next = Recipe {
-            parameters: Default::default(),
-            ..current.recipe
+            white_balance: current.recipe.white_balance,
+            ..Default::default()
         };
         let changed = self
             .histories

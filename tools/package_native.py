@@ -18,8 +18,10 @@ import zipfile
 
 if __package__:
     from .build_native_libraw import SDK_HASH, SDK_NAME, check_system_imports, sha256
+    from .prepare_native_vision import verify_component
 else:
     from build_native_libraw import SDK_HASH, SDK_NAME, check_system_imports, sha256
+    from prepare_native_vision import verify_component
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_LICENSES = {'LibRaw-COPYRIGHT.txt', 'LibRaw-CDDL-1.0.txt', 'LibRaw-LGPL-2.1.txt',
@@ -145,6 +147,12 @@ def verify_stage(stage: Path) -> dict:
     if not imports or any(name.lower() not in APP_SYSTEM_DLLS for name in imports):
         raise ValueError(f'Application has unaudited runtime imports: {imports}')
     verify_runtime(stage)
+    if info.get('vision_bundled') is True:
+        if info.get('models_bundled') is not True or info.get('vision_external_vc_runtime') is not True:
+            raise ValueError('Bundled vision must declare model weights and external VC++ dependency')
+        verify_component(stage/'vision')
+    elif (stage/'vision').exists() or info.get('models_bundled') is True:
+        raise ValueError('Undeclared optional model/runtime directory')
     return info
 
 

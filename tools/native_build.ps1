@@ -11,11 +11,13 @@ param(
     [switch]$FullCacheProbe,
     [switch]$VisionProbe,
     [switch]$VisionFixtures,
-    [string]$RawRuntime
+    [string]$RawRuntime,
+    [string]$VisionRuntime
 )
 $ErrorActionPreference='Stop'
 $repoRoot=Split-Path -Parent $PSScriptRoot
 if($RawRuntime){$runtimePath=(Resolve-Path -LiteralPath $RawRuntime).Path}
+if($VisionRuntime){$visionRuntimePath=(Resolve-Path -LiteralPath $VisionRuntime).Path}
 $sourceCommit=(& git -C $repoRoot rev-parse HEAD).Trim()
 $sourceDirty=[bool]((& git -C $repoRoot status --porcelain) -join '')
 $cargoTool='cargo'
@@ -105,6 +107,12 @@ try {
         & $packPython (Join-Path $repoRoot 'tools\package_native.py') install-runtime --stage $staging --runtime $runtimePath
         if($LASTEXITCODE -ne 0){throw 'RAW runtime distribution verification failed'}
     }
+    if($VisionRuntime){
+        $packPython=Join-Path $repoRoot '.venv\Scripts\python.exe'
+        if(-not (Test-Path -LiteralPath $packPython)){$packPython='python'}
+        & $packPython (Join-Path $repoRoot 'tools\prepare_native_vision.py') --component $visionRuntimePath --install-to-stage $staging
+        if($LASTEXITCODE -ne 0){throw 'Optional vision distribution verification failed'}
+    }
     $buildInfo=[ordered]@{
         app='Z30 Studio Native';version='0.1.0-native-preview';profile=$profile
         source_commit=$sourceCommit
@@ -113,9 +121,11 @@ try {
         exe_bytes=(Get-Item -LiteralPath $binary).Length
         exe_sha256=(Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
         full_feature_migration_complete=$false
-        models_bundled=$false
+        models_bundled=[bool]$VisionRuntime
+        vision_bundled=[bool]$VisionRuntime
+        vision_external_vc_runtime=[bool]$VisionRuntime
         raw_bundled=[bool]$RawRuntime
-        runtime='Windows system DLLs and OS UI fonts; no Python/browser/local HTTP server'
+        runtime=if($VisionRuntime){'Windows system DLLs/fonts; optional portrait runtime needs Microsoft VC++ x64; no Python/browser/local HTTP server'}else{'Windows system DLLs and OS UI fonts; no Python/browser/local HTTP server'}
     }
     [System.IO.File]::WriteAllText((Join-Path $staging 'build-info.json'),($buildInfo|ConvertTo-Json -Depth 5),[System.Text.UTF8Encoding]::new($false))
     Get-Item -LiteralPath $binary | Select-Object FullName,Length

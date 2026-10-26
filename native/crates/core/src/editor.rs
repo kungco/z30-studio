@@ -138,7 +138,7 @@ impl PreviewEngine {
         let decode_resize_seconds = started.elapsed().as_secs_f64();
         let cache = self.cached.as_ref().unwrap();
         let started = Instant::now();
-        let rendered = develop::render(&cache.linear, &recipe.parameters)?;
+        let rendered = crate::rendering::render(&cache.linear, &recipe, path, (cache.source_width,cache.source_height))?;
         if Stamp::read(path, wb)? != cache.stamp {
             return Err(Error::Policy("预览期间原片发生变化，请重新读取".into()));
         }

@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 z30-core = { path = "../core" }
+z30-vision = { path = "../vision" }
 slint = { version = "=1.18.1", default-features = false, features = ["std", "backend-winit", "renderer-software", "accessibility", "compat-1-2"] }
 rfd = { version = "0.16", default-features = false }
 serde = { version = "1", features = ["derive"] }

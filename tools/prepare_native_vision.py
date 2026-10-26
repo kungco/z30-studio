@@ -140,12 +140,56 @@ def prepare(model: Path, runtime_archive: Path, output: Path):
     return info
 
 
+def verify_component(directory: Path):
+    manifest=json.loads((VENDOR/'manifest.json').read_text(encoding='utf8'))
+    names={manifest['model']['name'],manifest['runtime']['name'],'YuNet-LICENSE.txt',
+           'ONNXRuntime-LICENSE.txt','ONNXRuntime-ThirdPartyNotices.txt','manifest.json','install-info.json'}
+    if not directory.is_dir() or {path.name for path in directory.iterdir()} != names:
+        raise ValueError('Optional vision component file list differs from the pinned set')
+    if any((directory/name).is_symlink() or not (directory/name).is_file() for name in names):
+        raise ValueError('Optional component must contain regular local files')
+    for key in ('model','runtime'):
+        asset=manifest[key];verified(directory/asset['name'],asset['bytes'],asset['sha256'])
+    for name in ('YuNet-LICENSE.txt','ONNXRuntime-LICENSE.txt','ONNXRuntime-ThirdPartyNotices.txt'):
+        if (directory/name).read_bytes() != (VENDOR/name).read_bytes():
+            raise ValueError('Optional component license/notice differs from pinned upstream')
+    if json.loads((directory/'manifest.json').read_text(encoding='utf8')) != manifest:
+        raise ValueError('Optional component model manifest differs')
+    info=json.loads((directory/'install-info.json').read_text(encoding='utf8'))
+    actual=pe_dependencies(directory/manifest['runtime']['name'])
+    if (info.get('kind') != 'optional-yunet-cpu-component' or info.get('dependencies') != actual
+            or info.get('external_vc_runtime_required') is not True or info.get('clean_windows_verified') is not False
+            or info.get('model_sha256') != manifest['model']['sha256']
+            or info.get('runtime_sha256') != manifest['runtime']['sha256']
+            or info.get('dependency_policy') != 'Explicit runtime, dependencies restricted to System32'):
+        raise ValueError('Optional component must declare the actual imports and external VC++ requirement')
+    return info
+
+
+def install_component(component: Path, stage: Path):
+    target=stage/'vision'
+    if not stage.is_dir() or target.exists():
+        raise ValueError('Existing vision output cannot be replaced')
+    verify_component(component)
+    target.mkdir()
+    for path in component.iterdir():
+        shutil.copyfile(path,target/path.name)
+    verify_component(target)
+    return dict(installed=str(target),external_vc_runtime_required=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ('model', 'runtime-archive', 'out'):
-        parser.add_argument('--'+name, type=Path, required=True)
+    for name in ('model', 'runtime-archive', 'out', 'component', 'install-to-stage'):
+        parser.add_argument('--'+name, type=Path)
     args = parser.parse_args()
-    print(json.dumps(prepare(args.model.resolve(), args.runtime_archive.resolve(), args.out.resolve()), ensure_ascii=False, indent=2))
+    if args.install_to_stage:
+        if not args.component:parser.error('--install-to-stage requires --component')
+        result=install_component(args.component.resolve(),args.install_to_stage.resolve(strict=True))
+    else:
+        if not all((args.model,args.runtime_archive,args.out)):parser.error('Preparation requires --model, --runtime-archive and --out')
+        result=prepare(args.model.resolve(),args.runtime_archive.resolve(),args.out.resolve())
+    print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 if __name__ == '__main__':

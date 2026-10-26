@@ -2,7 +2,7 @@
 from pathlib import Path
 import tempfile
 import unittest
-from tools.prepare_native_vision import prepare, pe_dependencies, verified
+from tools.prepare_native_vision import prepare, pe_dependencies, verified, install_component
 
 
 class NativeVisionAssetsTests(unittest.TestCase):
@@ -31,6 +31,11 @@ class NativeVisionAssetsTests(unittest.TestCase):
             source = Path(folder)/'fake.dll'; source.write_bytes(b'MZ')
             with self.assertRaises(ValueError):
                 pe_dependencies(source)
+    def test_installation_does_not_replace_an_existing_component_directory(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);target=root/'vision';target.mkdir();marker=target/'keep';marker.write_bytes(b'keep')
+            with self.assertRaises(ValueError):install_component(root/'missing',root)
+            self.assertEqual(marker.read_bytes(),b'keep')
 
 
 if __name__ == '__main__':

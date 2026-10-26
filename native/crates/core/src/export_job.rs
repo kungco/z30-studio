@@ -1,6 +1,6 @@
 //! One immutable export snapshot, independent from current UI selection.
 use crate::{
-    Error, Result, develop,
+    Error, Result,
     editing::EditRequest,
     editor::Stamp,
     export::{self, Format},
@@ -234,7 +234,7 @@ impl ExportSource {
         export::check_cancel(&control.cancelled)?;
         control.stage.store(2, Ordering::Release);
         let render_started = Instant::now();
-        let rendered = develop::render(frame.as_ref(), &self.edit.recipe.parameters)?;
+        let rendered = crate::rendering::render(frame.as_ref(), &self.edit.recipe, &self.edit.path, (frame.width,frame.height))?;
         let render_seconds = render_started.elapsed().as_secs_f64();
         // Preserve the old low-memory path when caching is disabled or the
         // source exceeds the cap: release linear pixels before TIFF encoding.
@@ -283,7 +283,7 @@ impl ExportSource {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::recipe::Recipe;
+    use crate::{recipe::Recipe, develop};
     #[test]
     fn export_uses_captured_recipe_and_full_size_not_the_active_preview() {
         let root = tempfile::tempdir().unwrap();

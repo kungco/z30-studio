@@ -44,7 +44,7 @@ pub struct Session {
 impl Default for Session {
     fn default() -> Self {
         Self {
-            version: 2,
+            version: 3,
             photos: vec![],
             selected: None,
         }
@@ -53,7 +53,7 @@ impl Default for Session {
 
 impl Session {
     pub fn validate(&self) -> Result<()> {
-        if !matches!(self.version, 1 | 2)
+        if !matches!(self.version, 1 | 2 | 3)
             || self.photos.len() > MAX_PHOTOS
             || self.selected.is_some_and(|i| i >= self.photos.len())
         {
@@ -70,6 +70,11 @@ impl Session {
         }
         for photo in &self.photos {
             photo.recipe.validate()?;
+            if self.version < 3 && photo.recipe.portrait != Default::default() {
+                return Err(Error::Policy(
+                    "旧草稿版本包含新格式人像编辑，已拒绝猜测迁移".into(),
+                ));
+            }
             if self.version == 1 && photo.recipe != Recipe::default() {
                 return Err(Error::Policy(
                     "v1 草稿包含新格式调色参数，已拒绝猜测迁移".into(),
@@ -160,8 +165,8 @@ impl SessionStore {
             None => Session::default(),
         };
         session.validate()?;
-        if session.version == 1 {
-            session.version = 2;
+        if session.version < 3 {
+            session.version = 3;
         }
         *persisted = bytes;
         self.validated.store(true, Ordering::Release);
@@ -169,9 +174,9 @@ impl SessionStore {
     }
     pub fn save(&self, session: &Session) -> Result<()> {
         session.validate()?;
-        if session.version != 2 {
+        if session.version != 3 {
             return Err(Error::Policy(
-                "只写入原生 v2 草稿；请先读取并迁移旧草稿".into(),
+                "只写入原生 v3 草稿；请先读取并迁移旧草稿".into(),
             ));
         }
         if !self.validated.load(Ordering::Acquire) {
@@ -185,6 +190,11 @@ impl SessionStore {
         }
         fs::create_dir_all(&self.root)?;
         let bytes = serde_json::to_vec_pretty(session)?;
+        if bytes.len() > 2 * 1024 * 1024 {
+            return Err(Error::Policy(
+                "草稿超过 2 MiB 写入预算，未覆盖旧文件".into(),
+            ));
+        }
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -192,17 +202,20 @@ impl SessionStore {
         let temp = self
             .root
             .join(format!("session-{}-{stamp}.part", std::process::id()));
-        if let Some(previous) = persisted
-            .as_ref()
-            .filter(|data| serde_json::from_slice::<Session>(data).is_ok_and(|s| s.version == 1))
-        {
-            // Preserve the exact old bytes before the first v2 publication.
+        if let Some(previous) = persisted.as_ref().filter(|data| {
+            serde_json::from_slice::<Session>(data).is_ok_and(|s| matches!(s.version, 1 | 2))
+        }) {
+            // Preserve the exact old bytes before the first v3 publication.
             // A failed backup must leave the original session.json untouched.
             let mut backup = tempfile::NamedTempFile::new_in(&self.root)?;
             backup.write_all(previous)?;
             backup.as_file().sync_all()?;
+            let version = serde_json::from_slice::<Session>(previous)?.version;
             backup
-                .persist_noclobber(self.root.join(format!("session-v1-backup-{stamp}.json")))
+                .persist_noclobber(
+                    self.root
+                        .join(format!("session-v{version}-backup-{stamp}.json")),
+                )
                 .map_err(|error| Error::Io(error.error))?;
         }
         let result = (|| {
@@ -244,7 +257,7 @@ mod tests {
         assert_eq!(fs::read(&source).unwrap(), b"original bytes");
         session.version = 999;
         assert!(store.save(&session).is_err());
-        assert_eq!(store.load().unwrap().version, 2);
+        assert_eq!(store.load().unwrap().version, 3);
     }
     #[test]
     fn rejects_bad_indices_flags_and_truncated_json_without_replacing_it() {
@@ -294,7 +307,7 @@ mod tests {
         let path = directory.join("session.json");
         fs::write(&path, &legacy).unwrap();
         let migrated = store.load().unwrap();
-        assert_eq!(migrated.version, 2);
+        assert_eq!(migrated.version, 3);
         assert_eq!(migrated.photos[0].recipe, Recipe::default());
         assert_eq!(migrated.photos[0].rating, 4);
         assert_eq!(migrated.photos[0].flag, 1);
@@ -362,5 +375,40 @@ mod tests {
         assert!(store.load().is_err());
         assert!(store.save(&Session::default()).is_err());
         assert_eq!(fs::read(path).unwrap(), bytes);
+    }
+    #[test]
+    fn v2_migration_preserves_recipe_and_exact_backup_before_v3_publication() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("photo.png");
+        fs::write(&source, b"source").unwrap();
+        let directory = root.path().join("data");
+        let store = SessionStore::new(directory.clone()).unwrap();
+        let value = serde_json::json!({"version":2,"photos":[{"path":source.canonicalize().unwrap(),"rating":3,"flag":0,"recipe":{"parameters":{"exposure":0.75},"white_balance":"auto"}}],"selected":0});
+        let previous = serde_json::to_vec_pretty(&value).unwrap();
+        fs::write(directory.join("session.json"), &previous).unwrap();
+        let session = store.load().unwrap();
+        assert_eq!(session.version, 3);
+        assert_eq!(session.photos[0].recipe.parameters.exposure, 0.75);
+        assert_eq!(fs::read(directory.join("session.json")).unwrap(), previous);
+        store.save(&session).unwrap();
+        let backups: Vec<_> = fs::read_dir(&directory)
+            .unwrap()
+            .map(|v| v.unwrap().path())
+            .filter(|v| {
+                v.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with("session-v2-backup-")
+            })
+            .collect();
+        assert_eq!(backups.len(), 1);
+        assert_eq!(fs::read(&backups[0]).unwrap(), previous);
+        assert_eq!(
+            serde_json::from_slice::<Session>(&fs::read(directory.join("session.json")).unwrap())
+                .unwrap()
+                .version,
+            3
+        );
+        assert_eq!(fs::read(source).unwrap(), b"source");
     }
 }

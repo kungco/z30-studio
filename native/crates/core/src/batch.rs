@@ -1,5 +1,6 @@
 //! Durable, bounded batch queue. Each job owns a frozen recipe and source
 //! fingerprint; no edit of the active photo can change a queued export.
+pub use crate::source::SourceState;
 use crate::{
     Error, MAX_SOURCE_BYTES, Result,
     editing::EditRequest,
@@ -34,34 +35,6 @@ pub enum JobState {
     Failed,
     Interrupted,
     Cancelled,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct SourceState {
-    bytes: u64,
-    modified_ns: u64,
-}
-impl SourceState {
-    fn read(path: &Path) -> Result<Self> {
-        let info = path.metadata()?;
-        if !info.is_file() || info.len() == 0 || info.len() > MAX_SOURCE_BYTES {
-            return Err(Error::Policy(
-                "批量原片为空、不是普通文件或超过 150 MiB".into(),
-            ));
-        }
-        let modified_ns = info
-            .modified()?
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| Error::Policy("原片修改时间无效".into()))?
-            .as_nanos()
-            .try_into()
-            .map_err(|_| Error::Policy("原片修改时间超出范围".into()))?;
-        Ok(Self {
-            bytes: info.len(),
-            modified_ns,
-        })
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -196,10 +169,11 @@ impl Queue {
         for (index, photo) in photos.iter().enumerate() {
             let source = photo.path.canonicalize()?;
             let source_state = SourceState::read(&source)?;
-            let recipe = match mode {
-                RecipeMode::PerPhoto => photo.recipe,
-                RecipeMode::Shared(recipe) => recipe,
-            };
+            let mut recipe = photo.recipe;
+            if let RecipeMode::Shared(shared) = mode {
+                recipe.parameters = shared.parameters;
+                recipe.white_balance = shared.white_balance;
+            }
             recipe.validate()?;
             let name = source
                 .file_stem()

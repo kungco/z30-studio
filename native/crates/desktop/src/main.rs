@@ -19,6 +19,7 @@ use z30_core::{
     editor::PreviewEngine,
     export::Format,
     export_job::{ExportControl, ExportReceipt, ExportSource, FullFrameCache},
+    portrait::{Binding, Face, Portrait},
     session::{Photo, Session, SessionStore},
     worker::LatestWorker,
 };
@@ -52,6 +53,19 @@ struct State {
     ai_control: Option<Arc<AtomicBool>>,
     ai_suggestion: Option<AiSuggestion>,
     close_after_ai: bool,
+    face_assets: Option<PathBuf>,
+    face_control: Option<Arc<AtomicBool>>,
+    face_dialog: bool,
+    close_after_face: bool,
+    face_candidates: Option<FaceCandidates>,
+}
+
+struct FaceCandidates { path: PathBuf, binding: Binding, faces: Vec<Face>, selected: usize }
+struct FaceOutcome {
+    request: EditRequest,
+    source: ExportSource,
+    revision: u64,
+    result: z30_core::Result<(Vec<Face>, Binding)>,
 }
 
 struct AiProduct {
@@ -154,6 +168,18 @@ fn sync_recipe(state: &State, ui: &AppWindow) {
         ui.set_saturation(p.saturation);
         ui.set_vibrance(p.vibrance);
         ui.set_sharpen(p.sharpen);
+        let portrait=request.recipe.portrait;
+        ui.set_skin_smooth(portrait.smooth);
+        ui.set_has_face(portrait.face.is_some());
+        let ready=portrait.face.zip(portrait.binding).is_some_and(|(face,binding)|face.rect[2]*(binding.width as f32)>=32. && face.rect[3]*(binding.height as f32)>=32.);
+        ui.set_portrait_ready(ready);
+        if let Some(face)=portrait.face {
+            ui.set_face_x(face.rect[0]);ui.set_face_y(face.rect[1]);ui.set_face_w(face.rect[2]);ui.set_face_h(face.rect[3]);
+            ui.set_face_points(ModelRc::new(VecModel::from(face.landmarks.iter().map(|p|FacePoint{x:p.x,y:p.y}).collect::<Vec<_>>())));
+        } else {ui.set_face_points(ModelRc::new(VecModel::from(Vec::<FacePoint>::new())));}
+        let candidates=state.face_candidates.as_ref().filter(|set|set.path==request.path);
+        ui.set_multiple_faces(candidates.is_some_and(|set|set.faces.len()>1));
+        ui.set_face_selection(candidates.map_or_else(||if portrait.face.is_some(){"已保存面部".to_owned()}else{"尚未定位面部".to_owned()},|set|format!("面部 {} / {}",set.selected+1,set.faces.len())).into());
     }
     ui.set_can_undo(!state.protected && state.edits.can_undo());
     ui.set_can_redo(!state.protected && state.edits.can_redo());
@@ -178,6 +204,14 @@ fn invalidate_ai(state: &mut State, ui: &AppWindow) {
         control.store(true, Ordering::Release);
         ui.set_ai_status("照片或参数已变化；正在取消旧 AI 任务…".into());
     }
+    if let Some(control)=&state.face_control {control.store(true,Ordering::Release);ui.set_face_status("照片或参数已变化，正在取消旧定位任务…".into());}
+    if state.face_candidates.as_ref().is_some_and(|set|state.edits.current().is_none_or(|request|request.path!=set.path)) {state.face_candidates=None;}
+}
+fn apply_portrait_edit(state:&mut State,ui:&AppWindow,portrait:Portrait) -> z30_core::Result<Option<EditRequest>> {
+    if !state.edits.apply_portrait(portrait)? {return Ok(None);}
+    invalidate_ai(state,ui);state.last_edit=None;state.pending_preview=None;
+    sync_recipe(state,ui);save_state(state,ui);ui.set_busy(true);ui.set_compare(false);
+    Ok(state.edits.current())
 }
 fn prepare_exit(state: &mut State, ui: &AppWindow, discard: bool) -> bool {
     flush_edits(state, ui);
@@ -200,6 +234,11 @@ fn prepare_exit(state: &mut State, ui: &AppWindow, discard: bool) -> bool {
         state.close_after_batch = true;
         ui.set_batch_status("请关闭批量目录对话框，随后退出".into());
     }
+    if let Some(control)=&state.face_control {
+        control.store(true,Ordering::Release);state.close_after_face=true;
+        ui.set_face_status("退出前正在停止本机人像定位…".into());
+    }
+    if state.face_dialog {state.close_after_face=true;ui.set_face_status("请关闭组件目录对话框，随后退出".into());}
     if let Some(control) = &state.ai_control {
         control.store(true, Ordering::Release);
         state.close_after_ai = true;
@@ -219,7 +258,7 @@ fn prepare_exit(state: &mut State, ui: &AppWindow, discard: bool) -> bool {
         ui.set_export_status("请关闭保存对话框，随后退出；此次不再导出".into());
         return false;
     }
-    if state.batch_control.is_some() || state.batch_dialog {
+    if state.batch_control.is_some() || state.batch_dialog || state.face_control.is_some() || state.face_dialog {
         return false;
     }
     true
@@ -404,6 +443,7 @@ fn display_ai_preview(
     rows: &Rc<VecModel<PhotoView>>,
     selected: Option<usize>,
 ) {
+    ui.set_preview_aspect(preview.width as f32 / preview.height as f32);
     ui.set_preview(slint_image(&preview.rgb, preview.width, preview.height));
     ui.set_original_preview(slint_image(&preview.neutral, preview.width, preview.height));
     ui.set_preview_fingerprint(fingerprint(&preview.rgb).into());
@@ -556,9 +596,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         ai_control: None,
         ai_suggestion: None,
         close_after_ai: false,
+        face_assets: std::env::var_os("Z30_VISION_DIR").map(PathBuf::from).or_else(||std::env::current_exe().ok().and_then(|path|path.parent().map(|parent|parent.join("vision"))).filter(|path|path.is_dir())),
+        face_control: None,
+        face_dialog: false,
+        close_after_face: false,
+        face_candidates: None,
     }));
     let ui = AppWindow::new()?;
     ui.set_ai_ready(true);
+    ui.set_face_assets_ready(state.borrow().face_assets.is_some());
+    ui.set_face_status(if state.borrow().face_assets.is_some(){"本机组件将在检测时校验；没有发送照片"}else{"选择本机人像组件目录；基础编辑无需此组件"}.into());
     ui.set_photos(ModelRc::from(Rc::clone(&rows)));
     ui.set_can_import(!protected);
     ui.set_draft_status(restore_status.into());
@@ -603,10 +650,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (batch_results, completed_batch) =
         mpsc::channel::<(u64, bool, z30_core::Result<ExportReceipt>)>();
     let (ai_results, completed_ai) = mpsc::channel::<AiOutcome>();
+    let (face_results, completed_faces) = mpsc::channel::<FaceOutcome>();
+    let (face_directories, picked_face_directories) = mpsc::channel::<Option<PathBuf>>();
+    let face_engine = Arc::new(Mutex::new(None::<(PathBuf,z30_vision::detector::Detector)>));
     // Only the explicitly enabled local QA harness can inject a save-dialog
     // choice. The same production callback captures and starts the job.
     let export_override = Rc::new(RefCell::new(None::<PathBuf>));
     let batch_override = Rc::new(RefCell::new(None::<PathBuf>));
+    let face_override = Rc::new(RefCell::new(None::<PathBuf>));
     let (picked, files) = mpsc::channel::<Vec<PathBuf>>();
     {
         let weak = ui.as_weak();
@@ -819,7 +870,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 ui.set_ai_status("中性与当前预览尺寸不一致；没有发送照片".into());return;
             }
             let mut state=state.borrow_mut();
-            if state.protected || state.ai_control.is_some() || state.batch_control.is_some() || state.batch_dialog {
+            if state.protected || state.ai_control.is_some() || state.batch_control.is_some() || state.batch_dialog || state.face_control.is_some() || state.face_dialog {
                 ui.set_ai_status("AI 任务正在结束，或草稿处于只读保护；请稍后手动重试".into());return;
             }
             let Some(request)=state.edits.current() else {return};
@@ -913,6 +964,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 || state.export_control.is_some()
                 || state.batch_control.is_some()
                 || state.batch_dialog
+                || state.face_control.is_some()
+                || state.face_dialog
             {
                 return;
             }
@@ -980,7 +1033,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let mut state = state.borrow_mut();
             if state.protected || state.batch_protected || state.batch_dialog
                 || state.batch_control.is_some() || state.export_dialog
-                || state.export_control.is_some() || state.ai_control.is_some()
+                || state.export_control.is_some() || state.ai_control.is_some() || state.face_control.is_some() || state.face_dialog
                 || state.edits.session.photos.is_empty()
             { return; }
             flush_edits(&mut state, &ui);
@@ -1069,6 +1122,73 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             if state.batch.jobs.is_empty() { ui.set_batch_report_visible(false); }
         });
     }
+    {
+        let weak=ui.as_weak();let state=Rc::clone(&state);let sender=face_directories.clone();let chooser=Rc::clone(&face_override);
+        ui.on_choose_face_assets(move || {
+            let Some(ui)=weak.upgrade() else{return};let mut state=state.borrow_mut();
+            if state.face_control.is_some() || state.face_dialog || state.export_dialog || state.batch_dialog {return;}
+            state.face_dialog=true;ui.set_face_busy(true);ui.set_face_status("选择包含固定模型和运行库的人像组件目录…".into());
+            let selected=chooser.borrow_mut().take();let sender=sender.clone();
+            std::thread::spawn(move || {let path=selected.or_else(||rfd::FileDialog::new().set_title("选择本机人像组件目录").pick_folder());let _=sender.send(path);});
+        });
+    }
+    {
+        let weak=ui.as_weak();let state=Rc::clone(&state);let sender=face_results.clone();
+        let compute=Arc::clone(&compute);let engine=Arc::clone(&engine);let models=Arc::clone(&face_engine);
+        let cache=Arc::clone(&full_cache);let dll=raw_dll.clone();
+        ui.on_detect_face(move || {
+            let Some(ui)=weak.upgrade() else{return};let mut state=state.borrow_mut();
+            if state.protected || state.face_control.is_some() || state.face_dialog || state.ai_control.is_some()
+                || state.batch_control.is_some() || state.export_control.is_some() || state.export_dialog || ui.get_busy() {return;}
+            let Some(assets)=state.face_assets.clone() else {ui.set_face_status("请先选择本机人像组件目录".into());return;};
+            flush_edits(&mut state,&ui);
+            let Some(request)=state.edits.current() else{return};
+            let source=match ExportSource::new(request.clone()) {Ok(value)=>value,Err(error)=>{ui.set_face_status(error.to_string().into());return;}};
+            let revision=state.edit_revision;let cancel=Arc::new(AtomicBool::new(false));state.face_control=Some(Arc::clone(&cancel));
+            ui.set_face_busy(true);ui.set_face_status("本机 CPU 正在定位面部；照片不会发送到云端…".into());
+            let (sender,compute,engine,models,cache,dll)=(sender.clone(),Arc::clone(&compute),Arc::clone(&engine),Arc::clone(&models),Arc::clone(&cache),dll.clone());
+            std::thread::spawn(move || {
+                let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> z30_core::Result<(Vec<Face>,Binding)> {
+                    let _guard=compute.lock().unwrap_or_else(|e|e.into_inner());
+                    if cancel.load(Ordering::Acquire) {return Err(z30_core::Error::Policy("人像定位已取消".into()));}
+                    source.unchanged()?;
+                    cache.lock().unwrap_or_else(|e|e.into_inner()).discard_other_source(&request.path,request.recipe.white_balance,dll.as_deref());
+                    let mut neutral_recipe=request.recipe;neutral_recipe.portrait=Portrait::default();
+                    let preview=engine.lock().unwrap_or_else(|e|e.into_inner()).preview(&request.path,neutral_recipe)?;
+                    let (width,height)=(preview.source_width,preview.source_height);let neutral=Arc::clone(&preview.neutral);drop(preview);
+                    let mut models=models.lock().unwrap_or_else(|e|e.into_inner());
+                    if models.as_ref().is_none_or(|(path,_)|path!=&assets) {*models=Some((assets.clone(),z30_vision::detector::Detector::open(&assets)?));}
+                    let detected=models.as_mut().unwrap().1.detect(&neutral,&cancel)?;
+                    let binding=Binding::capture(&request.path,width,height)?;source.unchanged()?;
+                    if cancel.load(Ordering::Acquire) {return Err(z30_core::Error::Policy("人像定位已取消".into()));}
+                    Ok((detected.faces,binding))
+                })).unwrap_or_else(|_|Err(z30_core::Error::Policy("本机定位异常；未改动照片配方".into())));
+                let _=sender.send(FaceOutcome{request,source,revision,result});
+            });
+        });
+    }
+    {
+        let weak=ui.as_weak();let state=Rc::clone(&state);
+        ui.on_cancel_face(move || {let state=state.borrow();if let Some(control)=&state.face_control {control.store(true,Ordering::Release);}if let Some(ui)=weak.upgrade(){ui.set_face_status(if state.face_dialog{"请在目录窗口取消选择"}else{"正在停止本机定位；不会应用旧结果…"}.into());}});
+    }
+    {
+        let weak=ui.as_weak();let state=Rc::clone(&state);let worker=Rc::clone(&worker);
+        ui.on_next_face(move || {
+            let Some(ui)=weak.upgrade() else{return};let mut state=state.borrow_mut();if state.protected || state.face_control.is_some(){return;}
+            let Some(current)=state.edits.current() else{return};
+            let Some(set)=state.face_candidates.as_ref().filter(|set|set.path==current.path && !set.faces.is_empty()) else{return};
+            let index=(set.selected+1)%set.faces.len();let portrait=Portrait{face:Some(set.faces[index]),binding:Some(set.binding),smooth:0.};
+            match apply_portrait_edit(&mut state,&ui,portrait) {Ok(Some(request))=>{if let Some(set)=&mut state.face_candidates{set.selected=index;}sync_recipe(&state,&ui);worker.submit(request);ui.set_face_status("已切换面部，柔化强度从 0 开始；只处理当前面部".into());},Ok(None)=>{},Err(error)=>ui.set_face_status(error.to_string().into())}
+        });
+    }
+    {
+        let weak=ui.as_weak();let state=Rc::clone(&state);let worker=Rc::clone(&worker);
+        ui.on_clear_portrait(move || {
+            let Some(ui)=weak.upgrade() else{return};let mut state=state.borrow_mut();if state.protected{return;}
+            state.face_candidates=None;
+            match apply_portrait_edit(&mut state,&ui,Portrait::default()) {Ok(Some(request))=>{worker.submit(request);ui.set_face_status("已清除人像编辑，可撤销".into());},Ok(None)=>sync_recipe(&state,&ui),Err(error)=>ui.set_face_status(error.to_string().into())}
+        });
+    }
     let timer = slint::Timer::default();
     {
         let weak = ui.as_weak();
@@ -1145,6 +1265,35 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         });
                     }
                 }
+                for directory in picked_face_directories.try_iter() {
+                    let mut state=state.borrow_mut();state.face_dialog=false;ui.set_face_busy(state.face_control.is_some());
+                    if state.close_after_face {continue;}
+                    if let Some(directory)=directory {
+                        if directory.is_absolute() && directory.join(z30_vision::detector::MODEL_NAME).is_file() && directory.join("onnxruntime.dll").is_file() {
+                            state.face_assets=Some(directory);ui.set_face_assets_ready(true);ui.set_face_status("已选择组件；检测时会校验模型与 DLL，没有发送照片".into());
+                        } else {ui.set_face_status("目录缺少固定模型或 onnxruntime.dll；请检查组件".into());}
+                    }
+                }
+                for outcome in completed_faces.try_iter() {
+                    let mut state=state.borrow_mut();let cancelled=state.face_control.as_ref().is_some_and(|control|control.load(Ordering::Acquire));state.face_control=None;ui.set_face_busy(false);
+                    if state.close_after_face {continue;}
+                    if cancelled || state.edit_revision!=outcome.revision || state.edits.current().as_ref()!=Some(&outcome.request) {
+                        ui.set_face_status("照片或参数已变化；旧定位结果未应用，可重新检测".into());continue;
+                    }
+                    if let Err(error)=outcome.source.unchanged(){ui.set_face_status(format!("原片已变化；定位结果未应用：{error}").into());continue;}
+                    match outcome.result {
+                        Ok((faces,binding)) if !faces.is_empty()=>{
+                            let count=faces.len();let portrait=Portrait{face:Some(faces[0]),binding:Some(binding),smooth:0.};
+                            state.face_candidates=Some(FaceCandidates{path:outcome.request.path,binding,faces,selected:0});
+                            match apply_portrait_edit(&mut state,&ui,portrait) {
+                                Ok(Some(request))=>{worker.submit(request);ui.set_show_face_box(true);ui.set_face_status(format!("已定位 {count} 张脸；选择当前面部后调整柔化强度，区域为几何估计").into());},
+                                Ok(None)=>{sync_recipe(&state,&ui);ui.set_show_face_box(true);ui.set_face_status(format!("已重新定位 {count} 张脸，当前参数未改变").into());},Err(error)=>ui.set_face_status(error.to_string().into()),
+                            }
+                        },
+                        Ok(_)=>ui.set_face_status("未找到达到置信度要求的面部，原配方保留".into()),
+                        Err(error)=>ui.set_face_status(error.to_string().into()),
+                    }
+                }
                 for result in completed_exports.try_iter() {
                     state.borrow_mut().export_control = None;
                     ui.set_export_busy(false); ui.set_export_cancellable(false);
@@ -1196,7 +1345,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         && state.batch.counts().queued > 0
                         && state.batch_control.is_none() && !state.batch_dialog
                         && state.export_control.is_none() && !state.export_dialog
-                        && state.ai_control.is_none() && !state.close_after_batch
+                        && state.ai_control.is_none() && state.face_control.is_none() && !state.face_dialog && !state.close_after_batch
                         && !state.close_after_export && !state.close_after_ai
                     {
                         match change_batch(&mut state, &ui, |queue| queue.start_next()) {
@@ -1240,7 +1389,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         if state.export_dialog {state.close_after_export=true;}
                         if !state.export_dialog && state.export_control.is_none()
-                            && !state.batch_dialog && state.batch_control.is_none() && !state.dirty {
+                            && !state.batch_dialog && state.batch_control.is_none() && state.face_control.is_none() && !state.face_dialog && !state.dirty {
                             let _=slint::quit_event_loop();return;
                         }
                         continue;
@@ -1279,10 +1428,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         } else { format!("{} · 全尺寸 sRGB · 可继续编辑照片", control.stage()) };
                         ui.set_export_status(message.into());
                     }
-                    if (state.close_after_export || state.close_after_batch || state.close_after_ai)
+                    if (state.close_after_export || state.close_after_batch || state.close_after_ai || state.close_after_face)
                         && !state.export_dialog && state.export_control.is_none()
                         && !state.batch_dialog && state.batch_control.is_none()
-                        && state.ai_control.is_none() && !state.dirty {
+                        && state.ai_control.is_none() && state.face_control.is_none() && !state.face_dialog && !state.dirty {
                         let _ = slint::quit_event_loop(); return;
                     }
                 }
@@ -1294,6 +1443,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     ui.set_busy(false);
                     match result {
                         Ok(preview) => {
+                            ui.set_preview_aspect(preview.width as f32 / preview.height as f32);
                             if let Err(e) = qa.preview_ready(
                                 launched,
                                 preview.source_width,
@@ -1369,6 +1519,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             qa::Command::BatchCancel => ui.invoke_batch_cancel(),
                             qa::Command::BatchRetry => ui.invoke_batch_retry(),
                             qa::Command::BatchClear => ui.invoke_batch_clear(),
+                            qa::Command::FaceAssets {directory} => {
+                                if directory.is_absolute() {*face_override.borrow_mut()=Some(directory);ui.invoke_choose_face_assets();face_override.borrow_mut().take();}
+                            }
+                            qa::Command::DetectFace=>ui.invoke_detect_face(),
+                            qa::Command::CancelFace=>ui.invoke_cancel_face(),
+                            qa::Command::NextFace=>ui.invoke_next_face(),
+                            qa::Command::ClearPortrait=>ui.invoke_clear_portrait(),
                             qa::Command::AiStart { mode, strength, goal, provider, base_url, model, key } => {
                                 if let Some(v)=mode {ui.set_ai_mode(v);}
                                 if let Some(v)=strength {ui.set_ai_strength(v);}
@@ -1409,6 +1566,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             object.insert("batch_paused".into(), ui.get_batch_paused().into());
                             object.insert("batch_protected".into(), ui.get_batch_protected().into());
                             object.insert("full_cache_bytes".into(), serde_json::to_value(full_cache.try_lock().ok().map(|cache| cache.bytes())).unwrap_or_default());
+                            object.insert("face_busy".into(),ui.get_face_busy().into());
+                            object.insert("face_assets_ready".into(),ui.get_face_assets_ready().into());
+                            object.insert("has_face".into(),ui.get_has_face().into());
+                            object.insert("face_status".into(),ui.get_face_status().as_str().into());
+                            object.insert("skin_smooth".into(),ui.get_skin_smooth().into());
+                            object.insert("portrait_ready".into(),ui.get_portrait_ready().into());
+                            object.insert("face_selection".into(),ui.get_face_selection().as_str().into());
+                            object.insert("preview_aspect".into(),ui.get_preview_aspect().into());
                             serde_json::Value::Object(object)
                         } else { response };
                         if let Err(e) = qa.respond(id, response) { ui.set_status(format!("QA response: {e}").into()); }

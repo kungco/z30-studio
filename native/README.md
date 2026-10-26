@@ -70,10 +70,12 @@ Slint 1.18.1 采用 Royalty-free Desktop License 2.0，并在顶层“关于”�
 
 阶段 2D 的完整公开 NEF JPEG/PNG/TIFF16 文件已独立验证；JPEG 编码改用 MozJPEG，详见 docs/reports/native-stage2d-export.md。2F 已接入后台导出；`-PhotoExportProbe` 仍是独立开发验收工具。
 
-原生草稿当前写 v2、读 v1/v2；第一次 v1→v2 保存前生成 session-v1-backup-*.json 原字节备份。此为原生草稿，仍不直接导入 Python .z30proj。2E 配方/50 步内存撤销/缓存接口已验证，现已接线到 2F 界面；见 docs/reports/native-stage2e-foundation.md 与 native-stage2f-ui.md。
+原生草稿当前写 v3、读 v1/v2/v3；第一次旧格式迁移保存前生成 session-v1-backup-*.json 或 session-v2-backup-*.json 原字节备份。此为原生草稿，仍不直接导入 Python .z30proj。逐张配方和 50 步内存撤销/缓存已接入桌面；v3 增加原片绑定的人像设置。
 
 `tools/smoke_native_editing.py --exe ... --out 新报告.json [--raw 样片.NEF --dll 固定库.dll]` 通过显式 QA 文件协议驱动同一组 Slint 回调，在隔离草稿和新文件名下验证调色/切图/导出/取消/退出/恢复，不启用 HTTP 服务。它不是鼠标或截图验收；2F 另用 Computer Use 实际检查过窗口、曝光/对比和文件保存对话框。
 
 随包验收改用 `--raw 样片.NEF --bundled-raw`，明确移除 RAW 环境变量、仅保留系统 PATH，并从不同的中文工作目录启动。探针会核对进程内嵌提交/脏标记与 build-info.json，避免 Cargo 缓存造成旧构建来源标记。
 
-阶段 5A 仅新增开发者可用的 `z30-vision` 人脸/五点定位核心和 `-VisionProbe` / `-VisionFixtures` 验证入口，桌面人像按钮和修饰功能尚未接通。模型/运行库不随当前基础包提供；可选组件还需要本机 Microsoft VC++ x64 运行库，未验证干净 Windows。基础编辑启动不加载它。见 docs/reports/native-stage5a-face.md。
+阶段 5B 已接入“本机人像”：向下滚动显影面板，定位面部后选择当前面部，再调整柔化强度；默认强度为零。支持撤销、逐张保存、重启恢复和 TIFF16。区域由框/五点估计，尚无语义皮肤分割、瑕疵、均匀肤色或轮廓形变，请检查头发、眼镜和边缘；一次处理一张脸。见 docs/reports/native-stage5b-portrait.md。
+
+可选组件必须来自固定模型和 ONNX Runtime 1.31.0；没有自动下载。开发者使用 `python tools/prepare_native_vision.py --model 固定模型.onnx --runtime-archive 官方SDK.zip --out 新组件目录` 准备，再为原有构建命令增加 `-VisionRuntime 新组件目录` 随包分发。软件自动查找 EXE 旁的 `vision/`，也可在“选择组件”中明确指定目录。基础启动不加载推理 DLL；新检测需要本机 Microsoft VC++ x64 系统运行库，组件不包含该系统依赖，干净 Windows 尚未验证。模型/DLL/许可/依赖均校验；基础包仍可不携带模型。

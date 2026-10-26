@@ -1,5 +1,5 @@
 //! Per-photo edit state; the AI contract remains the existing nine parameters.
-use crate::{Result, develop::Parameters};
+use crate::{Result, develop::Parameters, portrait::Portrait};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -16,10 +16,12 @@ pub enum WhiteBalance {
 pub struct Recipe {
     pub parameters: Parameters,
     pub white_balance: WhiteBalance,
+    pub portrait: Portrait,
 }
 impl Recipe {
     pub fn validate(&self) -> Result<()> {
-        self.parameters.validate()
+        self.parameters.validate()?;
+        self.portrait.validate()
     }
 }
 

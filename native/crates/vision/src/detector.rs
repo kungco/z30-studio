@@ -3,7 +3,7 @@ use ort::{
     session::{Session, SessionOutputs},
     value::Tensor,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 #[cfg(any(windows, test))]
 use std::path::PathBuf;
@@ -14,6 +14,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
     time::Instant,
 };
+pub use z30_core::portrait::{Face, Point};
 use z30_core::{Error, Result, develop::SrgbFrame};
 
 pub const SIDE: usize = 640;
@@ -25,22 +26,6 @@ const RUNTIME_HASH: &str = "0c42dc4e278f0968fdf9ebf1b1e54a74c657a9942e70803e453c
 const MAX_FACES: usize = 16;
 const CONFIDENCE: f32 = 0.9;
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct Point {
-    pub x: f32,
-    pub y: f32,
-}
-
-/// Geometry is normalized to the already oriented input image. Points follow
-/// YuNet's order: right eye, left eye, nose, right mouth corner, left corner.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct Face {
-    pub rect: [f32; 4],
-    pub landmarks: [Point; 5],
-    pub confidence: f32,
-}
 #[derive(Debug, Serialize)]
 pub struct Detection {
     pub source_width: u32,
@@ -111,6 +96,7 @@ fn runtime_environment(path: &Path) -> Result<ort::environment::Environment> {
     })?;
     let environment = ort::init_from(&path)
         .map_err(failure)?
+        .with_telemetry(false)
         .build()
         .map_err(failure)?;
     *runtime = Some(Runtime {

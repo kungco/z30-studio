@@ -9,6 +9,9 @@ pub mod export;
 pub mod export_job;
 pub mod frame;
 pub mod preview;
+pub mod portrait;
+pub mod rendering;
+pub mod source;
 pub mod raster;
 #[cfg(windows)]
 pub mod raw;
