@@ -1,6 +1,8 @@
 # Z30 Studio 开发检查点
 
-更新：2026-10-26（Asia/Hong_Kong）。原生迁移总任务未完成。
+更新：2026-10-27（Asia/Hong_Kong）。原生迁移总任务未完成。
+
+当前新增 5C1：许可已核对的本机皮肤语义识别、绑定原片的保守蒙版和实际浮点柔化入口，独立 Google TFLite/ONNX/Rust 九组对照通过。Rust 71 通过、2 项默认 ignored 随后显式通过；Python 179（2 跳过）、Node 31 通过，既有人像/RAW 窗口 18/14 项及 YuNet 五组参考通过。五份 RAW TIFF16 与 5B 逐字节一致。**语义功能尚未接入桌面或持久会话**，下一步 5C2 补按钮/蒙版预览、草稿/撤销/批量与导出一致性；模型安装和最终界面验收不能省略。实体倒置 180° 公开图返回空蒙版，用户 Z30 人像/多肤色/干净 Windows/GPU 未验证。详见 docs/reports/native-stage5c-skin.md；干净构建、GitHub 和 CI 以 .development/checkpoint.json 为准。
 
 当前新增 5B：桌面面部定位、原片绑定的保守柔化、撤销/重启恢复和 TIFF16/逐张批量已实现。新增核心几何/色彩/绑定回归，Rust 66 通过、2 ignored；完整 Python 175（2 跳过）、Node 31 通过；人像窗口 18、RAW/批量/编辑 14/14/26、离线 CLI/HTTP 61/45 项通过，并实际点击/复看窗口。关闭修饰时两份 RAW TIFF16 与 4C 逐字节一致。可选组件已接入打包，仍依赖系统 VC++ x64；语义皮肤/瑕疵/肤色/轮廓/GPU 尚未完成。提交前验证与最终干净包/CI 分开记录，最终状态见 .development/checkpoint.json；详见 docs/reports/native-stage5b-portrait.md。
 
@@ -8,7 +10,7 @@
 
 最新进展：阶段 4A `c1b83e4`、4B `d4900ff` 已独立提交；4C 加入有界全尺寸缓存并完成公开 Z30 12/14 位 RAW、速度与内存验收，源码提交和干净包以最新 Git/检查点为准。RAW 窗口 14 项、合成照片批量 14 项、原有编辑/导出 26 项通过；三轮重复 TIFF16 导出约 2.0→0.8 秒且所有字节一致。缓存核心峰值约 478→596 MiB；普通批量未命中不保留新缓存，窗口峰值约 551 MiB。阶段 4 为限定范围验收，磁盘缓存/并行/ETA/批量 AI 等仍待完整迁移。见 `docs/reports/native-stage4c-performance.md`。
 
-- 当前阶段：1、2A–2G 和 4A–4C 通过限定验收，4C 干净包/解压复测/CI 已完成。3A/3B 接口与离线模拟通过，真实云端/本机大模型未验证。5A/5B 本机面部定位与几何柔化通过限定验证，下一步补可靠皮肤区域和其他精修；阶段 6 完整迁移未开始。
+- 当前阶段：1、2A–2G 和 4A–4C 通过限定验收。3A/3B 接口与离线模拟通过，真实云端/本机大模型未验证。5A/5B 面部定位/几何柔化已接入桌面；5C1 皮肤语义核心与原模型对照通过，5C2 桌面/持久化待接入，阶段 5 及阶段 6 完整迁移尚未完成。
 - 分支 feat/native-slint，草稿 PR https://github.com/kungco/z30-studio/pull/2；原 Python 基线 a2a2e089d760221a52c8774cca8a2e42f0a82269。最新 SHA 以 git rev-parse HEAD 和 .development/checkpoint.json 为准；不合并 main、不正式发布。
 - 已实现：原生查看器/评分/草稿/独占与 CAS，LibRaw 0.22.2 只读桥接、RGB16→float、八方向/裁剪/半尺寸，九参数 float 核心/滚动锐化，sRGB ICC JPEG/PNG/TIFF16 不覆盖输出。2F 将现成核心接到实际窗口，仍非完整迁移产品。
 - RAW 纯解码四组与原 Python 逐像素相同；提前释放上下文后全尺寸峰值约 561→361 MiB，半尺寸 174→115 MiB。全尺寸解码仍慢于 Python。见 docs/reports/native-stage2a.md。

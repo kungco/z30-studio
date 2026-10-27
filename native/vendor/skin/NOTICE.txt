@@ -1,0 +1,18 @@
+MediaPipe Selfie Multiclass Segmentation
+Original author: Google; model author listed in the official card: Adel Ahmadyan.
+Original model dated May 10, 2023. Licensed under Apache License, Version 2.0.
+Official model card:
+https://storage.googleapis.com/mediapipe-assets/Model%20Card%20Multiclass%20Segmentation.pdf
+
+ONNX conversion published by FreeHugsForRobots/ps-skin-seg, revision
+f3a72025451688fb893083991fdfd4562814a4dd, under Apache License, Version 2.0.
+Modification by that publisher: conversion from the original TFLite model to ONNX.
+https://huggingface.co/FreeHugsForRobots/ps-skin-seg/tree/f3a72025451688fb893083991fdfd4562814a4dd
+Z30 Studio does not modify the model graph. Pre/postprocessing and conservative
+confidence gates are application code. This notice is an application attribution,
+not an assertion that the upstream model contains a separate NOTICE file.
+
+The model is approximate segmentation, not a pixel-perfect selection. Low light,
+occlusion and untested skin tones may reduce quality. No identity recognition.
+The official model card documents limitations and evaluation; its results are
+not Z30 Studio product validation. See docs/reports/native-stage5c-skin.md.

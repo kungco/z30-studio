@@ -47,7 +47,7 @@ fn check_cancel(cancel: &AtomicBool) -> Result<()> {
         Ok(())
     }
 }
-fn verified_bytes(path: &Path, size: u64, hash: &str) -> Result<Vec<u8>> {
+pub(crate) fn verified_bytes(path: &Path, size: u64, hash: &str) -> Result<Vec<u8>> {
     if !path.is_absolute() || !path.is_file() || path.metadata()?.len() != size {
         return Err(Error::Policy(format!(
             "人像组件缺失或大小不符：{}",
@@ -107,6 +107,47 @@ fn runtime_environment(path: &Path) -> Result<ort::environment::Environment> {
     Ok(environment)
 }
 
+pub(crate) fn open_session(directory: &Path, model: &[u8]) -> Result<Session> {
+    if !directory.is_absolute() {
+        return Err(Error::Policy("人像组件目录必须为绝对路径".into()));
+    }
+    let runtime = directory.join("onnxruntime.dll");
+    #[cfg(windows)]
+    let _runtime_read_lock = {
+        use std::os::windows::fs::OpenOptionsExt;
+        fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(&runtime)?
+    };
+    let runtime_bytes = verified_bytes(&runtime, RUNTIME_BYTES, RUNTIME_HASH)?;
+    drop(runtime_bytes);
+    #[cfg(windows)]
+    {
+        let environment = runtime_environment(&runtime)?;
+        let session = Session::builder(&environment)
+            .map_err(failure)?
+            .with_execution_providers([ort::ep::CPU::default().build()])
+            .map_err(failure)?
+            .with_intra_threads(2)
+            .map_err(failure)?
+            .with_inter_threads(1)
+            .map_err(failure)?
+            .with_parallel_execution(false)
+            .map_err(failure)?
+            .commit_from_memory(model)
+            .map_err(failure)?;
+        Ok(session)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = model;
+        Err(Error::Policy(
+            "此固定人像运行库仅接受 Windows x64 验证".into(),
+        ))
+    }
+}
+
 pub struct Detector {
     session: Session,
 }
@@ -118,41 +159,9 @@ impl Detector {
             return Err(Error::Policy("人像组件目录必须为绝对路径".into()));
         }
         let model = verified_bytes(&directory.join(MODEL_NAME), MODEL_BYTES, MODEL_HASH)?;
-        let runtime = directory.join("onnxruntime.dll");
-        #[cfg(windows)]
-        let _runtime_read_lock = {
-            use std::os::windows::fs::OpenOptionsExt;
-            fs::OpenOptions::new()
-                .read(true)
-                .share_mode(1)
-                .open(&runtime)?
-        };
-        let runtime_bytes = verified_bytes(&runtime, RUNTIME_BYTES, RUNTIME_HASH)?;
-        drop(runtime_bytes);
-        #[cfg(windows)]
-        {
-            let environment = runtime_environment(&runtime)?;
-            let session = Session::builder(&environment)
-                .map_err(failure)?
-                .with_execution_providers([ort::ep::CPU::default().build()])
-                .map_err(failure)?
-                .with_intra_threads(2)
-                .map_err(failure)?
-                .with_inter_threads(1)
-                .map_err(failure)?
-                .with_parallel_execution(false)
-                .map_err(failure)?
-                .commit_from_memory(&model)
-                .map_err(failure)?;
-            Ok(Self { session })
-        }
-        #[cfg(not(windows))]
-        {
-            let _ = model;
-            Err(Error::Policy(
-                "此固定人像运行库仅接受 Windows x64 验证".into(),
-            ))
-        }
+        Ok(Self {
+            session: open_session(directory, &model)?,
+        })
     }
     pub fn detect(&mut self, frame: &SrgbFrame, cancel: &AtomicBool) -> Result<Detection> {
         check_cancel(cancel)?;

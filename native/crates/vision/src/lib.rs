@@ -1,2 +1,3 @@
-//! Optional local face localization. No network access or identity embeddings.
+//! Optional local face localization and skin segmentation. No network or identity embeddings.
 pub mod detector;
+pub mod skin;

@@ -10,6 +10,7 @@ param(
     [switch]$EditProbe,
     [switch]$FullCacheProbe,
     [switch]$VisionProbe,
+    [switch]$SkinProbe,
     [switch]$VisionFixtures,
     [string]$RawRuntime,
     [string]$VisionRuntime
@@ -91,6 +92,7 @@ try {
     if($EditProbe){& $cargoTool build -p z30-core --example edit_preview_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Edit preview probe build failed'}}
     if($FullCacheProbe){& $cargoTool build -p z30-core --example full_cache_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Full-size cache probe build failed'}}
     if($VisionProbe){& $cargoTool build -p z30-vision --example face_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Face detector probe build failed'}}
+    if($SkinProbe){& $cargoTool build -p z30-vision --example skin_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Skin segmenter probe build failed'}}
     $profile=if($DebugBuild){'debug'}else{'release'}
     if(((& git rev-parse HEAD).Trim() -ne $sourceCommit) -or ([bool]((& git status --porcelain) -join '') -ne $sourceDirty)){
         throw 'Source revision/cleanliness changed during build; rebuild before staging'

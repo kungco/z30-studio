@@ -62,7 +62,7 @@ impl Binding {
         binding.validate()?;
         Ok(binding)
     }
-    fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
         self.source.validate()?;
         let count = self.width as u64 * self.height as u64;
         if count == 0 || count > 80_000_000 {
@@ -208,9 +208,22 @@ fn box_mean(input: &[f32], width: usize, height: usize, radius: usize) -> Vec<f3
 }
 
 pub fn apply(frame: &mut SrgbFrame, portrait: &Portrait) -> Result<()> {
+    apply_with_skin(frame, portrait, None)
+}
+
+/// An explicit empty mask is a no-op, never a fallback to the face ellipse.
+/// Callers must check the source through rendering::render_with_skin first.
+pub fn apply_with_skin(
+    frame: &mut SrgbFrame,
+    portrait: &Portrait,
+    skin: Option<&crate::skin::SkinMask>,
+) -> Result<()> {
     portrait.validate()?;
     if portrait.smooth == 0. {
         return Ok(());
+    }
+    if let Some(skin) = skin {
+        skin.check_portrait(portrait)?;
     }
     let count = frame.width as u64 * frame.height as u64;
     if count == 0 || count > 80_000_000 || count as usize != frame.pixels.len() {
@@ -250,13 +263,21 @@ pub fn apply(frame: &mut SrgbFrame, portrait: &Portrait) -> Result<()> {
             if local <= 0.01 {
                 continue;
             }
-            let weight = mask(
+            let mut weight = mask(
                 &face,
                 (x0 + x) as f32 + 0.5,
                 (y0 + y) as f32 + 0.5,
                 frame.width,
                 frame.height,
             );
+            if let Some(skin) = skin {
+                weight *= skin.sample(
+                    (x0 + x) as f64 + 0.5,
+                    (y0 + y) as f64 + 0.5,
+                    frame.width,
+                    frame.height,
+                );
+            }
             if weight == 0. {
                 continue;
             }
@@ -389,6 +410,79 @@ mod tests {
                 }
             }
         }
+    }
+    #[test]
+    fn semantic_gate_limits_changes_and_rejects_another_source_without_mutation() {
+        use crate::skin::{SIDE, SkinMask};
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("source");
+        std::fs::write(&path, b"source").unwrap();
+        let binding = Binding::capture(&path, 256, 256).unwrap();
+        let portrait = Portrait {
+            face: Some(face()),
+            binding: Some(binding),
+            smooth: 100.,
+        };
+        let before: Vec<[f32; 3]> = (0..256 * 256)
+            .map(|i| {
+                let v = 0.4 + 0.1 * ((i % 256) as f32 * 0.2).sin();
+                [v, v * 0.8, v * 0.6]
+            })
+            .collect();
+        let fresh = || SrgbFrame {
+            width: 256,
+            height: 256,
+            pixels: before.clone(),
+        };
+        let mut geometry = fresh();
+        apply(&mut geometry, &portrait).unwrap();
+        let full = SkinMask::new(binding, vec![255; SIDE * SIDE]).unwrap();
+        let empty = SkinMask::new(binding, vec![0; SIDE * SIDE]).unwrap();
+        let mut same = fresh();
+        apply_with_skin(&mut same, &portrait, Some(&full)).unwrap();
+        assert_eq!(same.pixels, geometry.pixels);
+        let mut untouched = fresh();
+        apply_with_skin(&mut untouched, &portrait, Some(&empty)).unwrap();
+        assert_eq!(untouched.pixels, before);
+        let left = SkinMask::new(
+            binding,
+            (0..SIDE * SIDE)
+                .map(|i| if i % SIDE < 120 { 255 } else { 0 })
+                .collect(),
+        )
+        .unwrap();
+        let mut limited = fresh();
+        apply_with_skin(&mut limited, &portrait, Some(&left)).unwrap();
+        let mut changed = 0;
+        for (i, p) in limited.pixels.iter().enumerate() {
+            if i % 256 >= 120 {
+                assert_eq!(*p, before[i]);
+            }
+            assert!(p.iter().all(|v| v.is_finite() && (0.0..=1.0).contains(v)));
+            assert!((p[1] / p[0] - 0.8).abs() < 1e-6 && (p[2] / p[0] - 0.6).abs() < 1e-6);
+            changed += usize::from(*p != before[i]);
+        }
+        assert!(changed > 100);
+        let other = root.path().join("other");
+        std::fs::write(&other, b"source").unwrap();
+        let wrong = SkinMask::new(
+            Binding::capture(&other, 256, 256).unwrap(),
+            vec![255; SIDE * SIDE],
+        )
+        .unwrap();
+        let mut rejected = fresh();
+        assert!(apply_with_skin(&mut rejected, &portrait, Some(&wrong)).is_err());
+        assert_eq!(rejected.pixels, before);
+        let frame = crate::frame::Frame::new(256, 256, before).unwrap();
+        let recipe = crate::recipe::Recipe {
+            portrait,
+            ..Default::default()
+        };
+        std::fs::write(&path, b"changed source").unwrap();
+        assert!(
+            crate::rendering::render_with_skin(&frame, &recipe, &path, (256, 256), Some(&full))
+                .is_err()
+        );
     }
     #[test]
     fn sliding_mean_matches_independent_brute_force_on_thin_and_rectangular_inputs() {
