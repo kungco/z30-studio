@@ -37,6 +37,7 @@ impl Photo {
 #[serde(deny_unknown_fields)]
 pub struct Session {
     pub version: u32,
+    #[serde(deserialize_with = "crate::bounded::list::<_, Photo, MAX_PHOTOS>")]
     pub photos: Vec<Photo>,
     pub selected: Option<usize>,
 }
@@ -44,7 +45,7 @@ pub struct Session {
 impl Default for Session {
     fn default() -> Self {
         Self {
-            version: 3,
+            version: 4,
             photos: vec![],
             selected: None,
         }
@@ -53,7 +54,7 @@ impl Default for Session {
 
 impl Session {
     pub fn validate(&self) -> Result<()> {
-        if !matches!(self.version, 1 | 2 | 3)
+        if !matches!(self.version, 1 | 2 | 3 | 4)
             || self.photos.len() > MAX_PHOTOS
             || self.selected.is_some_and(|i| i >= self.photos.len())
         {
@@ -70,6 +71,11 @@ impl Session {
         }
         for photo in &self.photos {
             photo.recipe.validate()?;
+            if self.version < 4 && photo.recipe.skin.is_some() {
+                return Err(Error::Policy(
+                    "旧草稿包含新格式皮肤蒙版，未覆盖旧文件".into(),
+                ));
+            }
             if self.version < 3 && photo.recipe.portrait != Default::default() {
                 return Err(Error::Policy(
                     "旧草稿版本包含新格式人像编辑，已拒绝猜测迁移".into(),
@@ -129,8 +135,8 @@ fn read_snapshot(path: &Path) -> Result<Option<Vec<u8>>> {
         Err(error) => return Err(error.into()),
     };
     let mut bytes = vec![];
-    file.take(2 * 1024 * 1024 + 1).read_to_end(&mut bytes)?;
-    if bytes.len() > 2 * 1024 * 1024 {
+    file.take(32 * 1024 * 1024 + 1).read_to_end(&mut bytes)?;
+    if bytes.len() > 32 * 1024 * 1024 {
         return Err(Error::Policy("草稿超过安全读取大小".into()));
     }
     Ok(Some(bytes))
@@ -165,8 +171,8 @@ impl SessionStore {
             None => Session::default(),
         };
         session.validate()?;
-        if session.version < 3 {
-            session.version = 3;
+        if session.version < 4 {
+            session.version = 4;
         }
         *persisted = bytes;
         self.validated.store(true, Ordering::Release);
@@ -174,9 +180,9 @@ impl SessionStore {
     }
     pub fn save(&self, session: &Session) -> Result<()> {
         session.validate()?;
-        if session.version != 3 {
+        if session.version != 4 {
             return Err(Error::Policy(
-                "只写入原生 v3 草稿；请先读取并迁移旧草稿".into(),
+                "只写入原生 v4 草稿；请先读取并迁移旧草稿".into(),
             ));
         }
         if !self.validated.load(Ordering::Acquire) {
@@ -190,9 +196,9 @@ impl SessionStore {
         }
         fs::create_dir_all(&self.root)?;
         let bytes = serde_json::to_vec_pretty(session)?;
-        if bytes.len() > 2 * 1024 * 1024 {
+        if bytes.len() > 32 * 1024 * 1024 {
             return Err(Error::Policy(
-                "草稿超过 2 MiB 写入预算，未覆盖旧文件".into(),
+                "草稿超过 32 MiB 写入预算，未覆盖旧文件".into(),
             ));
         }
         let stamp = SystemTime::now()
@@ -203,9 +209,9 @@ impl SessionStore {
             .root
             .join(format!("session-{}-{stamp}.part", std::process::id()));
         if let Some(previous) = persisted.as_ref().filter(|data| {
-            serde_json::from_slice::<Session>(data).is_ok_and(|s| matches!(s.version, 1 | 2))
+            serde_json::from_slice::<Session>(data).is_ok_and(|s| matches!(s.version, 1 | 2 | 3))
         }) {
-            // Preserve the exact old bytes before the first v3 publication.
+            // Preserve the exact old bytes before the first v4 publication.
             // A failed backup must leave the original session.json untouched.
             let mut backup = tempfile::NamedTempFile::new_in(&self.root)?;
             backup.write_all(previous)?;
@@ -257,7 +263,7 @@ mod tests {
         assert_eq!(fs::read(&source).unwrap(), b"original bytes");
         session.version = 999;
         assert!(store.save(&session).is_err());
-        assert_eq!(store.load().unwrap().version, 3);
+        assert_eq!(store.load().unwrap().version, 4);
     }
     #[test]
     fn rejects_bad_indices_flags_and_truncated_json_without_replacing_it() {
@@ -307,7 +313,7 @@ mod tests {
         let path = directory.join("session.json");
         fs::write(&path, &legacy).unwrap();
         let migrated = store.load().unwrap();
-        assert_eq!(migrated.version, 3);
+        assert_eq!(migrated.version, 4);
         assert_eq!(migrated.photos[0].recipe, Recipe::default());
         assert_eq!(migrated.photos[0].rating, 4);
         assert_eq!(migrated.photos[0].flag, 1);
@@ -377,7 +383,7 @@ mod tests {
         assert_eq!(fs::read(path).unwrap(), bytes);
     }
     #[test]
-    fn v2_migration_preserves_recipe_and_exact_backup_before_v3_publication() {
+    fn v2_migration_preserves_recipe_and_exact_backup_before_v4_publication() {
         let root = tempfile::tempdir().unwrap();
         let source = root.path().join("photo.png");
         fs::write(&source, b"source").unwrap();
@@ -387,7 +393,7 @@ mod tests {
         let previous = serde_json::to_vec_pretty(&value).unwrap();
         fs::write(directory.join("session.json"), &previous).unwrap();
         let session = store.load().unwrap();
-        assert_eq!(session.version, 3);
+        assert_eq!(session.version, 4);
         assert_eq!(session.photos[0].recipe.parameters.exposure, 0.75);
         assert_eq!(fs::read(directory.join("session.json")).unwrap(), previous);
         store.save(&session).unwrap();
@@ -407,7 +413,7 @@ mod tests {
             serde_json::from_slice::<Session>(&fs::read(directory.join("session.json")).unwrap())
                 .unwrap()
                 .version,
-            3
+            4
         );
         assert_eq!(fs::read(source).unwrap(), b"source");
     }

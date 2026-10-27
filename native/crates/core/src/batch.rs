@@ -24,7 +24,7 @@ use std::{
 
 pub const MAX_JOBS: usize = 512;
 const MAX_ATTEMPTS: u8 = 5;
-const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -78,7 +78,7 @@ impl Job {
         }
         let source = ExportSource::new(EditRequest {
             path: self.source.clone(),
-            recipe: self.recipe,
+            recipe: self.recipe.clone(),
         })?;
         if SourceState::read(&self.source)? != self.source_state {
             return Err(Error::Policy("原片在启动批量导出时发生变化".into()));
@@ -87,7 +87,7 @@ impl Job {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum RecipeMode {
     PerPhoto,
     Shared(Recipe),
@@ -99,12 +99,13 @@ pub struct Queue {
     pub version: u32,
     pub next_id: u64,
     pub paused: bool,
+    #[serde(deserialize_with = "crate::bounded::list::<_, Job, MAX_JOBS>")]
     pub jobs: Vec<Job>,
 }
 impl Default for Queue {
     fn default() -> Self {
         Self {
-            version: 1,
+            version: 2,
             next_id: 1,
             paused: true,
             jobs: Vec::new(),
@@ -113,7 +114,7 @@ impl Default for Queue {
 }
 impl Queue {
     pub fn validate(&self) -> Result<()> {
-        if self.version != 1 || self.next_id == 0 || self.jobs.len() > MAX_JOBS {
+        if !matches!(self.version, 1 | 2) || self.next_id == 0 || self.jobs.len() > MAX_JOBS {
             return Err(Error::Policy("批量队列版本或容量无效".into()));
         }
         let mut ids = HashSet::new();
@@ -134,6 +135,9 @@ impl Queue {
                 return Err(Error::Policy("批量队列含无效任务；未覆盖原记录".into()));
             }
             job.recipe.validate()?;
+            if self.version == 1 && job.recipe.skin.is_some() {
+                return Err(Error::Policy("旧队列包含新格式皮肤蒙版".into()));
+            }
             if !valid_extension(&job.destination, job.format)
                 || !destinations.insert(destination_key(&job.destination))
             {
@@ -169,8 +173,8 @@ impl Queue {
         for (index, photo) in photos.iter().enumerate() {
             let source = photo.path.canonicalize()?;
             let source_state = SourceState::read(&source)?;
-            let mut recipe = photo.recipe;
-            if let RecipeMode::Shared(shared) = mode {
+            let mut recipe = photo.recipe.clone();
+            if let RecipeMode::Shared(shared) = &mode {
                 recipe.parameters = shared.parameters;
                 recipe.white_balance = shared.white_balance;
             }
@@ -400,6 +404,7 @@ impl Store {
             None => Queue::default(),
         };
         queue.validate()?;
+        queue.version = 2;
         *self.persisted.lock().unwrap_or_else(|e| e.into_inner()) = bytes;
         self.validated.store(true, Ordering::Release);
         if queue.recover() {
@@ -409,6 +414,9 @@ impl Store {
     }
     pub fn save(&self, queue: &Queue) -> Result<()> {
         queue.validate()?;
+        if queue.version != 2 {
+            return Err(Error::Policy("请先读取并迁移旧批量队列".into()));
+        }
         if !self.validated.load(Ordering::Acquire) {
             return Err(Error::Policy("批量记录未通过读取验证；已阻止覆盖".into()));
         }
@@ -419,12 +427,23 @@ impl Store {
         }
         let bytes = serde_json::to_vec_pretty(queue)?;
         if bytes.len() as u64 > MAX_FILE_BYTES {
-            return Err(Error::Policy("批量队列超过 2 MiB，未写入".into()));
+            return Err(Error::Policy("批量队列超过 64 MiB，未写入".into()));
         }
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos();
+        if let Some(previous) = persisted
+            .as_ref()
+            .filter(|bytes| serde_json::from_slice::<Queue>(bytes).is_ok_and(|q| q.version == 1))
+        {
+            let mut backup = tempfile::NamedTempFile::new_in(&self.root)?;
+            backup.write_all(previous)?;
+            backup.as_file().sync_all()?;
+            backup
+                .persist_noclobber(self.root.join(format!("batch-v1-backup-{stamp}.json")))
+                .map_err(|e| e.error)?;
+        }
         let temp = self
             .root
             .join(format!("batch-{}-{stamp}.part", std::process::id()));
@@ -456,7 +475,7 @@ fn read_snapshot(path: &Path) -> Result<Option<Vec<u8>>> {
     let mut bytes = Vec::new();
     file.take(MAX_FILE_BYTES + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > MAX_FILE_BYTES {
-        return Err(Error::Policy("批量记录超过 2 MiB；未覆盖旧文件".into()));
+        return Err(Error::Policy("批量记录超过 64 MiB；未覆盖旧文件".into()));
     }
     Ok(Some(bytes))
 }

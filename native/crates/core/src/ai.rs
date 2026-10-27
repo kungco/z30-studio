@@ -261,7 +261,7 @@ mod tests {
     #[test]
     fn strict_advice_rejects_missing_unknown_nonfinite_and_wb_change() {
         let base = Recipe::default();
-        let correct = Advice::parse(&valid(), base).unwrap();
+        let correct = Advice::parse(&valid(), base.clone()).unwrap();
         assert_eq!(correct.adjustments.parameters().exposure, 0.4);
         for bytes in [
             String::from_utf8(valid())
@@ -280,7 +280,7 @@ mod tests {
                 .unwrap()
                 .replace("\"wb\":\"camera\"", "\"wb\":\"auto\""),
         ] {
-            assert!(Advice::parse(bytes.as_bytes(), base).is_err());
+            assert!(Advice::parse(bytes.as_bytes(), base.clone()).is_err());
         }
         assert!(Advice::parse(&vec![b'x'; 50_001], base).is_err());
         assert!(

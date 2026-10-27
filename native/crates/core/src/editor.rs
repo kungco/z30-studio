@@ -174,14 +174,14 @@ mod tests {
         let neutral = first.neutral.pixels.clone();
         let mut recipe = Recipe::default();
         recipe.parameters.exposure = 1.;
-        let edited = engine.preview(&path, recipe).unwrap();
+        let edited = engine.preview(&path, recipe.clone()).unwrap();
         assert!(edited.reused_decode);
         assert!(Arc::ptr_eq(&first.neutral, &edited.neutral));
         assert!(edited.rendered.pixels[0][0] > first.rendered.pixels[0][0] + 0.1);
         assert_eq!(edited.neutral.pixels, neutral);
         assert_eq!(std::fs::read(&path).unwrap(), before);
         engine.clear();
-        assert!(!engine.preview(&path, recipe).unwrap().reused_decode);
+        assert!(!engine.preview(&path, recipe.clone()).unwrap().reused_decode);
     }
     #[test]
     fn photo_and_source_changes_invalidate_the_single_frame_cache() {

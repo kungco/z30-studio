@@ -21,7 +21,7 @@
   "output": {"name":"Identity", "shape":[1,256,256,6], "activation":"softmax of logits", "labels":["background","hair","body-skin","face-skin","clothes","others"]},
   "gate": {"class":3, "smoothstep_thresholds":[0.55,0.85], "erosion_radius":1, "storage":"uint8 confidence only; image data remains float"},
   "runtime": "Reuse native/vendor/vision/manifest.json ONNX Runtime 1.31.0 CPU and its external Microsoft VC++ x64 requirement",
-  "desktop_integration": false,
+  "desktop_integration": true,
   "automatic_download": false,
   "user_photos_validated": false,
   "clean_windows_validated": false

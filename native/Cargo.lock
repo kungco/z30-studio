@@ -5812,6 +5812,7 @@ dependencies = [
 name = "z30-core"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "bytemuck",
  "cc",
  "image",

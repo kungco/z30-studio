@@ -167,7 +167,7 @@ pub fn run(
     if cancel.load(Ordering::Acquire) {
         return Err(Error::Policy("AI 调色已取消".into()));
     }
-    let prompt = prompt(recipe, goal, raw)?;
+    let prompt = prompt(recipe.clone(), goal, raw)?;
     for jpeg in [neutral, current] {
         if jpeg.len() < 4
             || jpeg.len() > MAX_JPEG_BYTES

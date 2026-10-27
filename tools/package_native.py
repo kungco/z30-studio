@@ -19,9 +19,11 @@ import zipfile
 if __package__:
     from .build_native_libraw import SDK_HASH, SDK_NAME, check_system_imports, sha256
     from .prepare_native_vision import verify_component
+    from .prepare_native_skin import verify_component as verify_skin_component
 else:
     from build_native_libraw import SDK_HASH, SDK_NAME, check_system_imports, sha256
     from prepare_native_vision import verify_component
+    from prepare_native_skin import verify_component as verify_skin_component
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_LICENSES = {'LibRaw-COPYRIGHT.txt', 'LibRaw-CDDL-1.0.txt', 'LibRaw-LGPL-2.1.txt',
@@ -153,6 +155,12 @@ def verify_stage(stage: Path) -> dict:
         verify_component(stage/'vision')
     elif (stage/'vision').exists() or info.get('models_bundled') is True:
         raise ValueError('Undeclared optional model/runtime directory')
+    if info.get('skin_bundled') is True:
+        if info.get('vision_bundled') is not True:
+            raise ValueError('Bundled skin requires the audited vision runtime')
+        verify_skin_component(stage/'skin')
+    elif (stage/'skin').exists():
+        raise ValueError('Undeclared optional skin directory')
     return info
 
 

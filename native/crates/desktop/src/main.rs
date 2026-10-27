@@ -27,6 +27,7 @@ slint::include_modules!();
 mod ai_cli;
 mod ai_http;
 mod qa;
+mod skin_workflow;
 
 enum AiBackend {
     Codex,
@@ -54,6 +55,8 @@ struct State {
     ai_suggestion: Option<AiSuggestion>,
     close_after_ai: bool,
     face_assets: Option<PathBuf>,
+    skin_assets: Option<PathBuf>,
+    skin_overlay: RefCell<Option<skin_workflow::Overlay>>,
     face_control: Option<Arc<AtomicBool>>,
     face_dialog: bool,
     close_after_face: bool,
@@ -168,6 +171,7 @@ fn sync_recipe(state: &State, ui: &AppWindow) {
         ui.set_saturation(p.saturation);
         ui.set_vibrance(p.vibrance);
         ui.set_sharpen(p.sharpen);
+        skin_workflow::sync(state,ui,&request.recipe);
         let portrait=request.recipe.portrait;
         ui.set_skin_smooth(portrait.smooth);
         ui.set_has_face(portrait.face.is_some());
@@ -372,7 +376,7 @@ fn evaluate_ai(
         .is_some_and(|v| v.eq_ignore_ascii_case("nef"));
     let advice = match backend {
         AiBackend::Codex => ai_cli::run(
-            request.recipe,
+            request.recipe.clone(),
             goal,
             raw,
             &neutral_jpeg,
@@ -381,7 +385,7 @@ fn evaluate_ai(
         )?,
         AiBackend::Compatible(config) => ai_http::run(
             config,
-            request.recipe,
+            request.recipe.clone(),
             goal,
             raw,
             &neutral_jpeg,
@@ -404,7 +408,7 @@ fn evaluate_ai(
         let parameters = ai::blend(request.recipe.parameters, bounded, fraction)?;
         let recipe = z30_core::recipe::Recipe {
             parameters,
-            ..request.recipe
+            ..request.recipe.clone()
         };
         let preview = engine.preview(&request.path, recipe)?;
         let rgb: Vec<u8> = preview
@@ -597,6 +601,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         ai_suggestion: None,
         close_after_ai: false,
         face_assets: std::env::var_os("Z30_VISION_DIR").map(PathBuf::from).or_else(||std::env::current_exe().ok().and_then(|path|path.parent().map(|parent|parent.join("vision"))).filter(|path|path.is_dir())),
+        skin_assets: std::env::var_os("Z30_SKIN_DIR").map(PathBuf::from).or_else(||std::env::current_exe().ok().and_then(|p|p.parent().map(|d|d.join("skin"))).filter(|p|p.is_dir())),
+        skin_overlay: RefCell::new(None),
         face_control: None,
         face_dialog: false,
         close_after_face: false,
@@ -605,6 +611,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let ui = AppWindow::new()?;
     ui.set_ai_ready(true);
     ui.set_face_assets_ready(state.borrow().face_assets.is_some());
+    ui.set_skin_assets_ready(state.borrow().skin_assets.is_some());
     ui.set_face_status(if state.borrow().face_assets.is_some(){"本机组件将在检测时校验；没有发送照片"}else{"选择本机人像组件目录；基础编辑无需此组件"}.into());
     ui.set_photos(ModelRc::from(Rc::clone(&rows)));
     ui.set_can_import(!protected);
@@ -633,7 +640,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let mut engine = preview_engine.lock().unwrap_or_else(|e| e.into_inner());
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             engine
-                .preview(&request.path, request.recipe)
+                .preview(&request.path, request.recipe.clone())
                 .map(DisplayPreview::from)
         }))
         .unwrap_or_else(|_| {
@@ -658,6 +665,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let export_override = Rc::new(RefCell::new(None::<PathBuf>));
     let batch_override = Rc::new(RefCell::new(None::<PathBuf>));
     let face_override = Rc::new(RefCell::new(None::<PathBuf>));
+    let skin=Rc::new(skin_workflow::bind(&ui,Rc::clone(&state),Rc::clone(&worker),Arc::clone(&engine),Arc::clone(&compute),Arc::clone(&full_cache),raw_dll.clone()));
     let (picked, files) = mpsc::channel::<Vec<PathBuf>>();
     {
         let weak = ui.as_weak();
@@ -1153,7 +1161,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     if cancel.load(Ordering::Acquire) {return Err(z30_core::Error::Policy("人像定位已取消".into()));}
                     source.unchanged()?;
                     cache.lock().unwrap_or_else(|e|e.into_inner()).discard_other_source(&request.path,request.recipe.white_balance,dll.as_deref());
-                    let mut neutral_recipe=request.recipe;neutral_recipe.portrait=Portrait::default();
+                    let mut neutral_recipe=request.recipe.clone();neutral_recipe.portrait=Portrait::default();neutral_recipe.skin=None;
                     let preview=engine.lock().unwrap_or_else(|e|e.into_inner()).preview(&request.path,neutral_recipe)?;
                     let (width,height)=(preview.source_width,preview.source_height);let neutral=Arc::clone(&preview.neutral);drop(preview);
                     let mut models=models.lock().unwrap_or_else(|e|e.into_inner());
@@ -1274,6 +1282,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         } else {ui.set_face_status("目录缺少固定模型或 onnxruntime.dll；请检查组件".into());}
                     }
                 }
+                skin.poll(&ui);
                 for outcome in completed_faces.try_iter() {
                     let mut state=state.borrow_mut();let cancelled=state.face_control.as_ref().is_some_and(|control|control.load(Ordering::Acquire));state.face_control=None;ui.set_face_busy(false);
                     if state.close_after_face {continue;}
@@ -1522,6 +1531,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             qa::Command::FaceAssets {directory} => {
                                 if directory.is_absolute() {*face_override.borrow_mut()=Some(directory);ui.invoke_choose_face_assets();face_override.borrow_mut().take();}
                             }
+                            qa::Command::SkinAssets { directory }=>{
+                                if directory.is_absolute() {*skin.chooser.borrow_mut()=Some(directory);ui.invoke_choose_skin_assets();skin.chooser.borrow_mut().take();}
+                            },
+                            qa::Command::SegmentSkin=>ui.invoke_segment_skin(),
+                            qa::Command::ShowSkinMask{visible}=>ui.set_show_skin_mask(visible),
                             qa::Command::DetectFace=>ui.invoke_detect_face(),
                             qa::Command::CancelFace=>ui.invoke_cancel_face(),
                             qa::Command::NextFace=>ui.invoke_next_face(),
@@ -1571,6 +1585,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             object.insert("has_face".into(),ui.get_has_face().into());
                             object.insert("face_status".into(),ui.get_face_status().as_str().into());
                             object.insert("skin_smooth".into(),ui.get_skin_smooth().into());
+                            object.insert("has_skin_mask".into(),ui.get_has_skin_mask().into());
+                            object.insert("skin_assets_ready".into(),ui.get_skin_assets_ready().into());
+                            object.insert("show_skin_mask".into(),ui.get_show_skin_mask().into());
                             object.insert("portrait_ready".into(),ui.get_portrait_ready().into());
                             object.insert("face_selection".into(),ui.get_face_selection().as_str().into());
                             object.insert("preview_aspect".into(),ui.get_preview_aspect().into());

@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         parameters,
         ..Default::default()
     };
-    let warm = engine.preview(&source, recipe)?;
+    let warm = engine.preview(&source, recipe.clone())?;
     let repeat = engine.preview(&source, recipe)?;
     let shared_neutral = Arc::ptr_eq(&neutral.neutral, &warm.neutral);
     let deterministic_repeat = warm.rendered.pixels == repeat.rendered.pixels;

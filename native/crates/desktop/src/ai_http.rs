@@ -183,7 +183,7 @@ pub fn run(
     if cancel.load(Ordering::Acquire) {
         return Err(Error::Policy("AI 调色已取消".into()));
     }
-    let body = request_body(recipe, goal, raw, neutral, current, &config.model)?;
+    let body = request_body(recipe.clone(), goal, raw, neutral, current, &config.model)?;
     let exe = system_curl()?;
     let temp = tempfile::Builder::new().prefix("z30-ai-http-").tempdir()?;
     fs::write(temp.path().join("request.json"), body)?;

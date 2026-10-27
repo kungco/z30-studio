@@ -28,7 +28,7 @@ impl EditingSession {
         let photo = self.session.photos.get(self.session.selected?)?;
         Some(EditRequest {
             path: photo.path.clone(),
-            recipe: photo.recipe,
+            recipe: photo.recipe.clone(),
         })
     }
     pub fn select(&mut self, index: usize) -> Result<Option<EditRequest>> {
@@ -45,7 +45,7 @@ impl EditingSession {
         let Some(current) = self.current() else {
             return Ok(false);
         };
-        let mut next = current.recipe;
+        let mut next = current.recipe.clone();
         let p = &mut next.parameters;
         match name {
             "exposure" => p.exposure = value,
@@ -72,7 +72,7 @@ impl EditingSession {
         }
         self.histories
             .entry(current.path)
-            .or_insert(EditHistory::new(current.recipe)?);
+            .or_insert(EditHistory::new(current.recipe.clone())?);
         self.session.photos[self.session.selected.unwrap()].recipe = next;
         Ok(true)
     }
@@ -80,7 +80,7 @@ impl EditingSession {
         if let Some(current) = self.current() {
             self.histories
                 .entry(current.path)
-                .or_insert(EditHistory::new(current.recipe)?)
+                .or_insert(EditHistory::new(current.recipe.clone())?)
                 .record(current.recipe)?;
         }
         Ok(())
@@ -103,7 +103,7 @@ impl EditingSession {
         self.histories
             .get_mut(&current.path)
             .unwrap()
-            .record(next)?;
+            .record(next.clone())?;
         self.session.photos[self.session.selected.unwrap()].recipe = next;
         Ok(true)
     }
@@ -117,18 +117,47 @@ impl EditingSession {
                 return Err(Error::Policy("人像结果不属于当前原片，未应用".into()));
             }
         }
-        if current.recipe.portrait == portrait {
+        if current.recipe.portrait == portrait && current.recipe.skin.is_none() {
             return Ok(false);
         }
         self.commit()?;
         let next = Recipe {
             portrait,
+            skin: None,
             ..current.recipe
         };
         self.histories
             .get_mut(&current.path)
             .unwrap()
-            .record(next)?;
+            .record(next.clone())?;
+        self.session.photos[self.session.selected.unwrap()].recipe = next;
+        Ok(true)
+    }
+    pub fn apply_skin(&mut self, mask: crate::skin::SkinMask) -> Result<bool> {
+        let Some(current) = self.current() else {
+            return Ok(false);
+        };
+        mask.check_portrait(&current.recipe.portrait)?;
+        if !current
+            .recipe
+            .portrait
+            .binding
+            .unwrap()
+            .matches_source(&current.path)?
+        {
+            return Err(Error::Policy("原片已变化，皮肤识别结果未应用".into()));
+        }
+        if current.recipe.skin.as_ref() == Some(&mask) {
+            return Ok(false);
+        }
+        self.commit()?;
+        let mut next = current.recipe;
+        next.skin = Some(mask);
+        next.validate()?;
+        self.histories
+            .get_mut(&current.path)
+            .unwrap()
+            .record(next.clone())?;
         self.session.photos[self.session.selected.unwrap()].recipe = next;
         Ok(true)
     }
@@ -159,8 +188,8 @@ impl EditingSession {
         };
         let history = self.histories.get_mut(&current.path).unwrap();
         let next = if redo { history.redo() } else { history.undo() };
-        if let Some(recipe) = next {
-            self.session.photos[self.session.selected.unwrap()].recipe = recipe;
+        if let Some(recipe) = &next {
+            self.session.photos[self.session.selected.unwrap()].recipe = recipe.clone();
         }
         Ok(next.is_some())
     }
@@ -178,7 +207,7 @@ impl EditingSession {
             .histories
             .get_mut(&current.path)
             .unwrap()
-            .record(next)?;
+            .record(next.clone())?;
         self.session.photos[self.session.selected.unwrap()].recipe = next;
         Ok(changed)
     }

@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from tools import prepare_native_skin as skin
+from tools import prepare_native_vision as vision
 
 
 class SkinAssetTests(unittest.TestCase):
@@ -26,7 +27,7 @@ class SkinAssetTests(unittest.TestCase):
         output=self.root/'component'
         info=skin.prepare(self.model,output)
         self.assertEqual(info,skin.verify_component(output))
-        self.assertFalse(info['desktop_integration'])
+        self.assertTrue(info['desktop_integration'])
         self.assertFalse(info['runtime_bundled'])
         self.assertTrue(info['external_vc_runtime_required'])
         before={p.name:p.read_bytes() for p in output.iterdir()}
@@ -57,8 +58,22 @@ class SkinAssetTests(unittest.TestCase):
         output=self.root/'component';skin.prepare(self.model,output)
         (output/'test.onnx').unlink();(output/'test.onnx').mkdir()
         with self.assertRaises(ValueError): skin.verify_component(output)
+        (output/'test.onnx').rmdir();(output/'test.onnx').write_bytes(self.model.read_bytes())
         (output/'NOTICE.txt').unlink()
         with self.assertRaises(ValueError): skin.verify_component(output)
+
+    def test_explicit_install_requires_runtime_and_preserves_existing_target(self):
+        component=self.root/'component';skin.prepare(self.model,component)
+        stage=self.root/'stage';stage.mkdir()
+        with patch.object(vision,'verify_component',side_effect=ValueError('missing runtime')):
+            with self.assertRaises(ValueError):skin.install_component(component,stage)
+        self.assertFalse((stage/'skin').exists())
+        with patch.object(vision,'verify_component',return_value={'validated':True}):
+            skin.install_component(component,stage)
+            self.assertEqual(skin.verify_component(stage/'skin')['model_sha256'],self.manifest['model']['sha256'])
+            before=(stage/'skin/test.onnx').read_bytes()
+            with self.assertRaises(ValueError):skin.install_component(component,stage)
+            self.assertEqual((stage/'skin/test.onnx').read_bytes(),before)
 
 
 if __name__=='__main__': unittest.main()

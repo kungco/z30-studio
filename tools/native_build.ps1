@@ -11,14 +11,20 @@ param(
     [switch]$FullCacheProbe,
     [switch]$VisionProbe,
     [switch]$SkinProbe,
+    [switch]$SkinPersistenceProbe,
     [switch]$VisionFixtures,
     [string]$RawRuntime,
-    [string]$VisionRuntime
+    [string]$VisionRuntime,
+    [string]$SkinRuntime
 )
 $ErrorActionPreference='Stop'
 $repoRoot=Split-Path -Parent $PSScriptRoot
 if($RawRuntime){$runtimePath=(Resolve-Path -LiteralPath $RawRuntime).Path}
 if($VisionRuntime){$visionRuntimePath=(Resolve-Path -LiteralPath $VisionRuntime).Path}
+if($SkinRuntime){
+    if(-not $VisionRuntime){throw 'Skin model packaging requires -VisionRuntime'}
+    $skinRuntimePath=(Resolve-Path -LiteralPath $SkinRuntime).Path
+}
 $sourceCommit=(& git -C $repoRoot rev-parse HEAD).Trim()
 $sourceDirty=[bool]((& git -C $repoRoot status --porcelain) -join '')
 $cargoTool='cargo'
@@ -93,6 +99,7 @@ try {
     if($FullCacheProbe){& $cargoTool build -p z30-core --example full_cache_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Full-size cache probe build failed'}}
     if($VisionProbe){& $cargoTool build -p z30-vision --example face_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Face detector probe build failed'}}
     if($SkinProbe){& $cargoTool build -p z30-vision --example skin_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Skin segmenter probe build failed'}}
+    if($SkinPersistenceProbe){& $cargoTool build -p z30-core --example skin_persistence_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Skin persistence probe build failed'}}
     $profile=if($DebugBuild){'debug'}else{'release'}
     if(((& git rev-parse HEAD).Trim() -ne $sourceCommit) -or ([bool]((& git status --porcelain) -join '') -ne $sourceDirty)){
         throw 'Source revision/cleanliness changed during build; rebuild before staging'
@@ -115,6 +122,12 @@ try {
         & $packPython (Join-Path $repoRoot 'tools\prepare_native_vision.py') --component $visionRuntimePath --install-to-stage $staging
         if($LASTEXITCODE -ne 0){throw 'Optional vision distribution verification failed'}
     }
+    if($SkinRuntime){
+        $packPython=Join-Path $repoRoot '.venv\Scripts\python.exe'
+        if(-not (Test-Path -LiteralPath $packPython)){$packPython='python'}
+        & $packPython (Join-Path $repoRoot 'tools\prepare_native_skin.py') --component $skinRuntimePath --install-to-stage $staging
+        if($LASTEXITCODE -ne 0){throw 'Optional skin distribution verification failed'}
+    }
     $buildInfo=[ordered]@{
         app='Z30 Studio Native';version='0.1.0-native-preview';profile=$profile
         source_commit=$sourceCommit
@@ -125,6 +138,7 @@ try {
         full_feature_migration_complete=$false
         models_bundled=[bool]$VisionRuntime
         vision_bundled=[bool]$VisionRuntime
+        skin_bundled=[bool]$SkinRuntime
         vision_external_vc_runtime=[bool]$VisionRuntime
         raw_bundled=[bool]$RawRuntime
         runtime=if($VisionRuntime){'Windows system DLLs/fonts; optional portrait runtime needs Microsoft VC++ x64; no Python/browser/local HTTP server'}else{'Windows system DLLs and OS UI fonts; no Python/browser/local HTTP server'}

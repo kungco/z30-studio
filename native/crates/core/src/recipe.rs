@@ -11,17 +11,23 @@ pub enum WhiteBalance {
     Daylight,
 }
 
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct Recipe {
     pub parameters: Parameters,
     pub white_balance: WhiteBalance,
     pub portrait: Portrait,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skin: Option<crate::skin::SkinMask>,
 }
 impl Recipe {
     pub fn validate(&self) -> Result<()> {
         self.parameters.validate()?;
-        self.portrait.validate()
+        self.portrait.validate()?;
+        if let Some(skin) = &self.skin {
+            skin.check_portrait(&self.portrait)?;
+        }
+        Ok(())
     }
 }
 
@@ -40,7 +46,7 @@ impl EditHistory {
         })
     }
     pub fn current(&self) -> Recipe {
-        self.states[self.position]
+        self.states[self.position].clone()
     }
     pub fn can_undo(&self) -> bool {
         self.position > 0

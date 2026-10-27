@@ -133,7 +133,7 @@ fn shared_global_settings_preserve_each_target_portrait() {
     let mut first = photo(root.path(), "first.png");
     let second = photo(root.path(), "second.png");
     first.recipe.portrait = portrait(&first);
-    let mut shared = first.recipe;
+    let mut shared = first.recipe.clone();
     shared.parameters.exposure = 1.;
     let mut queue = Queue::default();
     queue
@@ -210,7 +210,7 @@ fn actual_preview_and_tiff16_export_use_the_same_portrait_recipe() {
     let original = fs::read(&photo.path).unwrap();
     photo.recipe.portrait = portrait(&photo);
     let mut preview = PreviewEngine::new(None).unwrap();
-    let rendered = preview.preview(&photo.path, photo.recipe).unwrap();
+    let rendered = preview.preview(&photo.path, photo.recipe.clone()).unwrap();
     let destination = root.path().join("output.tif");
     ExportSource::new(EditRequest {
         path: photo.path.clone(),
