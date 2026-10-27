@@ -13,6 +13,7 @@ param(
     [switch]$SkinProbe,
     [switch]$SkinPersistenceProbe,
     [switch]$SkinToneProbe,
+    [switch]$RetouchProbe,
     [switch]$VisionFixtures,
     [string]$RawRuntime,
     [string]$VisionRuntime,
@@ -102,6 +103,7 @@ try {
     if($SkinProbe){& $cargoTool build -p z30-vision --example skin_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Skin segmenter probe build failed'}}
     if($SkinPersistenceProbe){& $cargoTool build -p z30-core --example skin_persistence_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Skin persistence probe build failed'}}
     if($SkinToneProbe){& $cargoTool build -p z30-core --example skin_tone_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Skin tone probe build failed'}}
+    if($RetouchProbe){& $cargoTool build -p z30-core --example retouch_probe --example retouch_benchmark --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Retouch probe build failed'}}
     $profile=if($DebugBuild){'debug'}else{'release'}
     if(((& git rev-parse HEAD).Trim() -ne $sourceCommit) -or ([bool]((& git status --porcelain) -join '') -ne $sourceDirty)){
         throw 'Source revision/cleanliness changed during build; rebuild before staging'

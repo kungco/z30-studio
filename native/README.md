@@ -85,3 +85,5 @@ Slint 1.18.1 采用 Royalty-free Desktop License 2.0，并在顶层“关于”�
 草稿写 v5、读 v1–v5，批量队列写 v3、读 v1–v3；首次保存迁移前备份旧 JSON 原字节。皮肤区域与各项人像强度随草稿和任务保存，无损压缩且带原片绑定与校验；重启后不需要模型或推理 DLL 来恢复、导出已有编辑。草稿上限 256 张/32 MiB，队列 512 任务/64 MiB，图像仍只读引用原文件。蒙版损坏时进入受保护状态，不自动扩大作用范围。请保留原片路径；重新定位会清除当前皮肤区域并将柔化/均匀/提亮归零，可撤销。公共批量只同步全局参数与白平衡，每张照片的人像位置、蒙版与三项强度保留。
 
 开发者可用 `tools/native_build.ps1 -SkinToneProbe` 构建独立 CPU 探针，再运行 `python tools/benchmark_native_tone.py --probe native/target/release/examples/skin_tone_probe.exe --out 新报告.json` 测量合成 512²/约 2000 万像素浮点图的肤色处理耗时与内存。该基准不读取照片或模型，不代表真实 NEF 全流程或人像主观画质；Python 仅用于开发测量。`tools/validate_native_tone.py` 另用公开图的真实原生浮点输出与独立 NumPy 参考比对。
+
+5E1 新增克隆/均值修复原生核心，尚未接入窗口、保存或导出，不能在当前界面使用，亦未实现自动祛痘。开发者用 `-RetouchProbe` 构建探针，再运行 `python tools/validate_native_retouch.py --probe native/target/release/examples/retouch_probe.exe --out 新报告.json` 与冻结旧版对照；`benchmark_native_retouch.py` 用同样参数形式和 `retouch_benchmark.exe` 测量合成 CPU/内存。重新生成参考用 `generate_native_retouch_reference.py --out 新参考.json`，不会覆盖现有测试。范围和限制见 docs/reports/native-stage5e1-retouch.md。

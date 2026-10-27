@@ -8,11 +8,11 @@
 | JPEG/PNG ICC、无 ICC 策略、alpha、EXIF、输入位深 | imaging.py、colour_management.py；test_imaging.py/test_output.py | 2C 核心和 UI 已迁移，52 个合成案例与浮点 CMS 数值/性能通过；CMYK/YCCK、损坏 ICC、cICP/HDR 等仍明确拒绝 |
 | float32 tone/肩部/阴影、OKLab 护色、九参数/锐化 | processing.py、quality.py；test_processing.py/test_quality_cache.py | 2B 暖色数值跳变已修正；修正 Python/Rust 四组对照 <一个 RGB16 码值，旧输出差异另报；2F 原生 UI 已接通 |
 | 曲线/HSL/分级/Kelvin/吸管/裁剪/拉直/细节 | darkroom.py；test_darkroom.py | 未迁移 / 2、6 |
-| 蒙版/范围/画笔、修复/克隆/降噪 | spatial.py；test_spatial.py/test_local_edits.py | 未迁移 / 5、6 |
-| 本机 SegFormer 主体/天空/人物与皮肤柔化 | local_vision.py；test_local_edits.py | 5A/5B 新增可选 YuNet 人脸/五点 CPU 定位、桌面逐张几何柔化/撤销/恢复/导出；原 SegFormer 场景蒙版和语义皮肤区域仍待迁移，不能等同原功能完成 |
+| 蒙版/范围/画笔、修复/克隆/降噪 | spatial.py；test_spatial.py/test_local_edits.py | 5E1 浮点克隆/均值修复核心与十组冻结旧版对照通过；尚未接桌面/配方/导出，其他空间功能仍待 5E2/6 |
+| 本机 SegFormer 主体/天空/人物与皮肤柔化 | local_vision.py；test_local_edits.py | 5A–5D 可选人脸/五点、语义皮肤、逐张柔化/均匀/提亮、撤销/恢复/导出通过限定验收；原 SegFormer 主体/天空等场景蒙版仍待迁移，不能等同原功能完成 |
 | Nikon Z Lensfun 数据/焦距插值/色差估计 | lens_tools.py、data/；test_lens_tools.py | 未迁移 / 6 |
 | 图库评分/旗标/关键词/比较/选择/参数分组同步 | photo_workflow.py；test_workflow.py、library-workflow.test.cjs | 原生已迁移评分、逐张选择、调整前后比较；旗标/关键词/多选/分组同步仍待阶段 6 |
-| 草稿 SQLite CAS、快照/版本/项目打包 | drafts.py、projects.py；test_drafts.py/test_projects.py | 原生 JSON 独占/CAS/v1/v2→v3 原字节备份/逐张参数及人像恢复已接通；完整旧项目、版本/打包仍待迁移 |
+| 草稿 SQLite CAS、快照/版本/项目打包 | drafts.py、projects.py；test_drafts.py/test_projects.py | 原生 JSON 独占/CAS/v1–4→v5 草稿、v1/v2→v3 队列原字节备份/逐张参数及皮肤恢复已接通；完整旧项目、快照版本/打包仍待迁移 |
 | 输出尺寸/水印/命名/锐化/元数据/ICC/TIFF16 | export_tools.py、colour_management.py；test_output.py | 2D–2G 全尺寸 NEF JPEG/PNG/TIFF16、sRGB ICC、原子不覆盖及后台 UI 通过；高级导出预设与广色域输出仍待迁移 |
 | 后台导出/任务冻结/中断恢复/双路/进度 | export_jobs.py；test_export_jobs.py/test_lifecycle.py | 4A–4C 原生持久顺序队列、逐张/公共配方、暂停/取消/重试/重启恢复/阶段进度通过；双路并行、ETA、批量 AI 未迁移 |
 | 全尺寸 float 磁盘缓存、条带/租约/LRU | native_cache.py、processing.py；test_native_cache.py | 4C 加入一张/320 MiB/30 秒浮点内存缓存，公开 RAW 重复导出字节一致与三轮速度/内存通过；磁盘/条带/租约/LRU 仍未迁移 |
