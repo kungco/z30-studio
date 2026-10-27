@@ -434,8 +434,8 @@ export component AppWindow inherits Window {
                                     spacing:10px;
                                     Adjustment {label:"作用半径 (%)";minimum:0.2;maximum:20;value<=>root.warp-radius;active:!root.warp-dragging;adjusted(v)=>{}}
                                     if root.has-warp-record: Adjustment {label:"形变强度 (%)";minimum:0;maximum:100;value<=>root.warp-amount;active:root.engine-ready;adjusted(v)=>{root.adjust("warp_amount",v);}}
-                                    Text {text:root.warp-status;color:#b8ac91;font-size:11px;wrap:word-wrap;}
-                                    Text {text:"松开后应用；单次位移最多为半径的10%，最多4次。作用圈须在照片内；Esc退出工具。";color:#8d98a6;font-size:10px;wrap:word-wrap;}
+                                    Text {text:root.warp-status;color:#b8ac91;font-size:11px;wrap:word-wrap;min-height:32px;vertical-stretch:0;}
+                                    Text {text:"松开后应用；单次位移最多为半径的10%，最多4次。作用圈须在照片内；Esc退出工具。";color:#8d98a6;font-size:10px;wrap:word-wrap;min-height:40px;vertical-stretch:0;}
                                     if root.has-warp-record: ToolButton {label:"清除形变";active:!root.busy && !root.ai-busy && !root.face-busy;triggered=>{root.adjust("warp_clear",0);}}
                                 }
                             }
