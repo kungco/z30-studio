@@ -241,7 +241,7 @@ fn v5_and_v3_exact_backups_and_old_format_new_data_rejection_are_real() {
     fs::write(data.join("session.json"), &bytes).unwrap();
     let store = SessionStore::new(data.clone()).unwrap();
     let loaded = store.load().unwrap();
-    assert_eq!(loaded.version, 6);
+    assert_eq!(loaded.version, 7);
     store.save(&loaded).unwrap();
     assert!(fs::read_dir(&data).unwrap().flatten().any(|e| {
         e.file_name()
@@ -265,7 +265,7 @@ fn v5_and_v3_exact_backups_and_old_format_new_data_rejection_are_real() {
     fs::write(qdir.join("batch-jobs.json"), &bytes).unwrap();
     let store = Store::new(qdir.clone()).unwrap();
     let migrated = store.load().unwrap();
-    assert_eq!(migrated.version, 4);
+    assert_eq!(migrated.version, 5);
     store.save(&migrated).unwrap();
     assert!(fs::read_dir(&qdir).unwrap().flatten().any(|e| {
         e.file_name()

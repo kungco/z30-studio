@@ -105,7 +105,7 @@ pub struct Queue {
 impl Default for Queue {
     fn default() -> Self {
         Self {
-            version: 4,
+            version: 5,
             next_id: 1,
             paused: true,
             jobs: Vec::new(),
@@ -114,7 +114,9 @@ impl Default for Queue {
 }
 impl Queue {
     pub fn validate(&self) -> Result<()> {
-        if !matches!(self.version, 1 | 2 | 3 | 4) || self.next_id == 0 || self.jobs.len() > MAX_JOBS
+        if !matches!(self.version, 1 | 2 | 3 | 4 | 5)
+            || self.next_id == 0
+            || self.jobs.len() > MAX_JOBS
         {
             return Err(Error::Policy("批量队列版本或容量无效".into()));
         }
@@ -136,6 +138,9 @@ impl Queue {
                 return Err(Error::Policy("批量队列含无效任务；未覆盖原记录".into()));
             }
             job.recipe.validate()?;
+            if self.version < 5 && job.recipe.warp.is_some() {
+                return Err(Error::Policy("旧队列包含新格式形变集合".into()));
+            }
             if self.version < 4 && job.recipe.repairs.is_some() {
                 return Err(Error::Policy("旧队列包含新格式修复集合".into()));
             }
@@ -411,7 +416,7 @@ impl Store {
             None => Queue::default(),
         };
         queue.validate()?;
-        queue.version = 4;
+        queue.version = 5;
         *self.persisted.lock().unwrap_or_else(|e| e.into_inner()) = bytes;
         self.validated.store(true, Ordering::Release);
         if queue.recover() {
@@ -421,7 +426,7 @@ impl Store {
     }
     pub fn save(&self, queue: &Queue) -> Result<()> {
         queue.validate()?;
-        if queue.version != 4 {
+        if queue.version != 5 {
             return Err(Error::Policy("请先读取并迁移旧批量队列".into()));
         }
         if !self.validated.load(Ordering::Acquire) {
@@ -441,7 +446,7 @@ impl Store {
             .unwrap_or_default()
             .as_nanos();
         if let Some(previous) = persisted.as_ref().filter(|bytes| {
-            serde_json::from_slice::<Queue>(bytes).is_ok_and(|q| matches!(q.version, 1 | 2 | 3))
+            serde_json::from_slice::<Queue>(bytes).is_ok_and(|q| matches!(q.version, 1 | 2 | 3 | 4))
         }) {
             let mut backup = tempfile::NamedTempFile::new_in(&self.root)?;
             backup.write_all(previous)?;

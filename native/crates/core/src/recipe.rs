@@ -23,6 +23,8 @@ pub struct Recipe {
     pub skin_tone: crate::skin_tone::Settings,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repairs: Option<crate::repairs::Repairs>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warp: Option<crate::warps::Warps>,
 }
 impl Recipe {
     pub fn validate(&self) -> Result<()> {
@@ -31,6 +33,9 @@ impl Recipe {
         self.skin_tone.validate()?;
         if let Some(repairs) = &self.repairs {
             repairs.validate()?;
+        }
+        if let Some(warp) = &self.warp {
+            warp.validate()?;
         }
         if self.skin_tone.active() && self.skin.is_none() {
             return Err(crate::Error::Policy(

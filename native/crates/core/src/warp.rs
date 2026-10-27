@@ -1,6 +1,7 @@
 //! Bounded local inverse warps in unquantized linear RGB.
-//! Core only: no face-contour inference, recipe persistence or desktop tool.
-use crate::{Error, Result, frame::Frame};
+//! Source-bound recipes use warps.rs; face-contour inference and a desktop
+//! shape tool are separate integrations.
+use crate::{Error, Result, develop::SrgbFrame, frame::Frame};
 use serde::{Deserialize, Serialize};
 
 pub const MAX_DRAGS: usize = 4;
@@ -137,6 +138,23 @@ impl Map {
         }
         Ok(self.mapped(x, y))
     }
+    /// Original source -> destination, for overlays and later pointer tools.
+    /// Each compact field is a contraction in q=s+d*phi(q); compose its
+    /// inverse in chronological order. No image buffers or coordinate map.
+    pub fn destination_at(&self, mut x: f64, mut y: f64) -> Result<[f64; 2]> {
+        self.source_at(x, y)?;
+        for drag in &self.drags {
+            let source = [x, y];
+            for _ in 0..24 {
+                let dx = x - drag.centre[0];
+                let dy = y - drag.centre[1];
+                let t = (1. - (dx * dx + dy * dy) / drag.radius_squared).max(0.);
+                x = source[0] + drag.delta[0] * t * t;
+                y = source[1] + drag.delta[1] * t * t;
+            }
+        }
+        Ok([x, y])
+    }
     fn mapped(&self, mut x: f64, mut y: f64) -> [f64; 2] {
         for drag in self.drags.iter().rev() {
             let dx = x - drag.centre[0];
@@ -157,14 +175,65 @@ pub fn render(frame: &Frame, pins: &[Pin]) -> Result<Option<Frame>> {
 pub fn render_with_cancel(
     frame: &Frame,
     pins: &[Pin],
-    mut cancelled: impl FnMut() -> bool,
+    cancelled: impl FnMut() -> bool,
 ) -> Result<Option<Frame>> {
+    Ok(
+        render_pixels::<false>(frame.width, frame.height, &frame.pixels, pins, cancelled)?.map(
+            |pixels| Frame {
+                width: frame.width,
+                height: frame.height,
+                pixels,
+            },
+        ),
+    )
+}
+/// Source-space portrait/skin work precedes geometry. Decode only contributing
+/// samples before interpolation, then encode once; never average encoded RGB.
+pub fn render_srgb(frame: &SrgbFrame, pins: &[Pin]) -> Result<Option<SrgbFrame>> {
+    render_srgb_with_cancel(frame, pins, || false)
+}
+pub fn render_srgb_with_cancel(
+    frame: &SrgbFrame,
+    pins: &[Pin],
+    cancelled: impl FnMut() -> bool,
+) -> Result<Option<SrgbFrame>> {
+    Ok(
+        render_pixels::<true>(frame.width, frame.height, &frame.pixels, pins, cancelled)?.map(
+            |pixels| SrgbFrame {
+                width: frame.width,
+                height: frame.height,
+                pixels,
+            },
+        ),
+    )
+}
+fn decode_encoded(v: f64) -> f64 {
+    if v <= 0.04045 {
+        v / 12.92
+    } else {
+        ((v + 0.055) / 1.055).powf(2.4)
+    }
+}
+fn encode_linear(v: f64) -> f64 {
+    if v <= 0.0031308 {
+        12.92 * v
+    } else {
+        1.055 * v.powf(1. / 2.4) - 0.055
+    }
+}
+fn render_pixels<const ENCODED: bool>(
+    width: u32,
+    height: u32,
+    source: &[[f32; 3]],
+    pins: &[Pin],
+    mut cancelled: impl FnMut() -> bool,
+) -> Result<Option<Vec<[f32; 3]>>> {
     if cancelled() {
         return Err(Error::Policy("形变已取消".into()));
     }
-    let map = Map::new(frame.width, frame.height, pins)?;
-    if frame.pixels.len() as u64 != frame.width as u64 * frame.height as u64
-        || frame.pixels.iter().flatten().any(|v| !v.is_finite())
+    let map = Map::new(width, height, pins)?;
+    if source.len() as u64 != width as u64 * height as u64
+        || source.iter().flatten().any(|v| !v.is_finite())
     {
         return Err(Error::Policy("形变输入浮点缓冲区无效".into()));
     }
@@ -176,10 +245,10 @@ pub fn render_with_cancel(
     }
     let mut pixels = Vec::new();
     pixels
-        .try_reserve_exact(frame.pixels.len())
+        .try_reserve_exact(source.len())
         .map_err(|_| Error::Policy("形变输出内存不足".into()))?;
-    pixels.extend_from_slice(&frame.pixels);
-    let width = frame.width as usize;
+    pixels.extend_from_slice(source);
+    let width = width as usize;
     for y in bounds.top..bounds.bottom {
         if (y - bounds.top) % 32 == 0 && cancelled() {
             return Err(Error::Policy("形变已取消".into()));
@@ -191,12 +260,12 @@ pub fn render_with_cancel(
             }
             // Fully contained disks and the strict displacement bound keep
             // the map inside the photo. Clamp only floating-point edge noise.
-            let sx = sx.clamp(0., (frame.width - 1) as f64);
-            let sy = sy.clamp(0., (frame.height - 1) as f64);
+            let sx = sx.clamp(0., (width - 1) as f64);
+            let sy = sy.clamp(0., (height - 1) as f64);
             let x0 = sx.floor() as usize;
             let y0 = sy.floor() as usize;
             let x1 = (x0 + 1).min(width - 1);
-            let y1 = (y0 + 1).min(frame.height as usize - 1);
+            let y1 = (y0 + 1).min(height as usize - 1);
             let fx = sx - x0 as f64;
             let fy = sy - y0 as f64;
             let samples = [
@@ -206,19 +275,23 @@ pub fn render_with_cancel(
                 (y1 * width + x1, fx * fy),
             ];
             pixels[y as usize * width + x as usize] = std::array::from_fn(|c| {
-                samples
+                let sum = samples
                     .iter()
-                    .map(|&(i, w)| frame.pixels[i][c] as f64 * w)
-                    .sum::<f64>() as f32
+                    .map(|&(i, w)| {
+                        let value = source[i][c] as f64;
+                        (if ENCODED {
+                            decode_encoded(value)
+                        } else {
+                            value
+                        }) * w
+                    })
+                    .sum::<f64>();
+                (if ENCODED { encode_linear(sum) } else { sum }) as f32
             });
         }
     }
     if cancelled() {
         return Err(Error::Policy("形变已取消".into()));
     }
-    Ok(Some(Frame {
-        width: frame.width,
-        height: frame.height,
-        pixels,
-    }))
+    Ok(Some(pixels))
 }

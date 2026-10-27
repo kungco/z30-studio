@@ -83,7 +83,7 @@ def main():
     try:
         process,stop,command,until=launch(1)
         initial=command();baseline=initial['preview_fingerprint']
-        check('v3 draft migrates to v6 and backs up original bytes',initial['session']['version']==6 and any(p.read_bytes()==old for p in data.glob('session-v3-backup-*.json')))
+        check('v3 draft migrates to v7 and backs up original bytes',initial['session']['version']==7 and any(p.read_bytes()==old for p in data.glob('session-v3-backup-*.json')))
         assets(command,until,args.bundled);command('detect_face');until(lambda s:not s['face_busy'] and s['has_face'])
         start=time.monotonic();command('segment_skin');masked=until(lambda s:not s['face_busy'] and not s['busy'] and s['has_skin_mask'])
         report['first_segmentation_seconds']=time.monotonic()-start

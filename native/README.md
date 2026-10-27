@@ -70,7 +70,7 @@ Slint 1.18.1 采用 Royalty-free Desktop License 2.0，并在顶层“关于”�
 
 阶段 2D 的完整公开 NEF JPEG/PNG/TIFF16 文件已独立验证；JPEG 编码改用 MozJPEG，详见 docs/reports/native-stage2d-export.md。2F 已接入后台导出；`-PhotoExportProbe` 仍是独立开发验收工具。
 
-原生草稿当前写 v6、读 v1–v6；第一次旧格式迁移保存前生成 session-v旧版本-backup-*.json 原字节备份，包含原有 v4 皮肤蒙版。此为原生草稿，仍不直接导入 Python .z30proj。逐张配方和 50 步内存撤销/缓存已接入桌面；肤色参数也随草稿保存。
+原生草稿当前写 v7、读 v1–v7；第一次旧格式迁移保存前生成 session-v旧版本-backup-*.json 原字节备份，包含原有 v4 皮肤蒙版。此为原生草稿，仍不直接导入 Python .z30proj。逐张配方和 50 步内存撤销/缓存已接入桌面；肤色参数也随草稿保存。
 
 `tools/smoke_native_editing.py --exe ... --out 新报告.json [--raw 样片.NEF --dll 固定库.dll]` 通过显式 QA 文件协议驱动同一组 Slint 回调，在隔离草稿和新文件名下验证调色/切图/导出/取消/退出/恢复，不启用 HTTP 服务。它不是鼠标或截图验收；2F 另用 Computer Use 实际检查过窗口、曝光/对比和文件保存对话框。
 
@@ -82,7 +82,7 @@ Slint 1.18.1 采用 Royalty-free Desktop License 2.0，并在顶层“关于”�
 
 皮肤模型单独放在 `skin/`：用 `python tools/prepare_native_skin.py --model 固定皮肤模型.onnx --out 新皮肤组件目录` 准备，构建时同时传 `-VisionRuntime 人像组件目录 -SkinRuntime 皮肤组件目录`；也可在“皮肤组件”按钮手动选择。完整解压带组件的包后即可识别，无需 Python 或云端接口。组件需保留 Apache 2.0 许可和归属说明，文件校验失败时不应用新识别结果。
 
-草稿写 v6、读 v1–v6，批量队列写 v4、读 v1–v4；首次保存迁移前备份旧 JSON 原字节。皮肤区域与各项人像强度随草稿和任务保存，无损压缩且带原片绑定与校验；重启后不需要模型或推理 DLL 来恢复、导出已有编辑。草稿上限 256 张/32 MiB，队列 512 任务/64 MiB，图像仍只读引用原文件。蒙版损坏时进入受保护状态，不自动扩大作用范围。请保留原片路径；重新定位会清除当前皮肤区域并将柔化/均匀/提亮归零，可撤销。公共批量只同步全局参数与白平衡，每张照片的人像位置、蒙版与三项强度保留。
+草稿写 v7、读 v1–v7，批量队列写 v5、读 v1–v5；首次保存迁移前备份旧 JSON 原字节。皮肤区域与各项人像强度随草稿和任务保存，无损压缩且带原片绑定与校验；重启后不需要模型或推理 DLL 来恢复、导出已有编辑。草稿上限 256 张/32 MiB，队列 512 任务/64 MiB，图像仍只读引用原文件。蒙版损坏时进入受保护状态，不自动扩大作用范围。请保留原片路径；重新定位会清除当前皮肤区域并将柔化/均匀/提亮归零，可撤销。公共批量只同步全局参数与白平衡，每张照片的人像位置、蒙版与三项强度保留。
 
 开发者可用 `tools/native_build.ps1 -SkinToneProbe` 构建独立 CPU 探针，再运行 `python tools/benchmark_native_tone.py --probe native/target/release/examples/skin_tone_probe.exe --out 新报告.json` 测量合成 512²/约 2000 万像素浮点图的肤色处理耗时与内存。该基准不读取照片或模型，不代表真实 NEF 全流程或人像主观画质；Python 仅用于开发测量。`tools/validate_native_tone.py` 另用公开图的真实原生浮点输出与独立 NumPy 参考比对。
 
@@ -92,4 +92,4 @@ Slint 1.18.1 采用 Royalty-free Desktop License 2.0，并在顶层“关于”�
 
 修复工作流探针随 `-RetouchProbe` 构建：`repairs_workflow_probe 输入.png 新草稿目录`，或为公开 NEF 显式追加绝对 DLL 路径。`tools/smoke_native_repairs.py --exe ... --probe ... --out 新报告.json [--raw 公开样片.NEF --dll 绝对库路径]` 检查现有实际窗口回调；它不代表鼠标工具或主观人像画质验收。草稿/队列字节上限仍为32/64 MiB，蒙版和修复点的最坏组合可能先达到字节预算；超限不覆盖旧记录。见 docs/reports/native-stage5e2a-repair-recipes.md。
 
-5F1 增加受限局部形变的浮点核心，目前没有桌面操作入口，也未接入配方/保存或人脸轮廓定位。开发者使用 `-WarpProbe` 构建 `warp_probe` / `warp_benchmark`，分别运行 `tools/validate_native_warp.py --probe ... --out 新报告.json` 和 `tools/benchmark_native_warp.py --probe ... --out 新报告.json`。八组冻结参考可通过 `generate_native_warp_reference.py --out 新参考.json` 生成到新路径；禁止用 Rust 输出替换期望值。范围与自然度/插值/边缘限制见 docs/reports/native-stage5f1-warp-core.md；现有用户界面的局部修复/克隆按上文5E2b使用。
+5F2a 已将受限局部形变接入绑定配方、草稿/队列、撤销和线性光预览/全尺寸TIFF16。载入已有记录时显示“局部形变”强度和清除，0%保留控制点且不改变像素；清除/强度分别可撤销。活动形变会隐藏原位置标记并阻止新的修复取样，请先完成局部修饰；尚无鼠标创建/拖动形变或自动轮廓入口，不能视为一键瘦脸。开发者用 `-WarpProbe` 构建数值/合成基准/工作流探针；`validate_native_warp.py` 默认验证八组线性参考，传 `--corpus native/crates/core/tests/fixtures/warp_srgb.json` 验证四组sRGB/双向坐标；`smoke_native_warp.py` 验证真实回调。两套NumPy生成器只能写新参考路径，禁止用Rust输出替换期望值。范围、已验收和未验证部分见 docs/reports/native-stage5f1-warp-core.md、native-stage5f2a-warp-recipes.md。

@@ -64,6 +64,9 @@ export component AppWindow inherits Window {
     in property <image> skin-preview;
     in property <string> skin-mode: "当前使用面部几何区域";
     in-out property <bool> show-skin-mask: false;
+    in property <bool> has-warp: false;
+    in property <bool> has-warp-record: false;
+    in-out property <float> warp-amount: 100;
     in property <bool> face-busy: false;
     in property <bool> has-face: false;
     in property <bool> portrait-ready: false;
@@ -288,19 +291,19 @@ export component AppWindow inherits Window {
                             width: picture.fit-width; height: picture.fit-height;
                             x: picture.image-left; y: picture.image-top;
                         }
-                        if root.show-skin-mask && root.has-skin-mask && root.has-preview && !root.busy && !root.compare: Image {
+                        if root.show-skin-mask && !root.has-warp && root.has-skin-mask && root.has-preview && !root.busy && !root.compare: Image {
                             source: root.skin-preview; image-fit: fill;
                             width: picture.fit-width; height: picture.fit-height;
                             x: picture.image-left; y: picture.image-top;
                         }
-                        if root.show-face-box && root.has-face && root.has-preview: Rectangle {
+                        if root.show-face-box && !root.has-warp && root.has-face && root.has-preview: Rectangle {
                             x: picture.image-left + root.face-x*picture.fit-width;
                             y: picture.image-top + root.face-y*picture.fit-height;
                             width: root.face-w*picture.fit-width; height: root.face-h*picture.fit-height;
                             background: transparent; border-width: 1px; border-color: #f2cc74;
                         }
                         for point in root.face-points: Rectangle {
-                            visible: root.show-face-box && root.has-face && root.has-preview;
+                            visible: root.show-face-box && !root.has-warp && root.has-face && root.has-preview;
                             x: picture.image-left + point.x*picture.fit-width - 2px;
                             y: picture.image-top + point.y*picture.fit-height - 2px;
                             width: 4px; height: 4px; border-radius: 2px; background: #7be2c6;
@@ -372,6 +375,7 @@ export component AppWindow inherits Window {
                         }
                     }
                     Text { text: root.photo-info; color: #a2adba; font-size: 11px; overflow: elide; }
+                    if root.has-warp: Text {text:"局部形变已应用；原位置标记暂不可用。";color:#dfc48a;font-size:11px;}
                     Text { text: root.colour-info; color: #818b97; font-size: 10px; wrap: word-wrap; }
                     HorizontalLayout {
                         alignment: start; spacing: 8px;
@@ -400,6 +404,12 @@ export component AppWindow inherits Window {
                     ScrollView {
                         VerticalLayout {
                             spacing: 12px; padding-right: 6px;
+                            if root.has-warp-record: VerticalLayout {
+                                spacing:10px;
+                                Text {text:"局部形变";color:#e7d0a4;font-size:13px;}
+                                Adjustment {label:"形变强度 (%)";minimum:0;maximum:100;value<=>root.warp-amount;active:root.engine-ready;adjusted(v)=>{root.adjust("warp_amount",v);}}
+                                ToolButton {label:"清除形变";active:!root.busy && !root.ai-busy && !root.face-busy;triggered=>{root.adjust("warp_clear",0);}}
+                            }
                             if root.repair-controls-visible: VerticalLayout {
                                 spacing:10px;
                                 Text {text:"局部修复";color:#e7d0a4;font-size:13px;}
@@ -447,11 +457,11 @@ export component AppWindow inherits Window {
                                 ToolButton { label: "识别皮肤"; active: root.portrait-ready && root.skin-assets-ready && root.face-assets-ready && !root.face-busy && !root.busy && !root.ai-busy && !root.batch-running && !root.export-busy; triggered => { root.segment-skin(); } }
                             }
                             Text { text: root.skin-mode; color: #a8cbbd; font-size: 11px; }
-                            ToolButton { label: root.show-skin-mask ? "隐藏皮肤区域" : "查看皮肤区域"; active: root.has-skin-mask; triggered => { root.show-skin-mask = !root.show-skin-mask; } }
+                            ToolButton { label: root.show-skin-mask ? "隐藏皮肤区域" : "查看皮肤区域"; active: root.has-skin-mask && !root.has-warp; triggered => { root.show-skin-mask = !root.show-skin-mask; } }
                             Adjustment { label: "面部柔化"; minimum: 0; value <=> root.skin-smooth; active: root.engine-ready && root.portrait-ready && !root.face-busy; adjusted(v) => { root.adjust("skin_smooth", v); } }
                             Adjustment { label: "肤色均匀"; minimum: 0; value <=> root.skin-uniformity; active: root.engine-ready && root.has-skin-mask && !root.face-busy; adjusted(v) => { root.adjust("skin_uniformity", v); } }
                             Adjustment { label: "肤色提亮"; minimum: 0; value <=> root.skin-lighten; active: root.engine-ready && root.has-skin-mask && !root.face-busy; adjusted(v) => { root.adjust("skin_lighten", v); } }
-                            ToolButton { label: root.show-face-box ? "隐藏定位框" : "显示定位框"; active: root.has-face; triggered => { root.show-face-box = !root.show-face-box; } }
+                            ToolButton { label: root.show-face-box ? "隐藏定位框" : "显示定位框"; active: root.has-face && !root.has-warp; triggered => { root.show-face-box = !root.show-face-box; } }
                             Text { text: root.face-status; color: #aab6c4; font-size: 11px; wrap: word-wrap; }
                             Text { text: "只处理当前面部的皮肤区域，保护眼口。均匀肤色与提亮可分别调整，深暗和高光受保护；请检查头发、眼镜和边缘。区域随草稿保存。新识别需要 VC++ x64 运行库。"; color: #8d99a7; font-size: 10px; wrap: word-wrap; }
                         }

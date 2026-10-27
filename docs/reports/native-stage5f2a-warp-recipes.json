@@ -1,0 +1,335 @@
+{
+  "stage": "5F2a",
+  "baseline": "cdd6c91270153a4de875078050ea060315968472",
+  "scope": "Source-bound recipes and gamma-aware render; loaded-record controls only",
+  "schema": {
+    "session_write": 7,
+    "session_read": [
+      1,
+      7
+    ],
+    "queue_write": 5,
+    "queue_read": [
+      1,
+      5
+    ],
+    "raw_byte_backup": true
+  },
+  "tests": {
+    "rust_passed": 121,
+    "explicit_fixture_passed": 2,
+    "python_passed": 180,
+    "python_skipped": 0,
+    "node_passed": 31,
+    "precommit_new_process_checks": 37,
+    "clean_process_suite_expected": 326
+  },
+  "numeric": {
+    "linear": {
+      "stage": "5F1 constrained float warp core",
+      "passed": true,
+      "synthetic": true,
+      "corpus_sha256": "244f8bae1ca2cb0a6fd375afaf91f2031a3f26a6413fab085ee9d4606139b60e",
+      "probe_sha256": "897b6100933fe42fd03e38e7c78c23831e7a36aa4c9ed83fcc3e2cc9c9f69241",
+      "rgb_abs_tolerance": 2e-06,
+      "coordinate_tolerance": 1e-09,
+      "cases": [
+        {
+          "case": "disabled-gradient",
+          "max_rgb_error": 0.0,
+          "max_coordinate_error": 0.0,
+          "max_forward_error": 0.0,
+          "outside_exact": true,
+          "owned": false,
+          "signed_preserved": false,
+          "hdr_preserved": false,
+          "minimum_analytic_determinant": 1.0
+        },
+        {
+          "case": "single-max-shift",
+          "max_rgb_error": 0.0,
+          "max_coordinate_error": 0.0,
+          "max_forward_error": 0.0,
+          "outside_exact": true,
+          "owned": true,
+          "signed_preserved": false,
+          "hdr_preserved": false,
+          "minimum_analytic_determinant": 0.8469336376758085
+        },
+        {
+          "case": "diagonal-hdr",
+          "max_rgb_error": 0.0,
+          "max_coordinate_error": 0.0,
+          "max_forward_error": 0.0,
+          "outside_exact": true,
+          "owned": true,
+          "signed_preserved": true,
+          "hdr_preserved": true,
+          "minimum_analytic_determinant": 0.8615074133979296
+        },
+        {
+          "case": "mirrored-pair",
+          "max_rgb_error": 0.0,
+          "max_coordinate_error": 0.0,
+          "max_forward_error": 0.0,
+          "outside_exact": true,
+          "owned": true,
+          "signed_preserved": true,
+          "hdr_preserved": true,
+          "minimum_analytic_determinant": 0.8790675174221286
+        },
+        {
+          "case": "four-overlapping",
+          "max_rgb_error": 0.0,
+          "max_coordinate_error": 3.552713678800501e-15,
+          "max_forward_error": 0.0,
+          "outside_exact": true,
+          "owned": true,
+          "signed_preserved": true,
+          "hdr_preserved": true,
+          "minimum_analytic_determinant": 0.8758476470685348
+        },
+        {
+          "case": "portrait-texture",
+          "max_rgb_error": 0.0,
+          "max_coordinate_error": 3.552713678800501e-15,
+          "max_forward_error": 0.0,
+          "outside_exact": true,
+          "owned": true,
+          "signed_preserved": true,
+          "hdr_preserved": true,
+          "minimum_analytic_determinant": 0.8775842090272103
+        },
+        {
+          "case": "constant-signed-hdr",
+          "max_rgb_error": 0.0,
+          "max_coordinate_error": 0.0,
+          "max_forward_error": 0.0,
+          "outside_exact": true,
+          "owned": true,
+          "signed_preserved": true,
+          "hdr_preserved": true,
+          "minimum_analytic_determinant": 0.8493504749756636
+        },
+        {
+          "case": "one-pixel-wide-disabled",
+          "max_rgb_error": 0.0,
+          "max_coordinate_error": 0.0,
+          "max_forward_error": 0.0,
+          "outside_exact": true,
+          "owned": false,
+          "signed_preserved": true,
+          "hdr_preserved": true,
+          "minimum_analytic_determinant": 1.0
+        }
+      ],
+      "desktop_integration": false,
+      "face_contour_inference": false,
+      "real_portrait": false,
+      "gpu": false,
+      "scratch": "D:\\codex\\2026-10-23\\ni-k\\outputs\\Z30-Studio\\.development\\warp-reference-u1lnw9u4"
+    },
+    "srgb": {
+      "stage": "5F1 constrained float warp core",
+      "passed": true,
+      "synthetic": true,
+      "corpus_sha256": "960c7d7d39a0998e12ed26ca96c915b8e1bb0cf14c8c94391d73612fe60b36a6",
+      "probe_sha256": "897b6100933fe42fd03e38e7c78c23831e7a36aa4c9ed83fcc3e2cc9c9f69241",
+      "rgb_abs_tolerance": 2e-06,
+      "coordinate_tolerance": 1e-09,
+      "cases": [
+        {
+          "case": "half-pixel-black-white",
+          "max_rgb_error": 0.0,
+          "max_coordinate_error": 1.7763568394002505e-15,
+          "max_forward_error": 1.7763568394002505e-15,
+          "outside_exact": true,
+          "owned": true,
+          "signed_preserved": false,
+          "hdr_preserved": false,
+          "minimum_analytic_determinant": 0.8838033899391274
+        },
+        {
+          "case": "constant-signed-hdr",
+          "max_rgb_error": 0.0,
+          "max_coordinate_error": 1.7763568394002505e-15,
+          "max_forward_error": 1.7763568394002505e-15,
+          "outside_exact": true,
+          "owned": true,
+          "signed_preserved": true,
+          "hdr_preserved": true,
+          "minimum_analytic_determinant": 0.8838033899391274
+        },
+        {
+          "case": "overlap-colour-texture",
+          "max_rgb_error": 0.0,
+          "max_coordinate_error": 3.552713678800501e-15,
+          "max_forward_error": 3.552713678800501e-15,
+          "outside_exact": true,
+          "owned": true,
+          "signed_preserved": true,
+          "hdr_preserved": true,
+          "minimum_analytic_determinant": 0.8524142507136963
+        },
+        {
+          "case": "encoded-disabled",
+          "max_rgb_error": 0.0,
+          "max_coordinate_error": 0.0,
+          "max_forward_error": 0.0,
+          "outside_exact": true,
+          "owned": false,
+          "signed_preserved": false,
+          "hdr_preserved": false,
+          "minimum_analytic_determinant": 1.0
+        }
+      ],
+      "desktop_integration": false,
+      "face_contour_inference": false,
+      "real_portrait": false,
+      "gpu": false,
+      "scratch": "D:\\codex\\2026-10-23\\ni-k\\outputs\\Z30-Studio\\.development\\warp-reference-igz42cyw"
+    },
+    "old_retouch": {
+      "stage": "5E1 float repair core",
+      "baseline": "a2a2e089d760221a52c8774cca8a2e42f0a82269",
+      "corpus_sha256": "59144b799f00eba2d39f418a9b621ca6d50f0fdb12b307b4c11ac24bc3db1cb0",
+      "probe_sha256": "5e134755bf0e2116895426d910d3ae2d0f1d1683c0e7a8e02c0f85c17c97c011",
+      "rgb_abs_tolerance": 2e-06,
+      "donor_abs_tolerance": 1e-08,
+      "cases": [
+        {
+          "case": "clone-centre",
+          "max_rgb_error": 0.0,
+          "excluded_pixels_exact": true,
+          "finite": true,
+          "donor_error": 0.0,
+          "hdr_retained": false
+        },
+        {
+          "case": "heal-centre",
+          "max_rgb_error": 5.960464477539063e-08,
+          "excluded_pixels_exact": true,
+          "finite": true,
+          "donor_error": null,
+          "hdr_retained": false
+        },
+        {
+          "case": "edge-invalid-donor",
+          "max_rgb_error": 1.4901161193847656e-08,
+          "excluded_pixels_exact": true,
+          "finite": true,
+          "donor_error": null,
+          "hdr_retained": false
+        },
+        {
+          "case": "overlap-original-donors",
+          "max_rgb_error": 2.9802322387695312e-08,
+          "excluded_pixels_exact": true,
+          "finite": true,
+          "donor_error": null,
+          "hdr_retained": false
+        },
+        {
+          "case": "partial-zero-opacity",
+          "max_rgb_error": 1.4901161193847656e-08,
+          "excluded_pixels_exact": true,
+          "finite": true,
+          "donor_error": null,
+          "hdr_retained": false
+        },
+        {
+          "case": "hdr-linear",
+          "max_rgb_error": 4.76837158203125e-07,
+          "excluded_pixels_exact": true,
+          "finite": true,
+          "donor_error": null,
+          "hdr_retained": true
+        },
+        {
+          "case": "transposed-geometry",
+          "max_rgb_error": 0.0,
+          "excluded_pixels_exact": true,
+          "finite": true,
+          "donor_error": null,
+          "hdr_retained": false
+        },
+        {
+          "case": "empty-passthrough",
+          "max_rgb_error": 0.0,
+          "excluded_pixels_exact": true,
+          "finite": true,
+          "donor_error": null,
+          "hdr_retained": false
+        },
+        {
+          "case": "signed-finite-linear",
+          "max_rgb_error": 3.725290298461914e-09,
+          "excluded_pixels_exact": true,
+          "finite": true,
+          "donor_error": null,
+          "hdr_retained": false
+        },
+        {
+          "case": "tiny-heal-no-ring",
+          "max_rgb_error": 0.0,
+          "excluded_pixels_exact": true,
+          "finite": true,
+          "donor_error": null,
+          "hdr_retained": true
+        }
+      ],
+      "passed": true,
+      "synthetic": true,
+      "desktop_integration": false,
+      "automatic_blemish_detection": false,
+      "cloud_requests": 0,
+      "scratch": "D:\\codex\\2026-10-23\\ni-k\\outputs\\Z30-Studio\\.development\\retouch-reference-wt_zp9eo"
+    }
+  },
+  "raw_active_precommit": [
+    {
+      "source_sha256": "75249c11a3a845367c7a322a1c4e7076f33c785ec2518fc6594c34c185b41161",
+      "output_sha256": "c07c0dff052eac3d8ea1daf1bc2ab47c1ce6b3af44685f82cd1283848df8b52c",
+      "memory_mib": {
+        "peak_working_set": 789.734,
+        "working_set": 316.793,
+        "private_bytes": 297.914
+      }
+    },
+    {
+      "source_sha256": "03d94c1f184c4236ea8f890ab0fe30e91b65965e8b09cebecc397fba081a607f",
+      "output_sha256": "a80a7adf858044c8aeaba01897e1fe6cfa20adc091f1f20a00730678c4fcc13b",
+      "memory_mib": {
+        "peak_working_set": 790.145,
+        "working_set": 317.051,
+        "private_bytes": 297.727
+      }
+    }
+  ],
+  "gui": {
+    "passed": [
+      "1322x892 layout and active notice",
+      "physical strength slider with original controls preserved",
+      "physical independent undo and identical preview"
+    ],
+    "precommit": true,
+    "source_dirty": true,
+    "source_commit": "cdd6c91270153a4de875078050ea060315968472",
+    "exe_sha256": "0b40f50c65d6f1bfd62b27ce2dba06b280c70c9c147cea7ea0b2a1e63adc2272",
+    "physical_zero_verified": false,
+    "remaining_review": "Window closed cleanly after user input; zero strength covered by actual-process tests",
+    "high_dpi": false,
+    "real_portrait": false
+  },
+  "source_binding": "path, bytes, modification metadata, dimensions; not full-content hash",
+  "mouse_creation": false,
+  "face_contour_inference": false,
+  "real_user_portrait": false,
+  "clean_windows": false,
+  "high_dpi": false,
+  "gpu": false,
+  "paid_api_requests": 0,
+  "automatic_resume": false,
+  "automatic_shutdown": false,
+  "final_artifact": "local .development/native-5f2a-final-artifact.json; independent clean-build/CI verification required"
+}

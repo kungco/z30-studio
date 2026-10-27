@@ -121,6 +121,7 @@ impl Workflow {
     fn source_ready(&self, ui: &AppWindow) -> bool {
         let state = self.state.borrow();
         !state.protected
+            && !ui.get_has_warp()
             && ui.get_has_preview()
             && !ui.get_busy()
             && !ui.get_compare()
@@ -546,6 +547,9 @@ impl Workflow {
     }
     fn sync(&self, ui: &AppWindow) {
         let ready = self.source_ready(ui);
+        if ui.get_has_warp() && self.control.borrow().mode > 0 {
+            self.message(ui, "照片已应用局部形变；恢复构图后可继续选修复点。");
+        }
         let state = self.state.borrow();
         let current = state.edits.current();
         let points = current.as_ref().and_then(|r| r.recipe.repairs.clone());

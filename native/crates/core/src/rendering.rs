@@ -55,6 +55,9 @@ fn render_internal(
         return Err(crate::Error::Policy("显影已取消".into()));
     }
     recipe.validate()?;
+    if let Some(warp) = &recipe.warp {
+        warp.check_source(path, original_size.0, original_size.1)?;
+    }
     if recipe.skin.is_some() && skin.is_some() && recipe.skin.as_ref() != skin {
         return Err(crate::Error::Policy(
             "显影蒙版与保存配方不一致，未退回几何柔化".into(),
@@ -85,6 +88,16 @@ fn render_internal(
             skin.or(recipe.skin.as_ref()).unwrap(),
             recipe.skin_tone,
         )?;
+    }
+    // Keep all original-space masks and repairs aligned, then deform the
+    // complete result. The encoded API interpolates contributing samples in
+    // linear light; no extra full-size decoded colour buffer is allocated.
+    if let Some(warp) = &recipe.warp {
+        if let Some(warped) =
+            crate::warp::render_srgb_with_cancel(&output, &warp.effective_pins(), &mut cancelled)?
+        {
+            output = warped;
+        }
     }
     if cancelled() {
         return Err(crate::Error::Policy("显影已取消".into()));

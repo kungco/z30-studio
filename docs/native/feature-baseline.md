@@ -12,7 +12,7 @@
 | 本机 SegFormer 主体/天空/人物与皮肤柔化 | local_vision.py；test_local_edits.py | 5A–5D 可选人脸/五点、语义皮肤、逐张柔化/均匀/提亮、撤销/恢复/导出通过限定验收；原 SegFormer 主体/天空等场景蒙版仍待迁移，不能等同原功能完成 |
 | Nikon Z Lensfun 数据/焦距插值/色差估计 | lens_tools.py、data/；test_lens_tools.py | 未迁移 / 6 |
 | 图库评分/旗标/关键词/比较/选择/参数分组同步 | photo_workflow.py；test_workflow.py、library-workflow.test.cjs | 原生已迁移评分、逐张选择、调整前后比较；旗标/关键词/多选/分组同步仍待阶段 6 |
-| 草稿 SQLite CAS、快照/版本/项目打包 | drafts.py、projects.py；test_drafts.py/test_projects.py | 原生 JSON 独占/CAS/v1–5→v6 草稿、v1–3→v4 队列原字节备份/逐张参数及皮肤恢复已接通；完整旧项目、快照版本/打包仍待迁移 |
+| 草稿 SQLite CAS、快照/版本/项目打包 | drafts.py、projects.py；test_drafts.py/test_projects.py | 原生 JSON 独占/CAS/v1–6→v7 草稿、v1–4→v5 队列原字节备份/逐张参数及皮肤恢复已接通；完整旧项目、快照版本/打包仍待迁移 |
 | 输出尺寸/水印/命名/锐化/元数据/ICC/TIFF16 | export_tools.py、colour_management.py；test_output.py | 2D–2G 全尺寸 NEF JPEG/PNG/TIFF16、sRGB ICC、原子不覆盖及后台 UI 通过；高级导出预设与广色域输出仍待迁移 |
 | 后台导出/任务冻结/中断恢复/双路/进度 | export_jobs.py；test_export_jobs.py/test_lifecycle.py | 4A–4C 原生持久顺序队列、逐张/公共配方、暂停/取消/重试/重启恢复/阶段进度通过；双路并行、ETA、批量 AI 未迁移 |
 | 全尺寸 float 磁盘缓存、条带/租约/LRU | native_cache.py、processing.py；test_native_cache.py | 4C 加入一张/320 MiB/30 秒浮点内存缓存，公开 RAW 重复导出字节一致与三轮速度/内存通过；磁盘/条带/租约/LRU 仍未迁移 |
@@ -20,7 +20,7 @@
 | 可选兼容/本机模型、输入预览/费用估计/画质回退 | api_backend.py、ai_preflight.py、automation.py；test_ai_controls.py/test_automation.py | 3A 已迁移风格、目标、强度、发送内容说明、像素画质回退；3B 已接可选 DeepSeek/兼容图像接口和本机回环地址，只有模拟 HTTP 验证。精确输入预览、费用估计、真实云端/本机模型仍待后续 |
 | 生命周期、看门狗、日志/诊断、构建/实际 EXE smoke | desktop.py、shutdown_watchdog.py、tools/；test_shutdown.py/test_runtime.py | 采用原生生命周期重建 / 1、6 |
 
-新增目标功能（Python基线无实现）：5F1完成受限局部浮点形变核心及独立八组数值/合成CPU验证；形变尚未接入产品配方、桌面或实际人脸轮廓，不能算作已迁移瘦脸。下一步需绑定、持久化、源空间处理/标记坐标及完整预览导出验证。
+新增目标功能（Python基线无实现）：5F1完成受限局部浮点形变核心；5F2a接通绑定配方、保存/撤销、0–100%强度/清除、源空间修饰后的线性光预览及TIFF16/批量/恢复。八组线性+四组sRGB独立数值和37项新增进程流程通过；尚无鼠标创建/拖动或实际人脸轮廓。下一步5F2b补交互/映射与旧结果保护，不能算作已迁移一键瘦脸。
 
 ## 对照方法
 

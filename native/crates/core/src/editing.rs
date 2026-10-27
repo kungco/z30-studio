@@ -238,6 +238,49 @@ impl EditingSession {
         self.session.photos[self.session.selected.unwrap()].recipe = next;
         Ok(true)
     }
+    pub fn apply_warp(&mut self, warp: Option<crate::warps::Warps>) -> Result<bool> {
+        let Some(current) = self.current() else {
+            return Ok(false);
+        };
+        if let Some(value) = &warp {
+            value.validate()?;
+            if !value.binding().matches_source(&current.path)? {
+                return Err(Error::Policy("形变集合不属于当前原片，未应用".into()));
+            }
+        }
+        if current.recipe.warp == warp {
+            return Ok(false);
+        }
+        let next = Recipe {
+            warp,
+            ..current.recipe
+        };
+        next.validate()?;
+        self.commit()?;
+        self.histories
+            .get_mut(&current.path)
+            .unwrap()
+            .record(next.clone())?;
+        self.session.photos[self.session.selected.unwrap()].recipe = next;
+        Ok(true)
+    }
+    pub fn adjust_warp_amount(&mut self, value: f64) -> Result<bool> {
+        let Some(current) = self.current() else {
+            return Ok(false);
+        };
+        let warp = current
+            .recipe
+            .warp
+            .as_ref()
+            .ok_or_else(|| Error::Policy("请先应用局部形变".into()))?;
+        if !warp.binding().matches_source(&current.path)? {
+            return Err(Error::Policy("原片已变化，形变强度未应用".into()));
+        }
+        let mut next = current.recipe.clone();
+        next.warp = Some(warp.with_amount(value)?);
+        next.validate()?;
+        self.stage_adjust(current, next, "warp:amount")
+    }
     pub fn can_undo(&self) -> bool {
         self.current().is_some_and(|v| {
             self.histories

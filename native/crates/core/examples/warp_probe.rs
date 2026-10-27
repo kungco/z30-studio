@@ -7,6 +7,7 @@ use std::{
     time::Instant,
 };
 use z30_core::{
+    develop::SrgbFrame,
     frame::Frame,
     warp::{self, Map, Pin},
 };
@@ -16,12 +17,16 @@ struct Sample {
 }
 #[derive(Deserialize)]
 struct Case {
+    #[serde(default)]
+    space: Option<String>,
     name: String,
     width: u32,
     height: u32,
     pixels: Vec<[f32; 3]>,
     pins: Vec<Pin>,
     map_samples: Vec<Sample>,
+    #[serde(default)]
+    forward_samples: Vec<Sample>,
 }
 #[derive(Deserialize)]
 struct Corpus {
@@ -53,24 +58,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         {
             return Err("invalid case name".into());
         }
-        let frame = Frame::new(case.width, case.height, case.pixels)?;
-        let start = Instant::now();
-        let rendered = warp::render(&frame, &case.pins)?;
-        let seconds = start.elapsed().as_secs_f64();
+        let (pixels, owned, seconds) = match case.space.as_deref().unwrap_or("linear") {
+            "linear" => {
+                let frame = Frame::new(case.width, case.height, case.pixels)?;
+                let start = Instant::now();
+                let rendered = warp::render(&frame, &case.pins)?;
+                let seconds = start.elapsed().as_secs_f64();
+                let owned = rendered.is_some();
+                (
+                    rendered.map(|r| r.pixels).unwrap_or(frame.pixels),
+                    owned,
+                    seconds,
+                )
+            }
+            "srgb" => {
+                let frame = SrgbFrame {
+                    width: case.width,
+                    height: case.height,
+                    pixels: case.pixels,
+                };
+                let start = Instant::now();
+                let rendered = warp::render_srgb(&frame, &case.pins)?;
+                let seconds = start.elapsed().as_secs_f64();
+                let owned = rendered.is_some();
+                (
+                    rendered.map(|r| r.pixels).unwrap_or(frame.pixels),
+                    owned,
+                    seconds,
+                )
+            }
+            _ => return Err("unknown working space".into()),
+        };
         let map = Map::new(case.width, case.height, &case.pins)?;
         let samples: Vec<_> = case
             .map_samples
             .iter()
             .map(|s| map.source_at(s.at[0], s.at[1]))
             .collect::<z30_core::Result<_>>()?;
+        let forward: Vec<_> = case
+            .forward_samples
+            .iter()
+            .map(|s| map.destination_at(s.at[0], s.at[1]))
+            .collect::<z30_core::Result<_>>()?;
         OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(output.join(format!("{}.f32", case.name)))?
-            .write_all(bytemuck::cast_slice(
-                &rendered.as_ref().unwrap_or(&frame).pixels,
-            ))?;
-        records.push(serde_json::json!({"case":case.name,"seconds":seconds,"samples":samples,"owned":rendered.is_some()}));
+            .write_all(bytemuck::cast_slice(&pixels))?;
+        records.push(serde_json::json!({"case":case.name,"seconds":seconds,"samples":samples,"forward":forward,"owned":owned}));
     }
     println!(
         "{}",

@@ -28,6 +28,7 @@ pub mod runtime;
 pub mod session;
 pub mod worker;
 pub mod warp;
+pub mod warps;
 
 pub const MAX_PHOTOS: usize = 256;
 pub const MAX_SOURCE_BYTES: u64 = 150 * 1024 * 1024;

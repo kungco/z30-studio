@@ -49,7 +49,7 @@ def main():
     try:
         process,stop,command,until,marker=launch(data,1)
         state=until(lambda s:s['preview'] and not s['busy']);recipe=state['session']['photos'][0]['recipe'];saved=recipe['repairs']
-        check('v6 source-bound repair recipe loads in actual window',state['session']['version']==6 and len(saved['points'])==1)
+        check('v7 source-bound repair recipe loads in actual window',state['session']['version']==7 and len(saved['points'])==1)
         check('repair-only restoration does not load inference DLL','onnxruntime.dll' not in loaded_modules(process.pid))
         def export(name,expected):
             target=root/name;command('export',destination=str(target),format=2);until(lambda s:target.exists() and not s['export_busy'])
