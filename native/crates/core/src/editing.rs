@@ -71,6 +71,36 @@ impl EditingSession {
                 return Err(Error::Policy("原片已变化，请重新检测面部后再柔化".into()));
             }
         }
+        self.stage_adjust(current, next, name)
+    }
+    pub fn adjust_repair(&mut self, index: usize, name: &str, value: f64) -> Result<bool> {
+        let Some(current) = self.current() else {
+            return Ok(false);
+        };
+        let set = current
+            .recipe
+            .repairs
+            .as_ref()
+            .ok_or_else(|| Error::Policy("请先选择修复点".into()))?;
+        if !set.binding().matches_source(&current.path)? {
+            return Err(Error::Policy("原片已变化，修复参数未应用".into()));
+        }
+        let mut points = set.points().to_vec();
+        let point = points
+            .get_mut(index)
+            .ok_or_else(|| Error::Policy("修复点已变化".into()))?;
+        match name {
+            "radius" => point.radius = value,
+            "opacity" => point.opacity = value,
+            "feather" => point.feather = value,
+            _ => return Err(Error::Policy("未知修复参数".into())),
+        }
+        let mut next = current.recipe.clone();
+        next.repairs = Some(crate::repairs::Repairs::new(set.binding(), points)?);
+        next.validate()?;
+        self.stage_adjust(current, next, &format!("repair:{index}:{name}"))
+    }
+    fn stage_adjust(&mut self, current: EditRequest, next: Recipe, name: &str) -> Result<bool> {
         if current.recipe == next {
             return Ok(false);
         }

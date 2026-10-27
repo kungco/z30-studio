@@ -19,6 +19,18 @@ pub struct Harness {
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Command {
     Snapshot,
+    RepairTool{mode:i32},
+    RepairCanvas{x:f32,y:f32},
+    RepairSelect{index:i32},
+    RepairAdjust{parameter:String,value:f32},
+    RepairPick,
+    RepairSuggest,
+    RepairRemove,
+    RepairClear,
+    RepairCancel,
+    RepairMarks{visible:bool},
+    About{visible:bool},
+    View{zoom:f32,pan_x:f32,pan_y:f32},
     Adjust {
         parameter: String,
         value: f32,

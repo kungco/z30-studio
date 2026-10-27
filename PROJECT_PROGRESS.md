@@ -2,7 +2,9 @@
 
 更新：2026-10-27（Asia/Hong_Kong）。原生迁移总任务未完成。
 
-当前新增 5E2a：修复集合已接原片绑定、v6 草稿/v4 队列备份迁移、独立撤销、预览与真实 TIFF16/冻结批量。原片变化/尺寸/坏点拒绝；取代与取消令牌进入处理。Rust98、完整 Python180/Node31通过；提交前 PNG/公开12、14位非零修复窗口24项通过，原片SHA不变，含重任务取消。尚无鼠标选点工具，不是自动祛痘。详见 docs/reports/native-stage5e2a-repair-recipes.md/json；干净包233项/对应CI和最终提交以checkpoint为准。下一步5E2b实际选点/取样/删除/坐标与交互验收；总任务未完成。
+当前新增 5E2b：实际鼠标修复/克隆、重新取样、选点/独立参数/移除/清除和撤销，缩放/平移/像素中心与留白判定已接入。后台取样使用当前线性缓存，原片或编辑变化、切图、取消和弹窗阻止旧结果写回。Rust105+两项显式fixture、完整 Python180/Node31和十组冻结数值通过；新增公开12/14位NEF真实RGB16与窗口回调验证、computer-use实际点选/克隆/滑块/撤销/平移通过。最终干净包完整289项（旧233+工具56）/对应CI与提交以checkpoint为准；详见 docs/reports/native-stage5e2b-repair-tools.md/json。自动瑕疵识别、轮廓/GPU和阶段6仍待，总任务未完成。
+
+历史 5E2a：修复集合接入原片绑定、v6 草稿/v4 队列备份迁移、独立撤销、预览与真实 TIFF16/冻结批量。Rust98、Python180/Node31及最终干净包233项/六项CI通过，原片SHA不变，含重任务取消。详见 docs/reports/native-stage5e2a-repair-recipes.md/json。本阶段尚未提供鼠标工具，5E2b在此基础继续实现。
 
 历史 5E1：已迁移未量化线性 RGB 克隆/均值修复与确定性邻近取样核心，尚未接桌面/配方/保存/导出，不是自动祛痘。Rust 93、冻结旧版十组浮点对照（最大 4.77e-7）、完整 Python 180（含公开 RAW，无跳过）和 Node 31 通过；合成 2000 万像素 32 点约 .040 秒/460 MiB，额外一份输出约 228 MiB。详见 docs/reports/native-stage5e1-retouch.md/json。最终提交/干净构建/CI 以 checkpoint 为准；下一步 5E2 接来源绑定和完整工作流。5D 干净包 207 项及六项 CI 已通过；总任务仍未完成。
 

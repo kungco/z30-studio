@@ -45,6 +45,7 @@ struct Cached {
     source_bits: u32,
 }
 pub struct EditPreview {
+    pub binding: crate::portrait::Binding,
     pub rendered: SrgbFrame,
     pub neutral: Arc<SrgbFrame>,
     pub source_width: u32,
@@ -159,10 +160,13 @@ impl PreviewEngine {
             (cache.source_width, cache.source_height),
             cancelled,
         )?;
+        let binding =
+            crate::portrait::Binding::capture(path, cache.source_width, cache.source_height)?;
         if Stamp::read(path, wb)? != cache.stamp {
             return Err(Error::Policy("预览期间原片发生变化，请重新读取".into()));
         }
         Ok(EditPreview {
+            binding,
             rendered,
             neutral: Arc::clone(&cache.neutral),
             source_width: cache.source_width,
@@ -174,6 +178,44 @@ impl PreviewEngine {
             decode_resize_seconds,
             render_seconds: started.elapsed().as_secs_f64(),
         })
+    }
+    /// Use the already displayed original linear thumbnail. Never decode or
+    /// copy a full-resolution image in response to a pointer event.
+    pub fn plan_repair(
+        &self,
+        path: &Path,
+        recipe: &Recipe,
+        binding: crate::portrait::Binding,
+        size: (u32, u32),
+        action: crate::repair_plan::Action,
+    ) -> Result<crate::repair_plan::Planned> {
+        let cache = self
+            .cached
+            .as_ref()
+            .ok_or_else(|| Error::Policy("请先完成照片预览".into()))?;
+        let raw = path
+            .extension()
+            .is_some_and(|v| v.eq_ignore_ascii_case("nef"));
+        let wb = if raw {
+            recipe.white_balance
+        } else {
+            WhiteBalance::Camera
+        };
+        if (cache.linear.width, cache.linear.height) != size
+            || cache.stamp != Stamp::read(path, wb)?
+            || binding
+                != crate::portrait::Binding::capture(path, cache.source_width, cache.source_height)?
+        {
+            return Err(Error::Policy("显示来源已变化，请重新预览后再取样".into()));
+        }
+        let result = crate::repair_plan::plan(recipe, binding, action, |point, radius| {
+            let p = crate::retouch::choose_donor(&cache.linear, point.x, point.y, radius)?;
+            Ok(crate::repair_view::Point { x: p.x, y: p.y })
+        })?;
+        if cache.stamp != Stamp::read(path, wb)? {
+            return Err(Error::Policy("取样期间原片已变化，未应用修复".into()));
+        }
+        Ok(result)
     }
 }
 

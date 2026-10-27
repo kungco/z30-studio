@@ -76,7 +76,7 @@ Slint 1.18.1 采用 Royalty-free Desktop License 2.0，并在顶层“关于”�
 
 随包验收改用 `--raw 样片.NEF --bundled-raw`，明确移除 RAW 环境变量、仅保留系统 PATH，并从不同的中文工作目录启动。探针会核对进程内嵌提交/脏标记与 build-info.json，避免 Cargo 缓存造成旧构建来源标记。
 
-“本机人像”位于显影面板下部：先定位面部并选择当前面部，再按需点击“识别皮肤”，查看绿色作用区域。面部柔化、肤色均匀和肤色提亮各有独立强度，默认均为零，可分别撤销、逐张保存、重启恢复并导出 TIFF16。均匀和提亮只在已有语义皮肤区域内可用，保护眼口/深暗/高光；均匀仅保守调整局部颜色，提亮幅度有上限，不会自动改变整张照片白平衡。柔化未识别皮肤时沿用框/五点几何区域，识别后受语义区域进一步限制。一次处理一张脸；请检查头发、眼镜和边缘。瑕疵修复、轮廓形变和 GPU 仍待实现。公开单张样图通过不代表真实 Z30 人像/各种肤色效果已验证。见 docs/reports/native-stage5d-skin-tone.md。
+“本机人像”位于显影面板下部：先定位面部并选择当前面部，再按需点击“识别皮肤”，查看绿色作用区域。面部柔化、肤色均匀和肤色提亮各有独立强度，默认均为零，可分别撤销、逐张保存、重启恢复并导出 TIFF16。均匀和提亮只在已有语义皮肤区域内可用，保护眼口/深暗/高光；均匀仅保守调整局部颜色，提亮幅度有上限，不会自动改变整张照片白平衡。柔化未识别皮肤时沿用框/五点几何区域，识别后受语义区域进一步限制。一次处理一张脸；请检查头发、眼镜和边缘。自动瑕疵识别、轮廓形变和 GPU 仍待实现；手动修复/克隆见下文。公开单张样图通过不代表真实 Z30 人像/各种肤色效果已验证。见 docs/reports/native-stage5d-skin-tone.md。
 
 可选组件必须来自固定模型和 ONNX Runtime 1.31.0；没有自动下载。开发者使用 `python tools/prepare_native_vision.py --model 固定模型.onnx --runtime-archive 官方SDK.zip --out 新组件目录` 准备，再为原有构建命令增加 `-VisionRuntime 新组件目录` 随包分发。软件自动查找 EXE 旁的 `vision/`，也可在“选择组件”中明确指定目录。基础启动不加载推理 DLL；新检测需要本机 Microsoft VC++ x64 系统运行库，组件不包含该系统依赖，干净 Windows 尚未验证。模型/DLL/许可/依赖均校验；基础包仍可不携带模型。
 
@@ -86,6 +86,8 @@ Slint 1.18.1 采用 Royalty-free Desktop License 2.0，并在顶层“关于”�
 
 开发者可用 `tools/native_build.ps1 -SkinToneProbe` 构建独立 CPU 探针，再运行 `python tools/benchmark_native_tone.py --probe native/target/release/examples/skin_tone_probe.exe --out 新报告.json` 测量合成 512²/约 2000 万像素浮点图的肤色处理耗时与内存。该基准不读取照片或模型，不代表真实 NEF 全流程或人像主观画质；Python 仅用于开发测量。`tools/validate_native_tone.py` 另用公开图的真实原生浮点输出与独立 NumPy 参考比对。
 
-5E1/5E2a 已接克隆/均值修复的绑定配方、保存/撤销、预览和单张/批量 TIFF16；当前没有鼠标选点工具，也未实现自动祛痘。开发验收通过探针生成修复记录，日常图形界面的选点/取样/删除仍待 5E2b。开发者用 `-RetouchProbe` 构建探针，再运行 `python tools/validate_native_retouch.py --probe native/target/release/examples/retouch_probe.exe --out 新报告.json` 与冻结旧版对照；`benchmark_native_retouch.py` 用同样参数形式和 `retouch_benchmark.exe` 测量合成 CPU/内存。重新生成参考用 `generate_native_retouch_reference.py --out 新参考.json`，不会覆盖现有测试。范围和限制见 docs/reports/native-stage5e1-retouch.md。
+5E2b 已提供实际鼠标修复和克隆：展开“局部修复”，单击添加修复点；克隆先点击“选择取样位置”，在原图选来源后再点目标。金色标记是目标，蓝色是来源；可选已有点、重新取样，分别调整半径/羽化/强度，移除当前点或清除全部，均可撤销。选择“新修复点”回到新增状态。拖动照片可平移，放大/适合窗口会重置平移；画布焦点下 Ctrl+Z/Ctrl+Shift+Z 撤销/重做，Delete 移除选中点，Escape 退出工具。标记只用于显示，隐藏不改变导出。切图、原片变化和旧异步结果不会沿用错误来源。取样可能带入不合适纹理，请检查后调整；邻近取样不是自动瑕疵识别或生成式填充，尚无自动祛痘。见 docs/reports/native-stage5e2b-repair-tools.md。
+
+开发者用 `-RetouchProbe` 构建探针，再运行 `python tools/validate_native_retouch.py --probe native/target/release/examples/retouch_probe.exe --out 新报告.json` 与冻结旧版对照；`benchmark_native_retouch.py` 用同样参数形式和 `retouch_benchmark.exe` 测量合成 CPU/内存。重新生成参考用 `generate_native_retouch_reference.py --out 新参考.json`，不会覆盖现有测试。新工具流程为 `tools/smoke_native_repair_tools.py --exe ... --oracle native/target/release/examples/saved_recipe_export.exe --out 新报告.json [--raw 公开样片.NEF --dll 绝对库路径]`；它检查实际窗口回调，鼠标点击另有 computer-use 验收。`saved_recipe_export 草稿.json 索引 新文件.tif [绝对DLL]` 仅为开发对照，输出不覆盖原文件。
 
 修复工作流探针随 `-RetouchProbe` 构建：`repairs_workflow_probe 输入.png 新草稿目录`，或为公开 NEF 显式追加绝对 DLL 路径。`tools/smoke_native_repairs.py --exe ... --probe ... --out 新报告.json [--raw 公开样片.NEF --dll 绝对库路径]` 检查现有实际窗口回调；它不代表鼠标工具或主观人像画质验收。草稿/队列字节上限仍为32/64 MiB，蒙版和修复点的最坏组合可能先达到字节预算；超限不覆盖旧记录。见 docs/reports/native-stage5e2a-repair-recipes.md。

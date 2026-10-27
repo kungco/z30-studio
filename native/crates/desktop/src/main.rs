@@ -28,6 +28,7 @@ mod ai_cli;
 mod ai_http;
 mod qa;
 mod skin_workflow;
+mod repair_workflow;
 
 enum AiBackend {
     Codex,
@@ -35,6 +36,7 @@ enum AiBackend {
 }
 
 struct State {
+    displayed:Option<Displayed>,
     edits: EditingSession,
     last_edit: Option<Instant>,
     pending_preview: Option<EditRequest>,
@@ -62,6 +64,8 @@ struct State {
     close_after_face: bool,
     face_candidates: Option<FaceCandidates>,
 }
+#[derive(Clone,Debug,PartialEq)]
+struct Displayed {request:EditRequest,binding:Binding,size:(u32,u32)}
 
 struct FaceCandidates { path: PathBuf, binding: Binding, faces: Vec<Face>, selected: usize }
 struct FaceOutcome {
@@ -93,6 +97,7 @@ struct AiSuggestion {
 }
 
 struct DisplayPreview {
+    binding:Binding,
     rgb: Vec<u8>,
     neutral: Vec<u8>,
     thumbnail: Vec<u8>,
@@ -143,6 +148,7 @@ impl From<z30_core::editor::EditPreview> for DisplayPreview {
             }
         );
         Self {
+            binding:p.binding,
             rgb,
             neutral,
             thumbnail,
@@ -499,6 +505,7 @@ fn apply_ai_product(
                 state.pending_preview = None;
                 sync_recipe(state, ui);
                 display_ai_preview(ui, &product.preview, rows, state.edits.session.selected);
+                state.displayed=state.edits.current().map(|request|Displayed{request,binding:product.preview.binding,size:(product.preview.width,product.preview.height)});
                 save_state(state, ui);
             }
             ui.set_ai_status(
@@ -585,6 +592,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         edits: EditingSession::new(session),
         last_edit: None,
         pending_preview: None,
+        displayed:None,
         export_control: None,
         export_dialog: false,
         close_after_export: false,
@@ -667,6 +675,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let batch_override = Rc::new(RefCell::new(None::<PathBuf>));
     let face_override = Rc::new(RefCell::new(None::<PathBuf>));
     let skin=Rc::new(skin_workflow::bind(&ui,Rc::clone(&state),Rc::clone(&worker),Arc::clone(&engine),Arc::clone(&compute),Arc::clone(&full_cache),raw_dll.clone()));
+    let repairs=repair_workflow::bind(&ui,Rc::clone(&state),Rc::clone(&worker),Arc::clone(&engine),Arc::clone(&compute));
     let (picked, files) = mpsc::channel::<Vec<PathBuf>>();
     {
         let weak = ui.as_weak();
@@ -717,6 +726,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             ui.set_original_preview(Default::default());
             ui.set_compare(false);
             ui.set_zoom(1.0);
+            ui.set_pan_x(0.);ui.set_pan_y(0.);state.displayed=None;
             ui.set_status("后台读取并显影照片…".into());
             save_state(&mut state, &ui);
         });
@@ -845,7 +855,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let engine = Arc::clone(&engine);
         ui.on_auto_grade(move || {
             let Some(ui)=weak.upgrade() else {return};
-            if !ui.get_has_preview() || ui.get_busy() || ui.get_ai_busy() {return}
+            if !ui.get_has_preview() || ui.get_busy() || ui.get_ai_busy() || ui.get_repair_busy() {return}
             let user_goal=ui.get_ai_goal();
             if user_goal.chars().count()>350 {
                 ui.set_ai_status("补充目标最多 350 字；没有发送照片".into());return;
@@ -965,6 +975,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let export_override = Rc::clone(&export_override);
         ui.on_export_photo(move || {
             let Some(ui) = weak.upgrade() else { return };
+            if ui.get_repair_busy(){ui.set_status("请等待取样完成后再导出".into());return;}
             let mut state = state.borrow_mut();
             if state.protected
                 || ui.get_busy()
@@ -1039,6 +1050,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let batch_override = Rc::clone(&batch_override);
         ui.on_batch_export(move || {
             let Some(ui) = weak.upgrade() else { return };
+            if ui.get_repair_busy(){ui.set_status("请等待取样完成后再批量导出".into());return;}
             let mut state = state.borrow_mut();
             if state.protected || state.batch_protected || state.batch_dialog
                 || state.batch_control.is_some() || state.export_dialog
@@ -1284,6 +1296,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 skin.poll(&ui);
+                repairs.poll(&ui);
                 for outcome in completed_faces.try_iter() {
                     let mut state=state.borrow_mut();let cancelled=state.face_control.as_ref().is_some_and(|control|control.load(Ordering::Acquire));state.face_control=None;ui.set_face_busy(false);
                     if state.close_after_face {continue;}
@@ -1453,6 +1466,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     ui.set_busy(false);
                     match result {
                         Ok(preview) => {
+                            state.borrow_mut().displayed=Some(Displayed{request:request.clone(),binding:preview.binding,size:(preview.width,preview.height)});
                             ui.set_preview_aspect(preview.width as f32 / preview.height as f32);
                             if let Err(e) = qa.preview_ready(
                                 launched,
@@ -1495,6 +1509,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                         Err(error) => {
+                            state.borrow_mut().displayed=None;
                             ui.set_has_preview(false);
                             ui.set_engine_ready(false);
                             ui.set_status(error.to_string().into());
@@ -1508,6 +1523,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     Ok(Some((id, command))) => {
                         match command {
                             qa::Command::Snapshot => {}
+                            qa::Command::RepairTool{mode}=>ui.invoke_repair_tool(mode),
+                            qa::Command::RepairCanvas{x,y}=>ui.invoke_repair_canvas_click(x,y),
+                            qa::Command::RepairSelect{index}=>ui.invoke_select_repair(index),
+                            qa::Command::RepairAdjust{parameter,value}=>ui.invoke_adjust_repair(parameter.into(),value),
+                            qa::Command::RepairPick=>ui.invoke_pick_repair_source(),
+                            qa::Command::RepairSuggest=>ui.invoke_suggest_repair_source(),
+                            qa::Command::RepairRemove=>ui.invoke_remove_repair(),
+                            qa::Command::RepairClear=>ui.invoke_clear_repairs(),
+                            qa::Command::RepairCancel=>ui.invoke_cancel_repair(),
+                            qa::Command::RepairMarks{visible}=>ui.set_show_repair_marks(visible),
+                            qa::Command::About{visible}=>ui.set_about_visible(visible),
+                            qa::Command::View{zoom,pan_x,pan_y}=>{if zoom.is_finite()&&(1.0..=4.0).contains(&zoom)&&pan_x.is_finite()&&pan_y.is_finite(){ui.set_zoom(zoom);ui.set_pan_x(pan_x);ui.set_pan_y(pan_y);}},
                             qa::Command::Adjust { parameter, value } => ui.invoke_adjust(parameter.into(), value),
                             qa::Command::Select { index } => ui.invoke_select_photo(index),
                             qa::Command::Undo => ui.invoke_undo_edit(),
@@ -1586,6 +1613,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             object.insert("has_face".into(),ui.get_has_face().into());
                             object.insert("face_status".into(),ui.get_face_status().as_str().into());
                             object.insert("skin_smooth".into(),ui.get_skin_smooth().into());
+                            object.insert("repair".into(),serde_json::json!({"mode":ui.get_repair_mode(),"choice":ui.get_repair_choice(),"busy":ui.get_repair_busy(),"ready":ui.get_repair_ready(),"count":ui.get_repair_count(),"selected":ui.get_repair_selected(),"picking":ui.get_repair_picking(),"status":ui.get_repair_status().as_str(),"radius":ui.get_repair_radius(),"opacity":ui.get_repair_opacity(),"feather":ui.get_repair_feather(),"has_source":ui.get_repair_has_source(),"source_uv":[ui.get_repair_source_u(),ui.get_repair_source_v()],"marks":ui.get_repair_marks().iter().map(|m|serde_json::json!([m.u,m.v,m.rx,m.ry])).collect::<Vec<_>>()}));
+                            object.insert("view".into(),serde_json::json!({"zoom":ui.get_zoom(),"pan":[ui.get_pan_x(),ui.get_pan_y()],"canvas":[ui.get_canvas_width(),ui.get_canvas_height()],"image":[ui.get_image_left(),ui.get_image_top(),ui.get_image_width(),ui.get_image_height()],"pixels":[ui.get_displayed_width(),ui.get_displayed_height()]}));
                             object.insert("has_skin_mask".into(),ui.get_has_skin_mask().into());
                             object.insert("skin_uniformity".into(),ui.get_skin_uniformity().into());object.insert("skin_lighten".into(),ui.get_skin_lighten().into());
                             object.insert("skin_assets_ready".into(),ui.get_skin_assets_ready().into());

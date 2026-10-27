@@ -7,6 +7,7 @@ export struct PhotoView {
     thumbnail: image,
 }
 export struct FacePoint { x: float, y: float }
+export struct RepairMark { u: float, v: float, rx: float, ry: float }
 
 component ToolButton inherits Rectangle {
     in property <string> label;
@@ -123,6 +124,38 @@ export component AppWindow inherits Window {
     in-out property <bool> about-visible: false;
     in-out property <bool> exit-warning: false;
     in-out property <float> zoom: 1;
+    in-out property <float> pan-x: 0;
+    in-out property <float> pan-y: 0;
+    in property <int> displayed-width;
+    in property <int> displayed-height;
+    out property <float> canvas-width: picture.width / 1px;
+    out property <float> canvas-height: picture.height / 1px;
+    out property <float> image-left: picture.image-left / 1px;
+    out property <float> image-top: picture.image-top / 1px;
+    out property <float> image-width: picture.fit-width / 1px;
+    out property <float> image-height: picture.fit-height / 1px;
+    in-out property <bool> repair-controls-visible: false;
+    in-out property <int> repair-mode: 0;
+    in property <bool> repair-ready: false;
+    in property <bool> repair-busy: false;
+    in property <bool> repair-settings-enabled: false;
+    in property <bool> repair-can-clear: false;
+    in property <int> repair-selected: -1;
+    in-out property <int> repair-choice: 0;
+    in property <int> repair-count: 0;
+    in property <[string]> repair-labels;
+    in property <[RepairMark]> repair-marks;
+    in property <bool> repair-picking: false;
+    in property <bool> repair-has-source: false;
+    in property <float> repair-source-u;
+    in property <float> repair-source-v;
+    in property <float> repair-source-rx;
+    in property <float> repair-source-ry;
+    in-out property <bool> show-repair-marks: true;
+    in-out property <float> repair-radius: 1.5;
+    in-out property <float> repair-opacity: 100;
+    in-out property <float> repair-feather: 50;
+    in property <string> repair-status: "选择修复或克隆，再点击照片。";
     in-out property <float> exposure: 0;
     in-out property <float> contrast: 0;
     in-out property <float> highlights: 0;
@@ -160,6 +193,15 @@ export component AppWindow inherits Window {
     callback apply-ai-suggestion();
     callback dismiss-ai-suggestion();
     callback confirm-exit();
+    callback repair-tool(int);
+    callback repair-canvas-click(float, float);
+    callback select-repair(int);
+    callback adjust-repair(string, float);
+    callback pick-repair-source();
+    callback suggest-repair-source();
+    callback remove-repair();
+    callback clear-repairs();
+    callback cancel-repair();
 
     VerticalLayout {
         spacing: 1px; padding: 0px;
@@ -174,11 +216,11 @@ export component AppWindow inherits Window {
                 }
                 Rectangle { horizontal-stretch: 1; background: transparent; }
                 ToolButton { label: "＋ 导入照片"; min-width: 108px; active: root.can-import; triggered => { root.import-files(); } }
-                ToolButton { label: "一键 AI 调色"; min-width: 105px; active: root.ai-ready && root.has-preview && !root.busy && !root.ai-busy && !root.batch-running; triggered => { root.auto-grade(); } }
+                ToolButton { label: "一键 AI 调色"; min-width: 105px; active: root.ai-ready && root.has-preview && !root.busy && !root.ai-busy && !root.batch-running && !root.repair-busy; triggered => { root.auto-grade(); } }
                 ToolButton { label: "AI 设置"; min-width: 68px; triggered => { root.ai-settings-visible = true; } }
                 ComboBox { width: 145px; height: 34px; model: ["JPEG · 95", "PNG · 8 位", "TIFF · 16 位"]; current-index <=> root.export-format; enabled: !root.export-busy; }
-                ToolButton { label: "导出照片"; primary: true; active: root.engine-ready && root.has-preview && !root.busy && !root.export-busy && !root.batch-running && !root.face-busy; triggered => { root.export-photo(); } }
-                ToolButton { label: "批量导出"; min-width: 84px; active: root.photos.length > 0 && !root.batch-protected && !root.batch-running && !root.export-busy && !root.ai-busy && !root.face-busy; triggered => { root.batch-settings-visible = true; } }
+                ToolButton { label: "导出照片"; primary: true; active: root.engine-ready && root.has-preview && !root.busy && !root.export-busy && !root.batch-running && !root.face-busy && !root.repair-busy; triggered => { root.export-photo(); } }
+                ToolButton { label: "批量导出"; min-width: 84px; active: root.photos.length > 0 && !root.batch-protected && !root.batch-running && !root.export-busy && !root.ai-busy && !root.face-busy && !root.repair-busy; triggered => { root.batch-settings-visible = true; } }
                 ToolButton { label: "关于"; min-width: 54px; triggered => { root.about-visible = true; } }
             }
         }
@@ -229,33 +271,60 @@ export component AppWindow inherits Window {
                     HorizontalLayout {
                         Text { text: root.photo-name; color: #d8dee7; font-size: 12px; overflow: elide; }
                         ToolButton { label: root.compare ? "显示调整后" : "查看调整前"; active: root.has-preview; triggered => { root.compare = !root.compare; } }
-                        ToolButton { label: root.zoom == 1 ? "放大" : "适合窗口"; active: root.has-preview; triggered => { root.zoom = root.zoom == 1 ? 1.5 : 1; } }
+                        ToolButton { label: root.zoom == 1 ? "放大" : "适合窗口"; active: root.has-preview; triggered => { root.zoom = root.zoom == 1 ? 1.5 : 1; root.pan-x=0;root.pan-y=0; } }
                     }
                     picture := Rectangle {
                         vertical-stretch: 1; background: #101318; clip: true;
                         property <length> fit-width: min(self.width, self.height * root.preview-aspect) * root.zoom;
                         property <length> fit-height: self.fit-width / max(0.01, root.preview-aspect);
+                        property <length> limit-x: max(0px,(self.fit-width - self.width)/2);
+                        property <length> limit-y: max(0px,(self.fit-height - self.height)/2);
+                        property <length> applied-pan-x: max( - self.limit-x,min(self.limit-x,root.pan-x*1px));
+                        property <length> applied-pan-y: max( - self.limit-y,min(self.limit-y,root.pan-y*1px));
+                        property <length> image-left: (self.width - self.fit-width)/2+self.applied-pan-x;
+                        property <length> image-top: (self.height - self.fit-height)/2+self.applied-pan-y;
                         if root.has-preview: Image {
                             source: root.compare ? root.original-preview : root.preview; image-fit: contain;
                             width: picture.fit-width; height: picture.fit-height;
-                            x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+                            x: picture.image-left; y: picture.image-top;
                         }
                         if root.show-skin-mask && root.has-skin-mask && root.has-preview && !root.busy && !root.compare: Image {
                             source: root.skin-preview; image-fit: fill;
                             width: picture.fit-width; height: picture.fit-height;
-                            x: (parent.width - self.width)/2; y: (parent.height - self.height)/2;
+                            x: picture.image-left; y: picture.image-top;
                         }
                         if root.show-face-box && root.has-face && root.has-preview: Rectangle {
-                            x: (picture.width - picture.fit-width)/2 + root.face-x*picture.fit-width;
-                            y: (picture.height - picture.fit-height)/2 + root.face-y*picture.fit-height;
+                            x: picture.image-left + root.face-x*picture.fit-width;
+                            y: picture.image-top + root.face-y*picture.fit-height;
                             width: root.face-w*picture.fit-width; height: root.face-h*picture.fit-height;
                             background: transparent; border-width: 1px; border-color: #f2cc74;
                         }
                         for point in root.face-points: Rectangle {
                             visible: root.show-face-box && root.has-face && root.has-preview;
-                            x: (picture.width - picture.fit-width)/2 + point.x*picture.fit-width - 2px;
-                            y: (picture.height - picture.fit-height)/2 + point.y*picture.fit-height - 2px;
+                            x: picture.image-left + point.x*picture.fit-width - 2px;
+                            y: picture.image-top + point.y*picture.fit-height - 2px;
                             width: 4px; height: 4px; border-radius: 2px; background: #7be2c6;
+                        }
+                        for mark[index] in root.repair-marks: Rectangle {
+                            visible: root.show-repair-marks && root.repair-mode>0 && root.repair-ready && !root.compare;
+                            x: picture.image-left+mark.u*picture.fit-width;
+                            y: picture.image-top+mark.v*picture.fit-height;
+                            width: 0px; height: 0px;
+                            if index==root.repair-selected: Rectangle {
+                                x: -mark.rx*picture.fit-width; y: -mark.ry*picture.fit-height;
+                                width: 2*mark.rx*picture.fit-width; height: 2*mark.ry*picture.fit-height;
+                                border-radius: self.width/2; border-width: 1.5px; border-color: #f3cd78; background: #e8bd5910;
+                            }
+                            Rectangle { x:-8px;y:-8px;width:16px;height:16px;border-radius:8px;border-width:1px;border-color:#f3cd78;background:index==root.repair-selected?#e6bd65:#20252ddd;
+                                Text {text:""+(index+1);color:index==root.repair-selected?#1b2028:#f3cd78;font-size:10px;horizontal-alignment:center;vertical-alignment:center;}
+                            }
+                        }
+                        if root.repair-mode>0 && root.repair-ready && root.repair-has-source && root.show-repair-marks && !root.compare: Rectangle {
+                            x:picture.image-left+root.repair-source-u*picture.fit-width;
+                            y:picture.image-top+root.repair-source-v*picture.fit-height;width:0px;height:0px;
+                            Rectangle {x: - root.repair-source-rx*picture.fit-width;y: - root.repair-source-ry*picture.fit-height;width:2*root.repair-source-rx*picture.fit-width;height:2*root.repair-source-ry*picture.fit-height;border-radius:self.width/2;border-width:1.5px;border-color:#72c8ff;background:transparent;}
+                            Rectangle {x:-5px;y:-5px;width:10px;height:10px;border-radius:5px;border-width:2px;border-color:#72c8ff;background:#142530;}
+                            Text {x:8px;y:6px;text:"取样";color:#92d5ff;font-size:11px;}
                         }
                         if !root.has-preview: VerticalLayout {
                             alignment: center; padding: 50px; spacing: 14px;
@@ -267,6 +336,39 @@ export component AppWindow inherits Window {
                             x: 12px; y: 12px; width: 140px; height: 33px;
                             border-radius: 5px; background: #292d34;
                             Text { text: "正在更新预览…"; color: #e6c783; horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                        canvas-keys:=FocusScope {
+                            width:0px;height:0px;
+                            key-pressed(event)=>{
+                                if root.ai-settings-visible || root.ai-report-visible || root.about-visible || root.batch-settings-visible || root.batch-report-visible || root.exit-warning {return reject;}
+                                if event.text==Key.Escape {root.repair-tool(0);return accept;}
+                                if event.text==Key.Delete && root.repair-mode>0 {root.remove-repair();return accept;}
+                                if event.modifiers.control && (event.text=="z" || event.text=="Z") {if event.modifiers.shift {root.redo-edit();}else{root.undo-edit();}return accept;}
+                                return reject;
+                            }
+                        }
+                        canvas-pointer:=TouchArea {
+                            enabled:root.has-preview && !root.repair-busy && !root.ai-settings-visible && !root.ai-report-visible && !root.about-visible && !root.batch-settings-visible && !root.batch-report-visible && !root.exit-warning;
+                            property <bool> dragged:false;
+                            property <float> start-pan-x;
+                            property <float> start-pan-y;
+                            mouse-cursor: self.pressed && self.dragged ? MouseCursor.grabbing : root.repair-mode>0 ? MouseCursor.crosshair : MouseCursor.grab;
+                            pointer-event(event)=>{
+                                if event.button!=PointerEventButton.left {return;}
+                                if event.kind==PointerEventKind.down {
+                                    self.dragged=false;self.start-pan-x=picture.applied-pan-x/1px;self.start-pan-y=picture.applied-pan-y/1px;canvas-keys.focus();
+                                }
+                                if event.kind==PointerEventKind.up && !self.dragged && root.repair-mode>0 && root.repair-ready {root.repair-canvas-click(self.mouse-x/1px,self.mouse-y/1px);}
+                            }
+                            moved=>{
+                                if self.pressed {
+                                    if abs(self.mouse-x - self.pressed-x)>4px || abs(self.mouse-y - self.pressed-y)>4px {self.dragged=true;}
+                                    if self.dragged {
+                                        root.pan-x=max( - picture.limit-x/1px,min(picture.limit-x/1px,self.start-pan-x+(self.mouse-x - self.pressed-x)/1px));
+                                        root.pan-y=max( - picture.limit-y/1px,min(picture.limit-y/1px,self.start-pan-y+(self.mouse-y - self.pressed-y)/1px));
+                                    }
+                                }
+                            }
                         }
                     }
                     Text { text: root.photo-info; color: #a2adba; font-size: 11px; overflow: elide; }
@@ -294,9 +396,30 @@ export component AppWindow inherits Window {
                         ToolButton { label: "重做"; active: root.can-redo; triggered => { root.redo-edit(); } }
                     }
                     Text { text: root.engine-ready ? "浮点显影 · 参数自动保存\n同一滑块连续调整约半秒后记为一步撤销" : "选择照片并等待预览后即可调整"; color: #b19c76; font-size: 11px; wrap: word-wrap; }
+                    ToolButton {label:root.repair-controls-visible?"收起修复工具":"局部修复 · "+root.repair-count+" 点";active:root.selected-index>=0;triggered=>{if root.repair-controls-visible {root.repair-tool(0);root.repair-controls-visible=false;}else{root.repair-controls-visible=true;root.repair-tool(1);}}}
                     ScrollView {
                         VerticalLayout {
                             spacing: 12px; padding-right: 6px;
+                            if root.repair-controls-visible: VerticalLayout {
+                                spacing:10px;
+                                Text {text:"局部修复";color:#e7d0a4;font-size:13px;}
+                                ComboBox {model:["浏览 / 平移","修复 · 邻近取样","克隆 · 手动取样"];current-index <=> root.repair-mode;enabled:!root.repair-busy;selected(v)=>{root.repair-tool(self.current-index);}}
+                                ComboBox {model:root.repair-labels;current-index <=> root.repair-choice;enabled:!root.repair-busy;selected(v)=>{root.select-repair(self.current-index - 1);}}
+                                HorizontalLayout {spacing:6px;
+                                    ToolButton {label:root.repair-busy?"取消取样":root.repair-picking?"正在选取样位置":"选择取样位置";active:root.repair-busy || root.repair-ready;triggered=>{if root.repair-busy {root.cancel-repair();}else{root.pick-repair-source();}}}
+                                    ToolButton {label:"邻近取样";active:root.repair-ready && !root.repair-busy;triggered=>{root.suggest-repair-source();}}
+                                }
+                                Adjustment {label:"半径 (%)";minimum:0.2;maximum:20;value<=>root.repair-radius;active:root.repair-settings-enabled;adjusted(v)=>{root.adjust-repair("radius",v);}}
+                                Adjustment {label:"羽化 (%)";minimum:1;maximum:100;value<=>root.repair-feather;active:root.repair-settings-enabled;adjusted(v)=>{root.adjust-repair("feather",v);}}
+                                Adjustment {label:"强度 (%)";minimum:0;maximum:100;value<=>root.repair-opacity;active:root.repair-settings-enabled;adjusted(v)=>{root.adjust-repair("opacity",v);}}
+                                HorizontalLayout {spacing:6px;
+                                    ToolButton {label:"移除当前点";active:root.repair-selected>=0 && root.repair-settings-enabled;triggered=>{root.remove-repair();}}
+                                    ToolButton {label:"清除全部";active:root.repair-can-clear;triggered=>{root.clear-repairs();}}
+                                }
+                                ToolButton {label:root.show-repair-marks?"隐藏修复标记":"显示修复标记";triggered=>{root.show-repair-marks=!root.show-repair-marks;}}
+                                Text {text:root.repair-status;color:#a9c4d4;font-size:11px;wrap:word-wrap;}
+                                Text {text:"金色为修复点，蓝色为取样。单击标记可选择，拖动照片可平移。取样读取原图，请检查纹理；可撤销。";color:#8e99a6;font-size:10px;wrap:word-wrap;}
+                            }
                             Text { text: "光线"; color: #e7d0a4; font-size: 12px; }
                             Adjustment { label: "曝光 EV"; minimum: -4; maximum: 4; value <=> root.exposure; active: root.engine-ready; adjusted(v) => { root.adjust("exposure", v); } }
                             Adjustment { label: "对比度"; value <=> root.contrast; active: root.engine-ready; adjusted(v) => { root.adjust("contrast", v); } }
