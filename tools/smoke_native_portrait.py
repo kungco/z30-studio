@@ -60,7 +60,7 @@ def main():
     try:
         process,stop,command,until=launch(1)
         initial=command();baseline=initial['preview_fingerprint']
-        check('v2 draft migrates to v5 with exact original backup',initial['session']['version']==5 and any(path.read_bytes()==legacy for path in data.glob('session-v2-backup-*.json')))
+        check('v2 draft migrates to v6 with exact original backup',initial['session']['version']==6 and any(path.read_bytes()==legacy for path in data.glob('session-v2-backup-*.json')))
         select_assets(command,until);command('detect_face')
         detected=until(lambda s:s['has_face'] and not s['face_busy'] and not s['busy'])
         check('native detector binds a face without automatically applying smoothing',detected['skin_smooth']==0 and detected['preview_fingerprint']==baseline and detected['session']['photos'][0]['recipe']['portrait']['binding']['width']==512)

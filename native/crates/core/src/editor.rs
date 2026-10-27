@@ -74,6 +74,17 @@ impl PreviewEngine {
         self.cached = None;
     }
     pub fn preview(&mut self, path: &Path, recipe: Recipe) -> Result<EditPreview> {
+        self.preview_with_cancel(path, recipe, || false)
+    }
+    pub fn preview_with_cancel(
+        &mut self,
+        path: &Path,
+        recipe: Recipe,
+        mut cancelled: impl FnMut() -> bool,
+    ) -> Result<EditPreview> {
+        if cancelled() {
+            return Err(Error::Policy("预览已取消".into()));
+        }
         recipe.validate()?;
         let raw = path
             .extension()
@@ -94,7 +105,10 @@ impl PreviewEngine {
                 #[cfg(windows)]
                 {
                     let dll = self.raw_dll.as_ref().ok_or_else(|| {
-                        Error::Policy("缺少 RAW 解码组件，请完整解压软件包并保留 raw 文件夹；原片未修改".into())
+                        Error::Policy(
+                            "缺少 RAW 解码组件，请完整解压软件包并保留 raw 文件夹；原片未修改"
+                                .into(),
+                        )
                     })?;
                     let decoded = crate::raw::LibRaw::load(dll)?.decode(&stamp.path, false, wb)?;
                     (
@@ -138,7 +152,13 @@ impl PreviewEngine {
         let decode_resize_seconds = started.elapsed().as_secs_f64();
         let cache = self.cached.as_ref().unwrap();
         let started = Instant::now();
-        let rendered = crate::rendering::render(&cache.linear, &recipe, path, (cache.source_width,cache.source_height))?;
+        let rendered = crate::rendering::render_with_cancel(
+            &cache.linear,
+            &recipe,
+            path,
+            (cache.source_width, cache.source_height),
+            cancelled,
+        )?;
         if Stamp::read(path, wb)? != cache.stamp {
             return Err(Error::Policy("预览期间原片发生变化，请重新读取".into()));
         }

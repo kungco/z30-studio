@@ -11,18 +11,32 @@ struct Shared<J, R> {
     pending: Mutex<Option<(u64, J)>>,
     result: Mutex<Option<(u64, R)>>,
     wake: Condvar,
-    revision: AtomicU64,
-    stop: AtomicBool,
+    revision: Arc<AtomicU64>,
+    stop: Arc<AtomicBool>,
+}
+#[derive(Clone)]
+pub struct Cancellation {
+    revision: u64,
+    current: Arc<AtomicU64>,
+    stop: Arc<AtomicBool>,
+}
+impl Cancellation {
+    pub fn cancelled(&self) -> bool {
+        self.stop.load(Ordering::Acquire) || self.current.load(Ordering::Acquire) != self.revision
+    }
 }
 
 impl<J: Send + 'static, R: Send + 'static> LatestWorker<J, R> {
     pub fn new(mut work: impl FnMut(J) -> R + Send + 'static) -> Self {
+        Self::new_cancellable(move |input, _| work(input))
+    }
+    pub fn new_cancellable(mut work: impl FnMut(J, Cancellation) -> R + Send + 'static) -> Self {
         let shared = Arc::new(Shared {
             pending: Mutex::new(None),
             result: Mutex::new(None),
             wake: Condvar::new(),
-            revision: AtomicU64::new(0),
-            stop: AtomicBool::new(false),
+            revision: Arc::new(AtomicU64::new(0)),
+            stop: Arc::new(AtomicBool::new(false)),
         });
         let state = Arc::clone(&shared);
         std::thread::spawn(move || {
@@ -38,7 +52,12 @@ impl<J: Send + 'static, R: Send + 'static> LatestWorker<J, R> {
                     pending.take().unwrap()
                 };
                 let (revision, input) = job;
-                let result = work(input);
+                let token = Cancellation {
+                    revision,
+                    current: Arc::clone(&state.revision),
+                    stop: Arc::clone(&state.stop),
+                };
+                let result = work(input, token);
                 if state.revision.load(Ordering::Acquire) == revision
                     && !state.stop.load(Ordering::Acquire)
                 {
@@ -153,5 +172,36 @@ mod tests {
         assert_eq!(wait_result(&worker).1, (10, 1));
         worker.submit(20);
         assert_eq!(wait_result(&worker).1, (20, 2));
+    }
+    #[test]
+    fn cancellation_token_changes_on_supersede_cancel_and_drop() {
+        let (started, wait) = mpsc::channel();
+        let (release, blocked) = mpsc::channel();
+        let worker = LatestWorker::new_cancellable(move |n: u32, token| {
+            if n == 1 {
+                started.send(token).unwrap();
+                blocked.recv().unwrap();
+            }
+            n
+        });
+        worker.submit(1);
+        let token = wait.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(!token.cancelled());
+        let revision = worker.submit(2);
+        assert!(token.cancelled());
+        release.send(()).unwrap();
+        assert_eq!(wait_result(&worker), (revision, 2));
+        let (started, wait) = mpsc::channel();
+        let worker = LatestWorker::new_cancellable(move |_: (), token| {
+            started.send(token).unwrap();
+        });
+        worker.submit(());
+        let token = wait.recv_timeout(Duration::from_secs(2)).unwrap();
+        worker.cancel();
+        assert!(token.cancelled());
+        worker.submit(());
+        let token = wait.recv_timeout(Duration::from_secs(2)).unwrap();
+        drop(worker);
+        assert!(token.cancelled());
     }
 }

@@ -411,7 +411,7 @@ fn evaluate_ai(
             parameters,
             ..request.recipe.clone()
         };
-        let preview = engine.preview(&request.path, recipe)?;
+        let preview = engine.preview_with_cancel(&request.path, recipe,||cancel.load(Ordering::Acquire))?;
         let rgb: Vec<u8> = preview
             .rendered
             .pixels
@@ -634,14 +634,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let preview_engine = Arc::clone(&engine);
     let preview_full_cache = Arc::clone(&full_cache);
     let preview_raw_dll = raw_dll.clone();
-    let worker = Rc::new(LatestWorker::new(move |request: EditRequest| {
+    let worker = Rc::new(LatestWorker::new_cancellable(move |request: EditRequest,preview_cancel| {
         let _guard = preview_compute.lock().unwrap_or_else(|e| e.into_inner());
         preview_full_cache.lock().unwrap_or_else(|e| e.into_inner())
             .discard_other_source(&request.path, request.recipe.white_balance, preview_raw_dll.as_deref());
         let mut engine = preview_engine.lock().unwrap_or_else(|e| e.into_inner());
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             engine
-                .preview(&request.path, request.recipe.clone())
+                .preview_with_cancel(&request.path, request.recipe.clone(),||preview_cancel.cancelled())
                 .map(DisplayPreview::from)
         }))
         .unwrap_or_else(|_| {

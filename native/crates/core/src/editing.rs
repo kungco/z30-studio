@@ -180,6 +180,34 @@ impl EditingSession {
         self.session.photos[self.session.selected.unwrap()].recipe = next;
         Ok(true)
     }
+    /// Replace the immutable list as one undo step; unrelated global/AI edits
+    /// retain it. The caller supplies a source-bound list, never a pathless list.
+    pub fn apply_repairs(&mut self, repairs: Option<crate::repairs::Repairs>) -> Result<bool> {
+        let Some(current) = self.current() else {
+            return Ok(false);
+        };
+        if let Some(value) = &repairs {
+            value.validate()?;
+            if !value.binding().matches_source(&current.path)? {
+                return Err(Error::Policy("修复集合不属于当前原片，未应用".into()));
+            }
+        }
+        if current.recipe.repairs == repairs {
+            return Ok(false);
+        }
+        let next = Recipe {
+            repairs,
+            ..current.recipe
+        };
+        next.validate()?;
+        self.commit()?;
+        self.histories
+            .get_mut(&current.path)
+            .unwrap()
+            .record(next.clone())?;
+        self.session.photos[self.session.selected.unwrap()].recipe = next;
+        Ok(true)
+    }
     pub fn can_undo(&self) -> bool {
         self.current().is_some_and(|v| {
             self.histories

@@ -21,6 +21,7 @@ pub mod raw;
 pub mod raw_geometry;
 pub mod recipe;
 pub mod retouch;
+pub mod repairs;
 pub mod runtime;
 pub mod session;
 pub mod worker;

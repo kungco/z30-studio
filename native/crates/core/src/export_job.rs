@@ -234,7 +234,13 @@ impl ExportSource {
         export::check_cancel(&control.cancelled)?;
         control.stage.store(2, Ordering::Release);
         let render_started = Instant::now();
-        let rendered = crate::rendering::render(frame.as_ref(), &self.edit.recipe, &self.edit.path, (frame.width,frame.height))?;
+        let rendered = crate::rendering::render_with_cancel(
+            frame.as_ref(),
+            &self.edit.recipe,
+            &self.edit.path,
+            (frame.width, frame.height),
+            || control.cancelled.load(Ordering::Acquire),
+        )?;
         let render_seconds = render_started.elapsed().as_secs_f64();
         // Preserve the old low-memory path when caching is disabled or the
         // source exceeds the cap: release linear pixels before TIFF encoding.
@@ -283,7 +289,7 @@ impl ExportSource {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{recipe::Recipe, develop};
+    use crate::{develop, recipe::Recipe};
     #[test]
     fn export_uses_captured_recipe_and_full_size_not_the_active_preview() {
         let root = tempfile::tempdir().unwrap();

@@ -254,7 +254,7 @@ fn v3_geometric_session_and_v1_queue_keep_exact_backup_before_upgrade() {
     let old = format!("  {}\n", serde_json::to_string_pretty(&session).unwrap()).into_bytes();
     fs::write(directory.join("session.json"), &old).unwrap();
     let loaded = store.load().unwrap();
-    assert_eq!(loaded.version, 5);
+    assert_eq!(loaded.version, 6);
     assert_eq!(loaded.photos[0].recipe, photo.recipe);
     assert_eq!(fs::read(directory.join("session.json")).unwrap(), old);
     store.save(&loaded).unwrap();
@@ -279,7 +279,7 @@ fn v3_geometric_session_and_v1_queue_keep_exact_backup_before_upgrade() {
     let old_queue = serde_json::to_vec_pretty(&queue).unwrap();
     fs::write(batch_dir.join("batch-jobs.json"), &old_queue).unwrap();
     let loaded = batch_store.load().unwrap();
-    assert_eq!(loaded.version, 3);
+    assert_eq!(loaded.version, 4);
     batch_store.save(&loaded).unwrap();
     let backup = fs::read_dir(&batch_dir)
         .unwrap()
@@ -388,8 +388,8 @@ fn tone_controls_require_skin_and_keep_source_guard_history_and_tiff16() {
     assert_eq!(recipe.skin_tone.uniformity, 80.);
     assert_eq!(recipe.skin, original.recipe.skin);
     edits.undo().unwrap();
-    assert_eq!(edits.current().unwrap().recipe.skin_tone.uniformity,80.);
-    assert_eq!(edits.current().unwrap().recipe.skin_tone.lighten,0.);
+    assert_eq!(edits.current().unwrap().recipe.skin_tone.uniformity, 80.);
+    assert_eq!(edits.current().unwrap().recipe.skin_tone.lighten, 0.);
     edits.undo().unwrap();
     assert!(!edits.current().unwrap().recipe.skin_tone.active());
     edits.redo().unwrap();
@@ -448,7 +448,7 @@ fn v4_masks_migrate_without_new_tone_edits_and_preserve_original_backups() {
     let bytes = serde_json::to_vec_pretty(&old).unwrap();
     fs::write(directory.join("session.json"), &bytes).unwrap();
     let restored = store.load().unwrap();
-    assert_eq!(restored.version, 5);
+    assert_eq!(restored.version, 6);
     assert_eq!(restored.photos[0].recipe, original.recipe);
     store.save(&restored).unwrap();
     let backup = fs::read_dir(&directory)
@@ -480,7 +480,7 @@ fn v4_masks_migrate_without_new_tone_edits_and_preserve_original_backups() {
     let bytes = serde_json::to_vec_pretty(&queue).unwrap();
     fs::write(directory.join("batch-jobs.json"), &bytes).unwrap();
     let loaded = store.load().unwrap();
-    assert_eq!(loaded.version, 3);
+    assert_eq!(loaded.version, 4);
     store.save(&loaded).unwrap();
     let backup = fs::read_dir(&directory)
         .unwrap()

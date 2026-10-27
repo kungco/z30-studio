@@ -219,7 +219,7 @@ impl Patch {
         )
     }
 }
-fn check_work(width: u32, height: u32, edits: &[Repair]) -> Result<()> {
+pub(crate) fn check_work(width: u32, height: u32, edits: &[Repair]) -> Result<()> {
     let mut work = 0u64;
     for edit in edits.iter().filter(|e| e.opacity > 0.) {
         let patch = Patch::new(width, height, edit);
