@@ -45,7 +45,7 @@ pub struct Session {
 impl Default for Session {
     fn default() -> Self {
         Self {
-            version: 4,
+            version: 5,
             photos: vec![],
             selected: None,
         }
@@ -54,7 +54,7 @@ impl Default for Session {
 
 impl Session {
     pub fn validate(&self) -> Result<()> {
-        if !matches!(self.version, 1 | 2 | 3 | 4)
+        if !matches!(self.version, 1 | 2 | 3 | 4 | 5)
             || self.photos.len() > MAX_PHOTOS
             || self.selected.is_some_and(|i| i >= self.photos.len())
         {
@@ -71,6 +71,9 @@ impl Session {
         }
         for photo in &self.photos {
             photo.recipe.validate()?;
+            if self.version < 5 && photo.recipe.skin_tone.active() {
+                return Err(Error::Policy("旧草稿包含新格式肤色调整".into()));
+            }
             if self.version < 4 && photo.recipe.skin.is_some() {
                 return Err(Error::Policy(
                     "旧草稿包含新格式皮肤蒙版，未覆盖旧文件".into(),
@@ -171,8 +174,8 @@ impl SessionStore {
             None => Session::default(),
         };
         session.validate()?;
-        if session.version < 4 {
-            session.version = 4;
+        if session.version < 5 {
+            session.version = 5;
         }
         *persisted = bytes;
         self.validated.store(true, Ordering::Release);
@@ -180,9 +183,9 @@ impl SessionStore {
     }
     pub fn save(&self, session: &Session) -> Result<()> {
         session.validate()?;
-        if session.version != 4 {
+        if session.version != 5 {
             return Err(Error::Policy(
-                "只写入原生 v4 草稿；请先读取并迁移旧草稿".into(),
+                "只写入原生 v5 草稿；请先读取并迁移旧草稿".into(),
             ));
         }
         if !self.validated.load(Ordering::Acquire) {
@@ -209,9 +212,10 @@ impl SessionStore {
             .root
             .join(format!("session-{}-{stamp}.part", std::process::id()));
         if let Some(previous) = persisted.as_ref().filter(|data| {
-            serde_json::from_slice::<Session>(data).is_ok_and(|s| matches!(s.version, 1 | 2 | 3))
+            serde_json::from_slice::<Session>(data)
+                .is_ok_and(|s| matches!(s.version, 1 | 2 | 3 | 4))
         }) {
-            // Preserve the exact old bytes before the first v4 publication.
+            // Preserve the exact old bytes before the first v5 publication.
             // A failed backup must leave the original session.json untouched.
             let mut backup = tempfile::NamedTempFile::new_in(&self.root)?;
             backup.write_all(previous)?;
@@ -263,7 +267,7 @@ mod tests {
         assert_eq!(fs::read(&source).unwrap(), b"original bytes");
         session.version = 999;
         assert!(store.save(&session).is_err());
-        assert_eq!(store.load().unwrap().version, 4);
+        assert_eq!(store.load().unwrap().version, 5);
     }
     #[test]
     fn rejects_bad_indices_flags_and_truncated_json_without_replacing_it() {
@@ -313,7 +317,7 @@ mod tests {
         let path = directory.join("session.json");
         fs::write(&path, &legacy).unwrap();
         let migrated = store.load().unwrap();
-        assert_eq!(migrated.version, 4);
+        assert_eq!(migrated.version, 5);
         assert_eq!(migrated.photos[0].recipe, Recipe::default());
         assert_eq!(migrated.photos[0].rating, 4);
         assert_eq!(migrated.photos[0].flag, 1);
@@ -383,7 +387,7 @@ mod tests {
         assert_eq!(fs::read(path).unwrap(), bytes);
     }
     #[test]
-    fn v2_migration_preserves_recipe_and_exact_backup_before_v4_publication() {
+    fn v2_migration_preserves_recipe_and_exact_backup_before_v5_publication() {
         let root = tempfile::tempdir().unwrap();
         let source = root.path().join("photo.png");
         fs::write(&source, b"source").unwrap();
@@ -393,7 +397,7 @@ mod tests {
         let previous = serde_json::to_vec_pretty(&value).unwrap();
         fs::write(directory.join("session.json"), &previous).unwrap();
         let session = store.load().unwrap();
-        assert_eq!(session.version, 4);
+        assert_eq!(session.version, 5);
         assert_eq!(session.photos[0].recipe.parameters.exposure, 0.75);
         assert_eq!(fs::read(directory.join("session.json")).unwrap(), previous);
         store.save(&session).unwrap();
@@ -413,7 +417,7 @@ mod tests {
             serde_json::from_slice::<Session>(&fs::read(directory.join("session.json")).unwrap())
                 .unwrap()
                 .version,
-            4
+            5
         );
         assert_eq!(fs::read(source).unwrap(), b"source");
     }

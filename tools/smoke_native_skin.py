@@ -37,6 +37,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     for key in ('exe','assets','skin','image','out'):parser.add_argument('--'+key,type=Path,required=True)
     parser.add_argument('--bundled',action='store_true')
+    parser.add_argument('--tone',action='store_true',help='Also exercise separate skin tone controls')
     args=parser.parse_args()
     if args.out.exists():parser.error('Report already exists')
     root=Path(tempfile.mkdtemp(prefix='皮肤窗口 ',dir=Path(__file__).resolve().parents[1]/'.development')).resolve()
@@ -48,7 +49,7 @@ def main():
     env=os.environ|{'Z30_NATIVE_DATA_DIR':str(data)}
     env.pop('Z30_SKIN_DIR',None);env.pop('Z30_VISION_DIR',None)
     base=root/'no-model-app';base.mkdir();shutil.copyfile(args.exe,base/'Z30Studio.exe')
-    report=dict(stage='5C2-native-skin-ui',checks=[],exe_sha256=digest(args.exe),qa_directory=str(root),cloud_requests=0,physical_clicks_verified=False)
+    report=dict(stage='native-skin-tone-ui' if args.tone else 'native-skin-ui',checks=[],exe_sha256=digest(args.exe),qa_directory=str(root),cloud_requests=0,physical_clicks_verified=False)
     children=[]
     def check(label,condition):
         if not condition:raise AssertionError(label)
@@ -82,7 +83,7 @@ def main():
     try:
         process,stop,command,until=launch(1)
         initial=command();baseline=initial['preview_fingerprint']
-        check('v3 draft migrates to v4 and backs up original bytes',initial['session']['version']==4 and any(p.read_bytes()==old for p in data.glob('session-v3-backup-*.json')))
+        check('v3 draft migrates to v5 and backs up original bytes',initial['session']['version']==5 and any(p.read_bytes()==old for p in data.glob('session-v3-backup-*.json')))
         assets(command,until,args.bundled);command('detect_face');until(lambda s:not s['face_busy'] and s['has_face'])
         start=time.monotonic();command('segment_skin');masked=until(lambda s:not s['face_busy'] and not s['busy'] and s['has_skin_mask'])
         report['first_segmentation_seconds']=time.monotonic()-start
@@ -97,6 +98,15 @@ def main():
         check('one further undo removes segmentation and retains face',not removed['has_skin_mask'] and removed['has_face'])
         command('redo');until(lambda s:not s['busy']);command('redo');restored=until(lambda s:not s['busy'])
         check('redo restores identical mask and smoothed pixels',restored['preview_fingerprint']==smoothed['preview_fingerprint'] and restored['session']['photos'][0]['recipe']['skin']==mask)
+        if args.tone:
+            command('adjust',parameter='skin_uniformity',value=80);uniform=until(lambda s:not s['busy'])
+            check('uniformity changes pixels without discarding saved skin',uniform['skin_uniformity']==80 and uniform['has_skin_mask'] and uniform['preview_fingerprint']!=smoothed['preview_fingerprint'])
+            command('adjust',parameter='skin_lighten',value=60);toned=until(lambda s:not s['busy'])
+            check('skin lightening has separate strength and pixels',toned['skin_lighten']==60 and toned['preview_fingerprint']!=uniform['preview_fingerprint'])
+            command('undo');undone=until(lambda s:not s['busy'])
+            check('one undo removes lightening and retains uniformity',undone['skin_lighten']==0 and undone['skin_uniformity']==80 and undone['preview_fingerprint']==uniform['preview_fingerprint'])
+            command('redo');smoothed=until(lambda s:not s['busy'])
+            check('tone redo restores identical pixels',smoothed['preview_fingerprint']==toned['preview_fingerprint'])
         command('show_skin_mask',visible=False);hidden=command();command('show_skin_mask',visible=True);shown=command()
         check('mask visibility does not bake overlay into rendered pixels',hidden['preview_fingerprint']==shown['preview_fingerprint'])
         command('compare',enabled=True);compared=command();command('compare',enabled=False)
@@ -105,11 +115,14 @@ def main():
         batch=until(lambda s:len(s['batch']['jobs'])==2 and all(j['state']=='done' for j in s['batch']['jobs']))
         check('shared batch captures first photo semantic mask',batch['batch']['jobs'][0]['recipe']['skin']==mask)
         check('shared batch never transfers skin mask to another photo',batch['batch']['jobs'][1]['recipe'].get('skin') is None)
+        if args.tone:
+            check('shared global batch preserves per-photo tone controls',batch['batch']['jobs'][0]['recipe']['skin_tone']=={'uniformity':80,'lighten':60} and batch['batch']['jobs'][1]['recipe'].get('skin_tone') is None)
         exported=Path(batch['batch']['jobs'][0]['destination']);pixels=tifffile.imread(exported)
         check('semantic batch writes full-size real 16-bit TIFF',pixels.shape==(512,512,3) and pixels.dtype==np.uint16 and np.any(pixels%257))
         report['memory_mib']=memory(process.pid);stop.write_text('stop');check('first skin process closes cleanly',process.wait(timeout=30)==0)
         process,stop,command,until=launch(2,True);saved=command()
         check('restart without model folders restores identical skin effect',saved['has_skin_mask'] and not saved['skin_assets_ready'] and not saved['face_assets_ready'] and saved['preview_fingerprint']==smoothed['preview_fingerprint'])
+        if args.tone:check('model-free restart restores separate tone strengths',saved['skin_uniformity']==80 and saved['skin_lighten']==60)
         modules=loaded_modules(process.pid);check('restoring saved mask does not load ONNX runtime','onnxruntime.dll' not in modules)
         report['restored_without_runtime_modules']=modules
         destination=root/'restored.tif';command('export',destination=str(destination),format=2)

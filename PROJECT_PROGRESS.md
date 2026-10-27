@@ -2,7 +2,9 @@
 
 更新：2026-10-27（Asia/Hong_Kong）。原生迁移总任务未完成。
 
-当前新增 5C2：皮肤识别已接入原生桌面、绿色实际区域预览和完整配方路径。蒙版不可变共享、无损压缩、校验并随 v4 草稿/v2 队列保存；可撤销/重启，无模型也能恢复 PNG 人像并导出，公共批量不串片。Rust 78、完整 Python 180（默认 2 跳过后另跑公开 RAW）、Node 31 通过；皮肤窗口 23、人像 18、RAW 14 和官方模型九组对照通过，实际点击/放大/调整前检查通过。256 照片/512 任务存储基准通过，最坏蒙版亦在 32/64 MiB 预算内。详见 docs/reports/native-stage5c2-skin-workflow.md/json；最终干净包和当前提交 CI 以 .development/checkpoint.json 为准。用户 Z30 人像、多肤色/遮挡、干净 Windows/GPU 未验证；下一步瑕疵/肤色等后续人像能力，阶段 5 总体未完成。
+当前新增 5D：肤色均匀/提亮的独立强度、v5 草稿/v3 队列迁移、原片变化阻止应用、撤销/批量/无模型恢复与 TIFF16 已实现。修复切换不同滑块时手势被合并为一次撤销的问题。Rust 86、八组独立 NumPy 对照、29 项窗口回调及实际点击/布局/独立撤销/蒙版对比通过；完整 Python 180（默认两项 RAW 跳过后另跑通过）、Node 31 通过。约 2000 万像素合成图三轮 CPU 肤色处理约 .49–.72 秒，均匀处理进程峰值比禁用约增加 3.7 MiB；不是实际 NEF 人像性能/画质验收。详见 docs/reports/native-stage5d-skin-tone.md/json。提交、干净 ZIP/207 项解压流程和对应 CI 以 `.development/checkpoint.json` 为准，不能把提交前构建当成最终干净包。下一步瑕疵/轮廓/GPU，阶段 5 总体未完成。
+
+历史 5C2：皮肤识别已接入原生桌面、绿色实际区域预览和完整配方路径。蒙版不可变共享、无损压缩、校验并随 v4 草稿/v2 队列保存；可撤销/重启，无模型也能恢复 PNG 人像并导出，公共批量不串片。Rust 78、完整 Python 180（默认 2 跳过后另跑公开 RAW）、Node 31 通过；皮肤窗口 23、人像 18、RAW 14 和官方模型九组对照通过，实际点击/放大/调整前检查通过。256 照片/512 任务存储基准通过，最坏蒙版亦在 32/64 MiB 预算内。详见 docs/reports/native-stage5c2-skin-workflow.md/json；最终干净包和当前提交 CI 以 .development/checkpoint.json 为准。用户 Z30 人像、多肤色/遮挡、干净 Windows/GPU 未验证；下一步瑕疵/肤色等后续人像能力，阶段 5 总体未完成。
 
 
 历史 5C1：许可已核对的本机皮肤语义识别、绑定原片的保守蒙版和实际浮点柔化入口，独立 Google TFLite/ONNX/Rust 九组对照通过。Rust 71 通过、2 项默认 ignored 随后显式通过；Python 179（2 跳过）、Node 31 通过，既有人像/RAW 窗口 18/14 项及 YuNet 五组参考通过。五份 RAW TIFF16 与 5B 逐字节一致。**语义功能尚未接入桌面或持久会话**，下一步 5C2 补按钮/蒙版预览、草稿/撤销/批量与导出一致性；模型安装和最终界面验收不能省略。实体倒置 180° 公开图返回空蒙版，用户 Z30 人像/多肤色/干净 Windows/GPU 未验证。详见 docs/reports/native-stage5c-skin.md；干净构建、GitHub 和 CI 以 .development/checkpoint.json 为准。
@@ -13,7 +15,7 @@
 
 最新进展：阶段 4A `c1b83e4`、4B `d4900ff` 已独立提交；4C 加入有界全尺寸缓存并完成公开 Z30 12/14 位 RAW、速度与内存验收，源码提交和干净包以最新 Git/检查点为准。RAW 窗口 14 项、合成照片批量 14 项、原有编辑/导出 26 项通过；三轮重复 TIFF16 导出约 2.0→0.8 秒且所有字节一致。缓存核心峰值约 478→596 MiB；普通批量未命中不保留新缓存，窗口峰值约 551 MiB。阶段 4 为限定范围验收，磁盘缓存/并行/ETA/批量 AI 等仍待完整迁移。见 `docs/reports/native-stage4c-performance.md`。
 
-- 当前阶段：1、2A–2G 和 4A–4C 通过限定验收。3A/3B 接口与离线模拟通过，真实云端/本机大模型未验证。5A/5B 面部定位/几何柔化已接入桌面；5C1 核心与原模型对照、5C2 桌面/持久化通过限定验收，阶段 5 及阶段 6 完整迁移尚未完成。
+- 当前阶段：1、2A–2G 和 4A–4C 通过限定验收。3A/3B 接口与离线模拟通过，真实云端/本机大模型未验证。5A/5B 面部定位/几何柔化已接入桌面；5C1 核心与原模型对照、5C2 桌面/持久化和 5D 独立肤色控制通过限定验收，阶段 5 及阶段 6 完整迁移尚未完成。
 - 分支 feat/native-slint，草稿 PR https://github.com/kungco/z30-studio/pull/2；原 Python 基线 a2a2e089d760221a52c8774cca8a2e42f0a82269。最新 SHA 以 git rev-parse HEAD 和 .development/checkpoint.json 为准；不合并 main、不正式发布。
 - 已实现：原生查看器/评分/草稿/独占与 CAS，LibRaw 0.22.2 只读桥接、RGB16→float、八方向/裁剪/半尺寸，九参数 float 核心/滚动锐化，sRGB ICC JPEG/PNG/TIFF16 不覆盖输出。2F 将现成核心接到实际窗口，仍非完整迁移产品。
 - RAW 纯解码四组与原 Python 逐像素相同；提前释放上下文后全尺寸峰值约 561→361 MiB，半尺寸 174→115 MiB。全尺寸解码仍慢于 Python。见 docs/reports/native-stage2a.md。
@@ -52,7 +54,7 @@
 2. 独立 Rust 1.99.1 GNU/w64devkit 位于 D:/codex/toolchains/z30-native；执行 tools/native_build.ps1 -ToolchainRoot D:/codex/toolchains/z30-native -Test -RawProbe -ExportProbe。不要重装或使用曾中断的版本化目录。
 3. 样片为 D:/codex/2026-10-23/ni-k/work/Z30-12bit.NEF、Z30-14bit.NEF；官方 DLL 在 work/native-libraw/LibRaw-0.22.2/bin/libraw.dll。不得提交/覆盖；Python 实拍测试设置 Z30_RAW_SAMPLES=work，Rust fixture 显式设置 Z30_LIBRAW_DLL/Z30_RAW_12/Z30_RAW_14 并用 -RawFixtures。
 4. 基准 tools/native_raw_benchmark.py 默认 --oracle-mode baseline 固定原始算法；修正实现对照显式用 --oracle-mode current，暖色参数见 native-stage2b.md。修正四组现场 .development/native-raw/run-b45b77eb14d04c15818b9cdc46c04aa4；旧算法差异 run-fd4235e248814befb8d294ad0ad02c13。
-5. 2G、3A、3B、4C 干净 ZIP/解压复测/对应 GitHub CI 已完成。5A 核心探针和五组公开图对照、5B 会话/桌面/几何柔化及可选打包通过限定验收；显式 Z30_VISION_DIR / Z30_VISION_IMAGE 可复跑固定 CPU 模型，可选运行库仍有 VC++ 依赖。下一步补语义皮肤区域、其他精修与完整高级功能。有实际 Key/用户样片时再经用户明确选择服务发起云端验收，不能自动产生收费请求。干净 Windows、ICC/CMYK/HDR/显示器等剩余范围按功能清单迁移。
+5. 2G、3A、3B、4C 干净 ZIP/解压复测/对应 GitHub CI 已完成。5A 核心探针和五组公开图对照、5B 会话/桌面/几何柔化及可选打包通过限定验收；显式 Z30_VISION_DIR / Z30_VISION_IMAGE 可复跑固定 CPU 模型，可选运行库仍有 VC++ 依赖。5C1/5C2 语义皮肤与持久化、5D 独立肤色控制通过限定验收。先核对 checkpoint 的干净包/CI，再继续瑕疵、轮廓/GPU 与完整高级功能。有实际 Key/用户样片时再经用户明确选择服务发起云端验收，不能自动产生收费请求。干净 Windows、ICC/CMYK/HDR/显示器等剩余范围按功能清单迁移。
 6. 大任务前和阶段边界读 get_usage_limits，只保存去账户身份快照；剩余约 10% 时收尾/提交/检查点，不开新大任务。未知记未知。checkpoint 脚本不会自动启动 Codex。
 
 未启用额度重置自动续跑。不会自动花费推理额度、读取 auth.json、提交凭证/原片、合并 main、发布正式版或关机。

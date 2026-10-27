@@ -16,7 +16,11 @@ fn write_float(path: PathBuf, values: impl Iterator<Item = f32>) -> std::io::Res
 }
 
 fn write_bytes(path: PathBuf, bytes: &[u8]) -> std::io::Result<()> {
-    std::fs::OpenOptions::new().write(true).create_new(true).open(path)?.write_all(bytes)
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?
+        .write_all(bytes)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -97,6 +101,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             output.join("semantic.f32"),
             semantic.pixels.iter().flatten().copied(),
         )?;
+        for (name, settings) in [
+            (
+                "uniform",
+                z30_core::skin_tone::Settings {
+                    uniformity: 100.,
+                    lighten: 0.,
+                },
+            ),
+            (
+                "lighten",
+                z30_core::skin_tone::Settings {
+                    uniformity: 0.,
+                    lighten: 100.,
+                },
+            ),
+        ] {
+            let mut toned = z30_core::develop::SrgbFrame {
+                width: semantic.width,
+                height: semantic.height,
+                pixels: semantic.pixels.clone(),
+            };
+            z30_core::skin_tone::apply(&mut toned, &recipe.portrait, &skin, settings)?;
+            write_float(
+                output.join(format!("{name}.f32")),
+                toned.pixels.iter().flatten().copied(),
+            )?;
+        }
     }
     let cancelled = segmenter.segment(&neutral, &AtomicBool::new(true)).is_err();
     if !cancelled {

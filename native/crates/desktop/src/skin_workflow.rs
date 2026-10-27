@@ -184,9 +184,10 @@ pub fn bind(
                                 request.recipe.white_balance,
                                 dll.as_deref(),
                             );
-                        let mut recipe = request.recipe.clone();
-                        recipe.skin = None;
-                        recipe.portrait = Portrait::default();
+                        let recipe = Recipe {
+                            white_balance: request.recipe.white_balance,
+                            ..Default::default()
+                        };
                         let preview = engine
                             .lock()
                             .unwrap_or_else(|e| e.into_inner())

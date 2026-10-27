@@ -19,11 +19,19 @@ pub struct Recipe {
     pub portrait: Portrait,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skin: Option<crate::skin::SkinMask>,
+    #[serde(skip_serializing_if = "crate::skin_tone::Settings::is_default")]
+    pub skin_tone: crate::skin_tone::Settings,
 }
 impl Recipe {
     pub fn validate(&self) -> Result<()> {
         self.parameters.validate()?;
         self.portrait.validate()?;
+        self.skin_tone.validate()?;
+        if self.skin_tone.active() && self.skin.is_none() {
+            return Err(crate::Error::Policy(
+                "肤色调整需要已识别并保存的皮肤区域".into(),
+            ));
+        }
         if let Some(skin) = &self.skin {
             skin.check_portrait(&self.portrait)?;
         }

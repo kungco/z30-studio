@@ -16,12 +16,14 @@ pub struct EditRequest {
 pub struct EditingSession {
     pub session: Session,
     histories: HashMap<PathBuf, EditHistory>,
+    pending_parameter: Option<String>,
 }
 impl EditingSession {
     pub fn new(session: Session) -> Self {
         Self {
             session,
             histories: HashMap::new(),
+            pending_parameter: None,
         }
     }
     pub fn current(&self) -> Option<EditRequest> {
@@ -58,10 +60,12 @@ impl EditingSession {
             "vibrance" => p.vibrance = value,
             "sharpen" => p.sharpen = value,
             "skin_smooth" => next.portrait.smooth = value,
+            "skin_uniformity" => next.skin_tone.uniformity = value,
+            "skin_lighten" => next.skin_tone.lighten = value,
             _ => return Err(Error::Policy("未知调色参数".into())),
         }
         next.validate()?;
-        if name == "skin_smooth" && value > 0. {
+        if name.starts_with("skin_") && value > 0. {
             let binding = next.portrait.binding.unwrap();
             if !binding.matches_source(&current.path)? {
                 return Err(Error::Policy("原片已变化，请重新检测面部后再柔化".into()));
@@ -70,10 +74,20 @@ impl EditingSession {
         if current.recipe == next {
             return Ok(false);
         }
+        if self
+            .pending_parameter
+            .as_deref()
+            .is_some_and(|previous| previous != name)
+        {
+            self.commit()?;
+        }
         self.histories
             .entry(current.path)
             .or_insert(EditHistory::new(current.recipe.clone())?);
         self.session.photos[self.session.selected.unwrap()].recipe = next;
+        if self.pending_parameter.as_deref() != Some(name) {
+            self.pending_parameter = Some(name.to_owned());
+        }
         Ok(true)
     }
     pub fn commit(&mut self) -> Result<()> {
@@ -83,6 +97,7 @@ impl EditingSession {
                 .or_insert(EditHistory::new(current.recipe.clone())?)
                 .record(current.recipe)?;
         }
+        self.pending_parameter = None;
         Ok(())
     }
     /// Apply a validated AI suggestion as one undoable edit, keeping the
@@ -117,13 +132,17 @@ impl EditingSession {
                 return Err(Error::Policy("人像结果不属于当前原片，未应用".into()));
             }
         }
-        if current.recipe.portrait == portrait && current.recipe.skin.is_none() {
+        if current.recipe.portrait == portrait
+            && current.recipe.skin.is_none()
+            && !current.recipe.skin_tone.active()
+        {
             return Ok(false);
         }
         self.commit()?;
         let next = Recipe {
             portrait,
             skin: None,
+            skin_tone: Default::default(),
             ..current.recipe
         };
         self.histories
@@ -279,6 +298,21 @@ mod tests {
         assert!(!restored.can_undo());
         assert!(s.select(999).unwrap().is_none());
         assert_eq!(s.current(), before);
+    }
+    #[test]
+    fn changing_controls_commits_the_previous_gesture_without_waiting_for_a_timer() {
+        let mut state = state();
+        for value in [0.1, 0.2, 0.3] {
+            state.adjust("exposure", value).unwrap();
+        }
+        state.adjust("contrast", 15.).unwrap();
+        state.adjust("contrast", 20.).unwrap();
+        state.undo().unwrap();
+        let recipe = state.current().unwrap().recipe;
+        assert_eq!(recipe.parameters.exposure, 0.3);
+        assert_eq!(recipe.parameters.contrast, 0.);
+        state.undo().unwrap();
+        assert_eq!(state.current().unwrap().recipe.parameters.exposure, 0.);
     }
     #[test]
     fn ai_edit_is_one_undo_step_and_keeps_the_photo_white_balance() {

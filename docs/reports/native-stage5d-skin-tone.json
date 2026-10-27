@@ -1,0 +1,136 @@
+{
+  "stage": "5D",
+  "baseline": "14639d92cef32b73f9882986cb91b89e9d3a4775",
+  "scope": "Pre-commit validation; exact clean artifact/head CI in local checkpoint.json",
+  "implementation": [
+    "independent skin uniformity and bounded lightening",
+    "source-bound semantic mask required",
+    "float display-sRGB, no early RGB8 conversion",
+    "v5 session/v3 queue; exact legacy backups",
+    "separate controls produce separate undo gestures"
+  ],
+  "tests": {
+    "rust_passed": 86,
+    "rust_default_ignored": 2,
+    "rust_explicit_fixture_passed": 2,
+    "python_total": 180,
+    "python_default_passed": 178,
+    "python_default_skipped": 2,
+    "python_explicit_raw_passed": 2,
+    "node_passed": 31,
+    "numeric_cases": 8,
+    "skin_window_checks": 29,
+    "raw_window_checks": 14,
+    "physical_clicks": true
+  },
+  "numeric": {
+    "threshold_max_rgb_error": 2e-06,
+    "max_rgb_error": 2.384185791015625e-07,
+    "max_uniform_display_luma_error": 1.1920928955078125e-07,
+    "excluded_pixels_exact": true,
+    "finite_in_gamut": true
+  },
+  "synthetic_benchmark": {
+    "repeat": 3,
+    "cases": [
+      {
+        "width": 512,
+        "height": 512,
+        "summary": {
+          "disabled": {
+            "tone_median_seconds": 3e-06,
+            "peak_working_set_max_mib": 6.047
+          },
+          "uniform": {
+            "tone_median_seconds": 0.0111166,
+            "peak_working_set_max_mib": 6.125
+          },
+          "lighten": {
+            "tone_median_seconds": 0.0065098,
+            "peak_working_set_max_mib": 6.133
+          },
+          "both": {
+            "tone_median_seconds": 0.0124981,
+            "peak_working_set_max_mib": 6.098
+          }
+        },
+        "short_process_memory_may_under_sample": true
+      },
+      {
+        "width": 5472,
+        "height": 3648,
+        "summary": {
+          "disabled": {
+            "tone_median_seconds": 2.9e-06,
+            "peak_working_set_max_mib": 231.922
+          },
+          "uniform": {
+            "tone_median_seconds": 0.6247124,
+            "peak_working_set_max_mib": 235.637
+          },
+          "lighten": {
+            "tone_median_seconds": 0.4883358,
+            "peak_working_set_max_mib": 231.918
+          },
+          "both": {
+            "tone_median_seconds": 0.723979,
+            "peak_working_set_max_mib": 235.633
+          }
+        },
+        "short_process_memory_may_under_sample": false
+      }
+    ],
+    "limitations": [
+      "Synthetic float display-sRGB; no photograph decode or model inference",
+      "Single CPU/machine; no GPU, real Z30 portrait or multi-skin-tone validation",
+      "Face covers 80% of each dimension; larger than public astronaut face",
+      "Peak working set includes source float buffer and verification; not incremental allocation"
+    ]
+  },
+  "raw": {
+    "all_five_tiffs_identical_to_5c2": true,
+    "hashes": {
+      "single-0.tif": "ce4216394603464ac14395df75a2c8c9ee6a3ef9ab59a657c3e1d8a0a7eeae8f",
+      "single-1.tif": "8c10f8735d6cef2070e4fc5c6957d14bfd8dcb973196f83f94cea903fa0aafc5",
+      "single-repeat.tif": "ce4216394603464ac14395df75a2c8c9ee6a3ef9ab59a657c3e1d8a0a7eeae8f",
+      "batch\\Z30-12bit-z30-001.tif": "ce4216394603464ac14395df75a2c8c9ee6a3ef9ab59a657c3e1d8a0a7eeae8f",
+      "batch\\Z30-14bit-z30-002.tif": "8c10f8735d6cef2070e4fc5c6957d14bfd8dcb973196f83f94cea903fa0aafc5"
+    },
+    "before_timings": {
+      "single_0_seconds": 2.219,
+      "single_repeat_seconds": 1.008,
+      "single_1_seconds": 2.206,
+      "batch_seconds": 4.306
+    },
+    "after_timings": {
+      "single_0_seconds": 2.224,
+      "single_repeat_seconds": 0.989,
+      "single_1_seconds": 2.205,
+      "batch_seconds": 4.31
+    },
+    "before_batch_memory_mib": {
+      "peak_working_set": 553.141,
+      "working_set": 79.711,
+      "private_bytes": 60.461
+    },
+    "after_batch_memory_mib": {
+      "peak_working_set": 553.621,
+      "working_set": 80.391,
+      "private_bytes": 61.156
+    },
+    "after_single_memory_mib": {
+      "peak_working_set": 672.016,
+      "working_set": 317.172,
+      "private_bytes": 298.422
+    }
+  },
+  "limitations": [
+    "No real Z30 portrait, diverse skin tones, clean Windows, GPU or high-DPI validation",
+    "Display-sRGB weighted luma preservation is not physical linear luminance preservation",
+    "Blemish/heal/contour/GPU and full advanced darkroom remain pending",
+    "Binding uses canonical path, size/mtime and dimensions, not a full content digest"
+  ],
+  "cloud_requests": 0,
+  "automatic_resume": false,
+  "automatic_shutdown": false
+}

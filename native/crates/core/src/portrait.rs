@@ -105,8 +105,17 @@ impl Portrait {
         Ok(())
     }
     pub fn check_source(&self, path: &Path, width: u32, height: u32) -> Result<()> {
+        self.check_source_for_effect(path, width, height, self.smooth > 0.)
+    }
+    pub fn check_source_for_effect(
+        &self,
+        path: &Path,
+        width: u32,
+        height: u32,
+        active: bool,
+    ) -> Result<()> {
         self.validate()?;
-        if self.smooth == 0. {
+        if !active {
             return Ok(());
         }
         let binding = self.binding.unwrap();

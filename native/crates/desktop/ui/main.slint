@@ -76,6 +76,8 @@ export component AppWindow inherits Window {
     in property <[FacePoint]> face-points;
     in-out property <bool> show-face-box: false;
     in-out property <float> skin-smooth: 0;
+    in-out property <float> skin-uniformity: 0;
+    in-out property <float> skin-lighten: 0;
     in property <bool> can-undo: false;
     in property <bool> can-redo: false;
     in property <bool> export-busy: false;
@@ -291,7 +293,7 @@ export component AppWindow inherits Window {
                         ToolButton { label: "撤销"; active: root.can-undo; triggered => { root.undo-edit(); } }
                         ToolButton { label: "重做"; active: root.can-redo; triggered => { root.redo-edit(); } }
                     }
-                    Text { text: root.engine-ready ? "浮点显影 · 参数自动保存\n连续调整约半秒后记为一步撤销" : "选择照片并等待预览后即可调整"; color: #b19c76; font-size: 11px; wrap: word-wrap; }
+                    Text { text: root.engine-ready ? "浮点显影 · 参数自动保存\n同一滑块连续调整约半秒后记为一步撤销" : "选择照片并等待预览后即可调整"; color: #b19c76; font-size: 11px; wrap: word-wrap; }
                     ScrollView {
                         VerticalLayout {
                             spacing: 12px; padding-right: 6px;
@@ -324,9 +326,11 @@ export component AppWindow inherits Window {
                             Text { text: root.skin-mode; color: #a8cbbd; font-size: 11px; }
                             ToolButton { label: root.show-skin-mask ? "隐藏皮肤区域" : "查看皮肤区域"; active: root.has-skin-mask; triggered => { root.show-skin-mask = !root.show-skin-mask; } }
                             Adjustment { label: "面部柔化"; minimum: 0; value <=> root.skin-smooth; active: root.engine-ready && root.portrait-ready && !root.face-busy; adjusted(v) => { root.adjust("skin_smooth", v); } }
+                            Adjustment { label: "肤色均匀"; minimum: 0; value <=> root.skin-uniformity; active: root.engine-ready && root.has-skin-mask && !root.face-busy; adjusted(v) => { root.adjust("skin_uniformity", v); } }
+                            Adjustment { label: "肤色提亮"; minimum: 0; value <=> root.skin-lighten; active: root.engine-ready && root.has-skin-mask && !root.face-busy; adjusted(v) => { root.adjust("skin_lighten", v); } }
                             ToolButton { label: root.show-face-box ? "隐藏定位框" : "显示定位框"; active: root.has-face; triggered => { root.show-face-box = !root.show-face-box; } }
                             Text { text: root.face-status; color: #aab6c4; font-size: 11px; wrap: word-wrap; }
-                            Text { text: "当前只处理选中的一张脸。识别皮肤后，柔化限于绿色区域并保护眼口；请检查头发、眼镜与边缘。区域随草稿保存，重启无需再次识别。组件需要 VC++ x64 运行库。"; color: #8d99a7; font-size: 10px; wrap: word-wrap; }
+                            Text { text: "只处理当前面部的皮肤区域，保护眼口。均匀肤色与提亮可分别调整，深暗和高光受保护；请检查头发、眼镜和边缘。区域随草稿保存。新识别需要 VC++ x64 运行库。"; color: #8d99a7; font-size: 10px; wrap: word-wrap; }
                         }
                     }
                 }

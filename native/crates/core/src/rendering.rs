@@ -30,10 +30,21 @@ pub fn render_with_skin(
             "显影蒙版与保存配方不一致，未退回几何柔化".into(),
         ));
     }
-    recipe
-        .portrait
-        .check_source(path, original_size.0, original_size.1)?;
+    recipe.portrait.check_source_for_effect(
+        path,
+        original_size.0,
+        original_size.1,
+        recipe.portrait.smooth > 0. || recipe.skin_tone.active(),
+    )?;
     let mut output = develop::render(source, &recipe.parameters)?;
     crate::portrait::apply_with_skin(&mut output, &recipe.portrait, skin.or(recipe.skin.as_ref()))?;
+    if recipe.skin_tone.active() {
+        crate::skin_tone::apply(
+            &mut output,
+            &recipe.portrait,
+            skin.or(recipe.skin.as_ref()).unwrap(),
+            recipe.skin_tone,
+        )?;
+    }
     Ok(output)
 }

@@ -14,6 +14,7 @@ pub mod portrait;
 pub mod rendering;
 pub mod source;
 pub mod skin;
+pub mod skin_tone;
 pub mod raster;
 #[cfg(windows)]
 pub mod raw;

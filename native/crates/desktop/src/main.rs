@@ -174,6 +174,7 @@ fn sync_recipe(state: &State, ui: &AppWindow) {
         skin_workflow::sync(state,ui,&request.recipe);
         let portrait=request.recipe.portrait;
         ui.set_skin_smooth(portrait.smooth);
+        ui.set_skin_uniformity(request.recipe.skin_tone.uniformity);ui.set_skin_lighten(request.recipe.skin_tone.lighten);
         ui.set_has_face(portrait.face.is_some());
         let ready=portrait.face.zip(portrait.binding).is_some_and(|(face,binding)|face.rect[2]*(binding.width as f32)>=32. && face.rect[3]*(binding.height as f32)>=32.);
         ui.set_portrait_ready(ready);
@@ -1161,7 +1162,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     if cancel.load(Ordering::Acquire) {return Err(z30_core::Error::Policy("人像定位已取消".into()));}
                     source.unchanged()?;
                     cache.lock().unwrap_or_else(|e|e.into_inner()).discard_other_source(&request.path,request.recipe.white_balance,dll.as_deref());
-                    let mut neutral_recipe=request.recipe.clone();neutral_recipe.portrait=Portrait::default();neutral_recipe.skin=None;
+                    let neutral_recipe=z30_core::recipe::Recipe{white_balance:request.recipe.white_balance,..Default::default()};
                     let preview=engine.lock().unwrap_or_else(|e|e.into_inner()).preview(&request.path,neutral_recipe)?;
                     let (width,height)=(preview.source_width,preview.source_height);let neutral=Arc::clone(&preview.neutral);drop(preview);
                     let mut models=models.lock().unwrap_or_else(|e|e.into_inner());
@@ -1586,6 +1587,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             object.insert("face_status".into(),ui.get_face_status().as_str().into());
                             object.insert("skin_smooth".into(),ui.get_skin_smooth().into());
                             object.insert("has_skin_mask".into(),ui.get_has_skin_mask().into());
+                            object.insert("skin_uniformity".into(),ui.get_skin_uniformity().into());object.insert("skin_lighten".into(),ui.get_skin_lighten().into());
                             object.insert("skin_assets_ready".into(),ui.get_skin_assets_ready().into());
                             object.insert("show_skin_mask".into(),ui.get_show_skin_mask().into());
                             object.insert("portrait_ready".into(),ui.get_portrait_ready().into());

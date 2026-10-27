@@ -254,7 +254,7 @@ fn v3_geometric_session_and_v1_queue_keep_exact_backup_before_upgrade() {
     let old = format!("  {}\n", serde_json::to_string_pretty(&session).unwrap()).into_bytes();
     fs::write(directory.join("session.json"), &old).unwrap();
     let loaded = store.load().unwrap();
-    assert_eq!(loaded.version, 4);
+    assert_eq!(loaded.version, 5);
     assert_eq!(loaded.photos[0].recipe, photo.recipe);
     assert_eq!(fs::read(directory.join("session.json")).unwrap(), old);
     store.save(&loaded).unwrap();
@@ -279,7 +279,7 @@ fn v3_geometric_session_and_v1_queue_keep_exact_backup_before_upgrade() {
     let old_queue = serde_json::to_vec_pretty(&queue).unwrap();
     fs::write(batch_dir.join("batch-jobs.json"), &old_queue).unwrap();
     let loaded = batch_store.load().unwrap();
-    assert_eq!(loaded.version, 2);
+    assert_eq!(loaded.version, 3);
     batch_store.save(&loaded).unwrap();
     let backup = fs::read_dir(&batch_dir)
         .unwrap()
@@ -370,4 +370,130 @@ fn lossless_runs_are_small_for_flat_masks_and_reject_expansion_or_truncation() {
     raw.as_object_mut().unwrap().remove("encoding");
     raw["weights"] = STANDARD.encode(vec![255; SIDE * SIDE]).into();
     assert_eq!(serde_json::from_value::<SkinMask>(raw).unwrap(), mask);
+}
+
+#[test]
+fn tone_controls_require_skin_and_keep_source_guard_history_and_tiff16() {
+    let root = tempfile::tempdir().unwrap();
+    let original = photo(root.path(), 0, true);
+    let mut edits = EditingSession::new(Session {
+        photos: vec![original.clone()],
+        selected: Some(0),
+        ..Default::default()
+    });
+    edits.adjust("skin_uniformity", 80.).unwrap();
+    edits.adjust("skin_lighten", 60.).unwrap();
+    edits.commit().unwrap();
+    let recipe = edits.current().unwrap().recipe;
+    assert_eq!(recipe.skin_tone.uniformity, 80.);
+    assert_eq!(recipe.skin, original.recipe.skin);
+    edits.undo().unwrap();
+    assert_eq!(edits.current().unwrap().recipe.skin_tone.uniformity,80.);
+    assert_eq!(edits.current().unwrap().recipe.skin_tone.lighten,0.);
+    edits.undo().unwrap();
+    assert!(!edits.current().unwrap().recipe.skin_tone.active());
+    edits.redo().unwrap();
+    edits.redo().unwrap();
+    let mut preview = PreviewEngine::new(None).unwrap();
+    let shown = preview.preview(&original.path, recipe.clone()).unwrap();
+    let destination = root.path().join("tone.tif");
+    ExportSource::new(EditRequest {
+        path: original.path.clone(),
+        recipe: recipe.clone(),
+    })
+    .unwrap()
+    .run(
+        &destination,
+        Format::Tiff16,
+        None,
+        &ExportControl::default(),
+    )
+    .unwrap();
+    for (a, b) in image::open(&destination)
+        .unwrap()
+        .to_rgb16()
+        .pixels()
+        .zip(&shown.rendered.pixels)
+    {
+        for c in 0..3 {
+            assert_eq!(a[c], (b[c] * 65535.).round_ties_even() as u16);
+        }
+    }
+    let store = SessionStore::new(root.path().join("data")).unwrap();
+    store.save(&edits.session).unwrap();
+    assert_eq!(store.load().unwrap().photos[0].recipe, recipe);
+    let mut invalid = recipe.clone();
+    invalid.skin = None;
+    assert!(invalid.validate().is_err());
+    edits.reset().unwrap();
+    assert!(edits.adjust("skin_uniformity", 50.).is_err());
+    edits.undo().unwrap();
+    let mut only_tone = recipe;
+    only_tone.portrait.smooth = 0.;
+    fs::write(&original.path, b"changed source").unwrap();
+    assert!(preview.preview(&original.path, only_tone).is_err());
+}
+
+#[test]
+fn v4_masks_migrate_without_new_tone_edits_and_preserve_original_backups() {
+    let root = tempfile::tempdir().unwrap();
+    let original = photo(root.path(), 0, true);
+    let old = Session {
+        version: 4,
+        photos: vec![original.clone()],
+        selected: Some(0),
+    };
+    let directory = root.path().join("data");
+    let store = SessionStore::new(directory.clone()).unwrap();
+    let bytes = serde_json::to_vec_pretty(&old).unwrap();
+    fs::write(directory.join("session.json"), &bytes).unwrap();
+    let restored = store.load().unwrap();
+    assert_eq!(restored.version, 5);
+    assert_eq!(restored.photos[0].recipe, original.recipe);
+    store.save(&restored).unwrap();
+    let backup = fs::read_dir(&directory)
+        .unwrap()
+        .map(|p| p.unwrap().path())
+        .find(|p| {
+            p.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("session-v4-backup-")
+        })
+        .unwrap();
+    assert_eq!(fs::read(backup).unwrap(), bytes);
+    let mut forged = old;
+    forged.photos[0].recipe.skin_tone.lighten = 1.;
+    assert!(forged.validate().is_err());
+    let mut queue = Queue::default();
+    queue
+        .enqueue(
+            &[original.clone()],
+            root.path(),
+            Format::Tiff16,
+            RecipeMode::PerPhoto,
+        )
+        .unwrap();
+    queue.version = 2;
+    let directory = root.path().join("batch");
+    let store = Store::new(directory.clone()).unwrap();
+    let bytes = serde_json::to_vec_pretty(&queue).unwrap();
+    fs::write(directory.join("batch-jobs.json"), &bytes).unwrap();
+    let loaded = store.load().unwrap();
+    assert_eq!(loaded.version, 3);
+    store.save(&loaded).unwrap();
+    let backup = fs::read_dir(&directory)
+        .unwrap()
+        .map(|p| p.unwrap().path())
+        .find(|p| {
+            p.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("batch-v2-backup-")
+        })
+        .unwrap();
+    assert_eq!(fs::read(backup).unwrap(), bytes);
+    let mut forged = queue;
+    forged.jobs[0].recipe.skin_tone.lighten = 1.;
+    assert!(forged.validate().is_err());
 }
