@@ -110,11 +110,12 @@ def main():
             process,stop,command,until,_=launch(raw_data,4+index);until(lambda s:s['preview'] and not s['busy'])
             target=root/f'raw-{index}.tif';started=time.monotonic();command('export',destination=str(target),format=2)
             until(lambda s:target.exists() and not s['export_busy'],90)
+            export_seconds=time.monotonic()-started  # Exclude TIFF/hash validation below.
             check(f'RAW {index} window TIFF16 matches float warp recipe',digest(target)==digest(raw_data/'expected.tif'))
             array=tifffile.imread(target)
             check(f'RAW {index} warped output retains true RGB16 detail',array.dtype==np.uint16 and bool(np.any(array%257)))
             del array
-            report['raw_cases'].append(dict(source_sha256=source_hash,output_sha256=digest(target),memory_mib=memory(process.pid),export_seconds=time.monotonic()-started))
+            report['raw_cases'].append(dict(source_sha256=source_hash,output_sha256=digest(target),memory_mib=memory(process.pid),export_seconds=export_seconds))
             stop.write_text('stop');check(f'RAW {index} process closes cleanly',process.wait(timeout=10)==0)
             check(f'RAW {index} original NEF SHA unchanged',digest(source)==source_hash)
         check('original synthetic source was never overwritten',digest(photo)==original)
