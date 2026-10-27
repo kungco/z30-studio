@@ -67,6 +67,14 @@ export component AppWindow inherits Window {
     in property <bool> has-warp: false;
     in property <bool> has-warp-record: false;
     in-out property <float> warp-amount: 100;
+    in-out property <bool> warp-mode: false;
+    in property <bool> warp-ready: false;
+    in property <bool> warp-dragging: false;
+    in property <int> warp-count: 0;
+    in-out property <float> warp-radius: 12;
+    in property <float> warp-origin-x;
+    in property <float> warp-origin-y;
+    in property <string> warp-status: "拖动可做局部微调；请检查背景和细节。";
     in property <bool> face-busy: false;
     in property <bool> has-face: false;
     in property <bool> portrait-ready: false;
@@ -196,6 +204,8 @@ export component AppWindow inherits Window {
     callback apply-ai-suggestion();
     callback dismiss-ai-suggestion();
     callback confirm-exit();
+    callback warp-tool(bool);
+    callback warp-pointer(int, float, float);
     callback repair-tool(int);
     callback repair-canvas-click(float, float);
     callback select-repair(int);
@@ -344,27 +354,39 @@ export component AppWindow inherits Window {
                             width:0px;height:0px;
                             key-pressed(event)=>{
                                 if root.ai-settings-visible || root.ai-report-visible || root.about-visible || root.batch-settings-visible || root.batch-report-visible || root.exit-warning {return reject;}
-                                if event.text==Key.Escape {root.repair-tool(0);return accept;}
+                                if event.text==Key.Escape {root.warp-tool(false);root.repair-tool(0);return accept;}
                                 if event.text==Key.Delete && root.repair-mode>0 {root.remove-repair();return accept;}
                                 if event.modifiers.control && (event.text=="z" || event.text=="Z") {if event.modifiers.shift {root.redo-edit();}else{root.undo-edit();}return accept;}
                                 return reject;
                             }
                         }
+                        if root.warp-dragging: Rectangle {
+                            width: 2 * root.warp-radius / 100 * min(picture.fit-width,picture.fit-height);
+                            height: self.width;
+                            x: root.warp-origin-x*1px-self.width/2;
+                            y: root.warp-origin-y*1px-self.height/2;
+                            border-radius: self.width/2;border-width:1px;border-color:#e7c889;background:#16e7c889;
+                        }
                         canvas-pointer:=TouchArea {
                             enabled:root.has-preview && !root.repair-busy && !root.ai-settings-visible && !root.ai-report-visible && !root.about-visible && !root.batch-settings-visible && !root.batch-report-visible && !root.exit-warning;
                             property <bool> dragged:false;
+                            property <bool> shape-press:false;
                             property <float> start-pan-x;
                             property <float> start-pan-y;
-                            mouse-cursor: self.pressed && self.dragged ? MouseCursor.grabbing : root.repair-mode>0 ? MouseCursor.crosshair : MouseCursor.grab;
+                            mouse-cursor: root.warp-mode ? MouseCursor.crosshair : self.pressed && self.dragged ? MouseCursor.grabbing : root.repair-mode>0 ? MouseCursor.crosshair : MouseCursor.grab;
                             pointer-event(event)=>{
                                 if event.button!=PointerEventButton.left {return;}
                                 if event.kind==PointerEventKind.down {
-                                    self.dragged=false;self.start-pan-x=picture.applied-pan-x/1px;self.start-pan-y=picture.applied-pan-y/1px;canvas-keys.focus();
+                                    self.dragged=false;self.shape-press=root.warp-mode;self.start-pan-x=picture.applied-pan-x/1px;self.start-pan-y=picture.applied-pan-y/1px;canvas-keys.focus();
+                                    if self.shape-press {root.warp-pointer(0,self.mouse-x/1px,self.mouse-y/1px);}
                                 }
-                                if event.kind==PointerEventKind.up && !self.dragged && root.repair-mode>0 && root.repair-ready {root.repair-canvas-click(self.mouse-x/1px,self.mouse-y/1px);}
+                                if event.kind==PointerEventKind.up {
+                                    if self.shape-press {root.warp-pointer(1,self.mouse-x/1px,self.mouse-y/1px);}
+                                    else if !self.dragged && root.repair-mode>0 && root.repair-ready {root.repair-canvas-click(self.mouse-x/1px,self.mouse-y/1px);}
+                                }
                             }
                             moved=>{
-                                if self.pressed {
+                                if self.pressed && !self.shape-press {
                                     if abs(self.mouse-x - self.pressed-x)>4px || abs(self.mouse-y - self.pressed-y)>4px {self.dragged=true;}
                                     if self.dragged {
                                         root.pan-x=max( - picture.limit-x/1px,min(picture.limit-x/1px,self.start-pan-x+(self.mouse-x - self.pressed-x)/1px));
@@ -404,11 +426,18 @@ export component AppWindow inherits Window {
                     ScrollView {
                         VerticalLayout {
                             spacing: 12px; padding-right: 6px;
-                            if root.has-warp-record: VerticalLayout {
+                            VerticalLayout {
                                 spacing:10px;
-                                Text {text:"局部形变";color:#e7d0a4;font-size:13px;}
-                                Adjustment {label:"形变强度 (%)";minimum:0;maximum:100;value<=>root.warp-amount;active:root.engine-ready;adjusted(v)=>{root.adjust("warp_amount",v);}}
-                                ToolButton {label:"清除形变";active:!root.busy && !root.ai-busy && !root.face-busy;triggered=>{root.adjust("warp_clear",0);}}
+                                Text {text:"局部形变 · "+root.warp-count+" / 4";color:#e7d0a4;font-size:13px;}
+                                ToolButton {label:root.warp-mode?"退出形变 · 浏览":"开始拖动形变";active:root.warp-mode || root.engine-ready;triggered=>{root.warp-tool(!root.warp-mode);}}
+                                if root.warp-mode || root.has-warp-record: VerticalLayout {
+                                    spacing:10px;
+                                    Adjustment {label:"作用半径 (%)";minimum:0.2;maximum:20;value<=>root.warp-radius;active:!root.warp-dragging;adjusted(v)=>{}}
+                                    if root.has-warp-record: Adjustment {label:"形变强度 (%)";minimum:0;maximum:100;value<=>root.warp-amount;active:root.engine-ready;adjusted(v)=>{root.adjust("warp_amount",v);}}
+                                    Text {text:root.warp-status;color:#b8ac91;font-size:11px;wrap:word-wrap;}
+                                    Text {text:"松开后应用；单次位移最多为半径的10%，最多4次。作用圈须在照片内；Esc退出工具。";color:#8d98a6;font-size:10px;wrap:word-wrap;}
+                                    if root.has-warp-record: ToolButton {label:"清除形变";active:!root.busy && !root.ai-busy && !root.face-busy;triggered=>{root.adjust("warp_clear",0);}}
+                                }
                             }
                             if root.repair-controls-visible: VerticalLayout {
                                 spacing:10px;

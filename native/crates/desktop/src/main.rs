@@ -29,6 +29,7 @@ mod ai_http;
 mod qa;
 mod skin_workflow;
 mod repair_workflow;
+mod warp_workflow;
 
 enum AiBackend {
     Codex,
@@ -684,6 +685,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let face_override = Rc::new(RefCell::new(None::<PathBuf>));
     let skin=Rc::new(skin_workflow::bind(&ui,Rc::clone(&state),Rc::clone(&worker),Arc::clone(&engine),Arc::clone(&compute),Arc::clone(&full_cache),raw_dll.clone()));
     let repairs=repair_workflow::bind(&ui,Rc::clone(&state),Rc::clone(&worker),Arc::clone(&engine),Arc::clone(&compute));
+    let warps=warp_workflow::bind(&ui,Rc::clone(&state),Rc::clone(&worker));
     let (picked, files) = mpsc::channel::<Vec<PathBuf>>();
     {
         let weak = ui.as_weak();
@@ -1310,6 +1312,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 skin.poll(&ui);
                 repairs.poll(&ui);
+                warps.sync(&ui);
                 for outcome in completed_faces.try_iter() {
                     let mut state=state.borrow_mut();let cancelled=state.face_control.as_ref().is_some_and(|control|control.load(Ordering::Acquire));state.face_control=None;ui.set_face_busy(false);
                     if state.close_after_face {continue;}
@@ -1536,6 +1539,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     Ok(Some((id, command))) => {
                         match command {
                             qa::Command::Snapshot => {}
+                            qa::Command::WarpTool{enabled}=>ui.invoke_warp_tool(enabled),
+                            qa::Command::WarpPointer{phase,x,y}=>ui.invoke_warp_pointer(phase,x,y),
+                            qa::Command::WarpRadius{value}=>{if value.is_finite()&&(0.2..=20.0).contains(&value){ui.set_warp_radius(value);}},
                             qa::Command::RepairTool{mode}=>ui.invoke_repair_tool(mode),
                             qa::Command::RepairCanvas{x,y}=>ui.invoke_repair_canvas_click(x,y),
                             qa::Command::RepairSelect{index}=>ui.invoke_select_repair(index),
@@ -1629,6 +1635,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             object.insert("repair".into(),serde_json::json!({"mode":ui.get_repair_mode(),"choice":ui.get_repair_choice(),"busy":ui.get_repair_busy(),"ready":ui.get_repair_ready(),"count":ui.get_repair_count(),"selected":ui.get_repair_selected(),"picking":ui.get_repair_picking(),"status":ui.get_repair_status().as_str(),"radius":ui.get_repair_radius(),"opacity":ui.get_repair_opacity(),"feather":ui.get_repair_feather(),"has_source":ui.get_repair_has_source(),"source_uv":[ui.get_repair_source_u(),ui.get_repair_source_v()],"marks":ui.get_repair_marks().iter().map(|m|serde_json::json!([m.u,m.v,m.rx,m.ry])).collect::<Vec<_>>()}));
                             object.insert("view".into(),serde_json::json!({"zoom":ui.get_zoom(),"pan":[ui.get_pan_x(),ui.get_pan_y()],"canvas":[ui.get_canvas_width(),ui.get_canvas_height()],"image":[ui.get_image_left(),ui.get_image_top(),ui.get_image_width(),ui.get_image_height()],"pixels":[ui.get_displayed_width(),ui.get_displayed_height()]}));
                             object.insert("warp_active".into(),ui.get_has_warp().into());
+                            object.insert("warp_tool".into(),serde_json::json!({"mode":ui.get_warp_mode(),"ready":ui.get_warp_ready(),"dragging":ui.get_warp_dragging(),"count":ui.get_warp_count(),"radius":ui.get_warp_radius(),"status":ui.get_warp_status().as_str()}));
                             object.insert("has_skin_mask".into(),ui.get_has_skin_mask().into());
                             object.insert("skin_uniformity".into(),ui.get_skin_uniformity().into());object.insert("skin_lighten".into(),ui.get_skin_lighten().into());
                             object.insert("skin_assets_ready".into(),ui.get_skin_assets_ready().into());

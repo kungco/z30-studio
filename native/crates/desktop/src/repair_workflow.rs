@@ -177,6 +177,7 @@ impl Workflow {
         drop(c);
         ui.set_repair_busy(false);
         if mode > 0 {
+            ui.set_warp_mode(false);
             ui.set_repair_controls_visible(true);
             ui.set_show_skin_mask(false);
             ui.set_show_face_box(false);

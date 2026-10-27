@@ -19,6 +19,9 @@ pub struct Harness {
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Command {
     Snapshot,
+    WarpTool { enabled: bool },
+    WarpPointer { phase: i32, x: f32, y: f32 },
+    WarpRadius { value: f32 },
     RepairTool {
         mode: i32,
     },

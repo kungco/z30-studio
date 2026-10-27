@@ -76,7 +76,7 @@ Slint 1.18.1 采用 Royalty-free Desktop License 2.0，并在顶层“关于”�
 
 随包验收改用 `--raw 样片.NEF --bundled-raw`，明确移除 RAW 环境变量、仅保留系统 PATH，并从不同的中文工作目录启动。探针会核对进程内嵌提交/脏标记与 build-info.json，避免 Cargo 缓存造成旧构建来源标记。
 
-“本机人像”位于显影面板下部：先定位面部并选择当前面部，再按需点击“识别皮肤”，查看绿色作用区域。面部柔化、肤色均匀和肤色提亮各有独立强度，默认均为零，可分别撤销、逐张保存、重启恢复并导出 TIFF16。均匀和提亮只在已有语义皮肤区域内可用，保护眼口/深暗/高光；均匀仅保守调整局部颜色，提亮幅度有上限，不会自动改变整张照片白平衡。柔化未识别皮肤时沿用框/五点几何区域，识别后受语义区域进一步限制。一次处理一张脸；请检查头发、眼镜和边缘。自动瑕疵识别、轮廓形变和 GPU 仍待实现；手动修复/克隆见下文。公开单张样图通过不代表真实 Z30 人像/各种肤色效果已验证。见 docs/reports/native-stage5d-skin-tone.md。
+“本机人像”位于显影面板下部：先定位面部并选择当前面部，再按需点击“识别皮肤”，查看绿色作用区域。面部柔化、肤色均匀和肤色提亮各有独立强度，默认均为零，可分别撤销、逐张保存、重启恢复并导出 TIFF16。均匀和提亮只在已有语义皮肤区域内可用，保护眼口/深暗/高光；均匀仅保守调整局部颜色，提亮幅度有上限，不会自动改变整张照片白平衡。柔化未识别皮肤时沿用框/五点几何区域，识别后受语义区域进一步限制。一次处理一张脸；请检查头发、眼镜和边缘。自动瑕疵识别、自动轮廓调整和 GPU 仍待实现；手动修复/克隆见下文。公开单张样图通过不代表真实 Z30 人像/各种肤色效果已验证。见 docs/reports/native-stage5d-skin-tone.md。
 
 可选组件必须来自固定模型和 ONNX Runtime 1.31.0；没有自动下载。开发者使用 `python tools/prepare_native_vision.py --model 固定模型.onnx --runtime-archive 官方SDK.zip --out 新组件目录` 准备，再为原有构建命令增加 `-VisionRuntime 新组件目录` 随包分发。软件自动查找 EXE 旁的 `vision/`，也可在“选择组件”中明确指定目录。基础启动不加载推理 DLL；新检测需要本机 Microsoft VC++ x64 系统运行库，组件不包含该系统依赖，干净 Windows 尚未验证。模型/DLL/许可/依赖均校验；基础包仍可不携带模型。
 
@@ -92,4 +92,4 @@ Slint 1.18.1 采用 Royalty-free Desktop License 2.0，并在顶层“关于”�
 
 修复工作流探针随 `-RetouchProbe` 构建：`repairs_workflow_probe 输入.png 新草稿目录`，或为公开 NEF 显式追加绝对 DLL 路径。`tools/smoke_native_repairs.py --exe ... --probe ... --out 新报告.json [--raw 公开样片.NEF --dll 绝对库路径]` 检查现有实际窗口回调；它不代表鼠标工具或主观人像画质验收。草稿/队列字节上限仍为32/64 MiB，蒙版和修复点的最坏组合可能先达到字节预算；超限不覆盖旧记录。见 docs/reports/native-stage5e2a-repair-recipes.md。
 
-5F2a 已将受限局部形变接入绑定配方、草稿/队列、撤销和线性光预览/全尺寸TIFF16。载入已有记录时显示“局部形变”强度和清除，0%保留控制点且不改变像素；清除/强度分别可撤销。活动形变会隐藏原位置标记并阻止新的修复取样，请先完成局部修饰；尚无鼠标创建/拖动形变或自动轮廓入口，不能视为一键瘦脸。开发者用 `-WarpProbe` 构建数值/合成基准/工作流探针；`validate_native_warp.py` 默认验证八组线性参考，传 `--corpus native/crates/core/tests/fixtures/warp_srgb.json` 验证四组sRGB/双向坐标；`smoke_native_warp.py` 验证真实回调。两套NumPy生成器只能写新参考路径，禁止用Rust输出替换期望值。范围、已验收和未验证部分见 docs/reports/native-stage5f1-warp-core.md、native-stage5f2a-warp-recipes.md。
+5F2b 现可在右侧“局部形变”点击“开始拖动形变”，在照片内按住拖动、松开后更新预览；可调作用半径和已有记录强度。每次最多半径10%的位移、最多四次，超幅自动限幅，作用圆靠边时拒绝；0%保留记录且不改变像素，需提高强度或清除后继续。拖动、清除及强度可撤销/重做；画布焦点下Ctrl+Z/Ctrl+Shift+Z，Esc或退出按钮恢复浏览平移。工具切换、切图、视口或编辑变化会取消旧拖动。活动形变暂隐藏原位置标记并阻止新的修复取样，请先完成局部修饰。此为手动微调，尚无自动人脸轮廓/一键瘦脸。见 docs/reports/native-stage5f2b-manual-warp.md。开发者用 `-WarpProbe` 构建数值/合成基准/工作流探针；`validate_native_warp.py` 默认验证八组线性参考，传 `--corpus native/crates/core/tests/fixtures/warp_srgb.json` 验证四组sRGB/双向坐标；`smoke_native_warp.py` 验证真实回调。两套NumPy生成器只能写新参考路径，禁止用Rust输出替换期望值。范围、已验收和未验证部分见 docs/reports/native-stage5f1-warp-core.md、native-stage5f2a-warp-recipes.md。
