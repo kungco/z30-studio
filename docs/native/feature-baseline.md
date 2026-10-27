@@ -20,6 +20,8 @@
 | 可选兼容/本机模型、输入预览/费用估计/画质回退 | api_backend.py、ai_preflight.py、automation.py；test_ai_controls.py/test_automation.py | 3A 已迁移风格、目标、强度、发送内容说明、像素画质回退；3B 已接可选 DeepSeek/兼容图像接口和本机回环地址，只有模拟 HTTP 验证。精确输入预览、费用估计、真实云端/本机模型仍待后续 |
 | 生命周期、看门狗、日志/诊断、构建/实际 EXE smoke | desktop.py、shutdown_watchdog.py、tools/；test_shutdown.py/test_runtime.py | 采用原生生命周期重建 / 1、6 |
 
+新增目标功能（Python基线无实现）：5F1完成受限局部浮点形变核心及独立八组数值/合成CPU验证；形变尚未接入产品配方、桌面或实际人脸轮廓，不能算作已迁移瘦脸。下一步需绑定、持久化、源空间处理/标记坐标及完整预览导出验证。
+
 ## 对照方法
 
 真实公开样片仍置于仓库外 `work/Z30-12bit.NEF`、`work/Z30-14bit.NEF`，不随源码/程序分发。源 SHA、历史像素分布和性能见 docs/reports/。新比较应固定原片/参数/输出尺寸/位深/LibRaw 版本/线程数，记录误差、剪切、耗时、峰值 RSS；不能只比较速度或 JPEG 文件 SHA。

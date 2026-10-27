@@ -1,5 +1,6 @@
 //! Float linear-RGB clone / mean-matched heal, ported from spatial.py.
-//! Core only: no automatic blemish detection or desktop/persistence wiring yet.
+//! Pure processing; binding and desktop wiring live in repairs/repair_plan and
+//! the desktop repair_workflow. Automatic blemish recognition is not provided.
 use crate::{Error, Result, frame::Frame};
 use serde::{Deserialize, Serialize};
 
