@@ -121,6 +121,7 @@ impl Workflow {
     fn source_ready(&self, ui: &AppWindow) -> bool {
         let state = self.state.borrow();
         !state.protected
+            && !ui.get_blemish_busy()
             && !ui.get_has_warp()
             && ui.get_has_preview()
             && !ui.get_busy()

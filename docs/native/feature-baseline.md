@@ -8,7 +8,7 @@
 | JPEG/PNG ICC、无 ICC 策略、alpha、EXIF、输入位深 | imaging.py、colour_management.py；test_imaging.py/test_output.py | 2C 核心和 UI 已迁移，52 个合成案例与浮点 CMS 数值/性能通过；CMYK/YCCK、损坏 ICC、cICP/HDR 等仍明确拒绝 |
 | float32 tone/肩部/阴影、OKLab 护色、九参数/锐化 | processing.py、quality.py；test_processing.py/test_quality_cache.py | 2B 暖色数值跳变已修正；修正 Python/Rust 四组对照 <一个 RGB16 码值，旧输出差异另报；2F 原生 UI 已接通 |
 | 曲线/HSL/分级/Kelvin/吸管/裁剪/拉直/细节 | darkroom.py；test_darkroom.py | 未迁移 / 2、6 |
-| 蒙版/范围/画笔、修复/克隆/降噪 | spatial.py；test_spatial.py/test_local_edits.py | 5E1/5E2a 浮点修复、来源绑定/持久化/显影/导出/取消通过；5E2b 实际鼠标选点/取样/逐点参数/移除/撤销、缩放平移与坐标和异步保护通过限定验收。自动瑕疵识别及其他空间功能仍待迁移 |
+| 蒙版/范围/画笔、修复/克隆/降噪 | spatial.py；test_spatial.py/test_local_edits.py | 5E1/5E2a 浮点修复、来源绑定/持久化/显影/导出/取消通过；5E2b 实际鼠标选点/取样/逐点参数/移除/撤销、缩放平移与坐标和异步保护通过限定验收。5E3另接可检查皮肤小暗点候选、选择/强度和一次应用/撤销，39项新增流程及8组独立参考通过；不是已验证的全自动祛痘，其他空间功能仍待迁移 |
 | 本机 SegFormer 主体/天空/人物与皮肤柔化 | local_vision.py；test_local_edits.py | 5A–5D 可选人脸/五点、语义皮肤、逐张柔化/均匀/提亮、撤销/恢复/导出通过限定验收；原 SegFormer 主体/天空等场景蒙版仍待迁移，不能等同原功能完成 |
 | Nikon Z Lensfun 数据/焦距插值/色差估计 | lens_tools.py、data/；test_lens_tools.py | 未迁移 / 6 |
 | 图库评分/旗标/关键词/比较/选择/参数分组同步 | photo_workflow.py；test_workflow.py、library-workflow.test.cjs | 原生已迁移评分、逐张选择、调整前后比较；旗标/关键词/多选/分组同步仍待阶段 6 |

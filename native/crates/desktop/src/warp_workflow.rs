@@ -56,6 +56,7 @@ impl Workflow {
     fn ready(&self, ui: &AppWindow) -> bool {
         let s = self.state.borrow();
         !s.protected
+            && !ui.get_blemish_busy()
             && ui.get_has_preview()
             && ui.get_engine_ready()
             && !ui.get_busy()

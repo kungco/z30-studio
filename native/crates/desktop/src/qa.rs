@@ -19,6 +19,11 @@ pub struct Harness {
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Command {
     Snapshot,
+    BlemishFind,
+    BlemishCancel,
+    BlemishSelect { index: i32, selected: bool },
+    BlemishApply,
+    BlemishStrength { value: f32 },
     WarpTool { enabled: bool },
     WarpPointer { phase: i32, x: f32, y: f32 },
     WarpRadius { value: f32 },

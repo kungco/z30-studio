@@ -217,6 +217,154 @@ impl PreviewEngine {
         }
         Ok(result)
     }
+
+    /// Suggest a bounded set from the verified original linear thumbnail.
+    /// No new decode, no image copy, no automatic editing of the recipe.
+    pub fn propose_blemishes(
+        &self,
+        path: &Path,
+        recipe: &Recipe,
+        binding: crate::portrait::Binding,
+        size: (u32, u32),
+        mut cancelled: impl FnMut() -> bool,
+    ) -> Result<Vec<crate::retouch::Repair>> {
+        recipe.validate()?;
+        let cache = self
+            .cached
+            .as_ref()
+            .ok_or_else(|| Error::Policy("请先完成照片预览".into()))?;
+        let raw = path
+            .extension()
+            .is_some_and(|v| v.eq_ignore_ascii_case("nef"));
+        let wb = if raw {
+            recipe.white_balance
+        } else {
+            WhiteBalance::Camera
+        };
+        if (cache.linear.width, cache.linear.height) != size
+            || cache.stamp != Stamp::read(path, wb)?
+            || binding
+                != crate::portrait::Binding::capture(path, cache.source_width, cache.source_height)?
+        {
+            return Err(Error::Policy("显示来源已变化，请重新预览后再分析".into()));
+        }
+        if recipe.warp.as_ref().is_some_and(|w| w.active()) {
+            return Err(Error::Policy("请先将形变强度归零，再检查原位置皮肤".into()));
+        }
+        let skin = recipe
+            .skin
+            .as_ref()
+            .ok_or_else(|| Error::Policy("请先定位面部并识别皮肤".into()))?;
+        skin.check_portrait(&recipe.portrait)?;
+        recipe.portrait.check_source_for_effect(
+            path,
+            cache.source_width,
+            cache.source_height,
+            true,
+        )?;
+        let face = recipe.portrait.face.as_ref().unwrap();
+        let frame = &cache.linear;
+        if face.confidence < 0.8
+            || face.rect[2] * (frame.width as f32) < 64.
+            || face.rect[3] * (frame.height as f32) < 64.
+        {
+            return Err(Error::Policy("面部太小或定位不确定，未提出瑕疵建议".into()));
+        }
+        let eyes = face.landmarks;
+        let distance = ((eyes[0].x - eyes[1].x) as f64 * frame.width as f64)
+            .hypot((eyes[0].y - eyes[1].y) as f64 * frame.height as f64)
+            .max(1.);
+        let nose = [
+            eyes[2].x as f64 * frame.width as f64,
+            eyes[2].y as f64 * frame.height as f64 + distance * 0.02,
+        ];
+        let eligible = |x: f64, y: f64| {
+            x >= 0.
+                && y >= 0.
+                && x < frame.width as f64
+                && y < frame.height as f64
+                && skin.sample(x, y, frame.width, frame.height)
+                    * crate::portrait::mask(face, x as f32, y as f32, frame.width, frame.height)
+                    >= 0.85
+                && ((x - nose[0]) / (distance * 0.18)).powi(2)
+                    + ((y - nose[1]) / (distance * 0.22)).powi(2)
+                    > 1.
+        };
+        let mut gate = Vec::new();
+        gate.try_reserve_exact(frame.pixels.len())
+            .map_err(|_| Error::Policy("皮肤候选范围内存不足".into()))?;
+        for y in 0..frame.height {
+            if y % 32 == 0 && cancelled() {
+                return Err(Error::Policy("瑕疵分析已取消".into()));
+            }
+            for x in 0..frame.width {
+                gate.push(if eligible(x as f64, y as f64) { 255 } else { 0 });
+            }
+        }
+        let old = recipe.repairs.as_ref().map_or(&[][..], |r| r.points());
+        let candidates = crate::blemish::detect(frame, &gate, old, &mut cancelled)?;
+        drop(gate);
+        let mut output = Vec::with_capacity(candidates.len());
+        let pixel = |x: f64, y: f64| [x * (frame.width - 1) as f64, y * (frame.height - 1) as f64];
+        let patch_allowed = |cx: f64, cy: f64, r: f64| {
+            if !eligible(cx, cy) {
+                return false;
+            }
+            for y in (cy - r).floor() as i32..=(cy + r).ceil() as i32 {
+                for x in (cx - r).floor() as i32..=(cx + r).ceil() as i32 {
+                    if (x as f64 - cx).powi(2) + (y as f64 - cy).powi(2) <= r * r
+                        && !eligible(x as f64, y as f64)
+                    {
+                        return false;
+                    }
+                }
+            }
+            true
+        };
+        for p in &candidates {
+            if cancelled() {
+                return Err(Error::Policy("瑕疵分析已取消".into()));
+            }
+            let radius = p.radius * frame.width.min(frame.height) as f64;
+            let [tx, ty] = pixel(p.x, p.y);
+            if !patch_allowed(tx, ty, radius) {
+                continue;
+            }
+            let donor = crate::retouch::choose_donor(frame, p.x, p.y, p.radius)?;
+            let [x, y] = pixel(donor.x, donor.y);
+            if !patch_allowed(x, y, radius) {
+                continue;
+            }
+            if candidates.iter().any(|q| {
+                let [qx, qy] = pixel(q.x, q.y);
+                (x - qx).hypot(y - qy)
+                    < (p.radius + q.radius) * frame.width.min(frame.height) as f64 * 1.2
+            }) {
+                continue;
+            }
+            if old.iter().any(|q| {
+                let [qx, qy] = pixel(q.x, q.y);
+                (x - qx).hypot(y - qy)
+                    < (p.radius + q.radius) * frame.width.min(frame.height) as f64 * 1.2
+            }) {
+                continue;
+            }
+            output.push(crate::retouch::Repair {
+                mode: crate::retouch::Mode::Heal,
+                x: p.x,
+                y: p.y,
+                sx: donor.x,
+                sy: donor.y,
+                radius: p.radius,
+                opacity: 1.,
+                feather: 0.5,
+            });
+        }
+        if cancelled() || cache.stamp != Stamp::read(path, wb)? {
+            return Err(Error::Policy("分析取消或原片已变化，未返回候选".into()));
+        }
+        Ok(output)
+    }
 }
 
 #[cfg(test)]

@@ -1,4 +1,4 @@
-import { Button, Slider, ScrollView, ListView, AboutSlint, ComboBox, LineEdit } from "std-widgets.slint";
+import { Button, Slider, ScrollView, ListView, AboutSlint, ComboBox, LineEdit, CheckBox } from "std-widgets.slint";
 
 export struct PhotoView {
     name: string,
@@ -7,6 +7,8 @@ export struct PhotoView {
     thumbnail: image,
 }
 export struct FacePoint { x: float, y: float }
+export struct BlemishItem { label: string, chosen: bool }
+export struct BlemishMark { u: float, v: float, rx: float, ry: float, chosen: bool }
 export struct RepairMark { u: float, v: float, rx: float, ry: float }
 
 component ToolButton inherits Rectangle {
@@ -61,6 +63,14 @@ export component AppWindow inherits Window {
     in property <bool> face-assets-ready: false;
     in property <bool> skin-assets-ready: false;
     in property <bool> has-skin-mask: false;
+    in property <bool> blemish-ready: false;
+    in property <bool> blemish-busy: false;
+    in property <int> blemish-count: 0;
+    in property <int> blemish-selected: 0;
+    in property <[BlemishItem]> blemish-items;
+    in property <[BlemishMark]> blemish-marks;
+    in-out property <float> blemish-strength: 60;
+    in property <string> blemish-status: "先定位面部并识别皮肤，再查找小暗点候选。";
     in property <image> skin-preview;
     in property <string> skin-mode: "当前使用面部几何区域";
     in-out property <bool> show-skin-mask: false;
@@ -204,6 +214,10 @@ export component AppWindow inherits Window {
     callback apply-ai-suggestion();
     callback dismiss-ai-suggestion();
     callback confirm-exit();
+    callback find-blemishes();
+    callback cancel-blemishes();
+    callback select-blemish(int, bool);
+    callback apply-blemishes();
     callback warp-tool(bool);
     callback warp-pointer(int, float, float);
     callback repair-tool(int);
@@ -350,6 +364,13 @@ export component AppWindow inherits Window {
                             border-radius: 5px; background: #292d34;
                             Text { text: "正在更新预览…"; color: #e6c783; horizontal-alignment: center; vertical-alignment: center; }
                         }
+                        for mark[index] in root.blemish-marks: Rectangle {
+                            visible:root.has-preview && !root.busy && !root.compare && !root.has-warp;
+                            width:max(6px,2*mark.rx*picture.fit-width);height:max(6px,2*mark.ry*picture.fit-height);
+                            x:picture.image-left+mark.u*picture.fit-width - self.width/2;y:picture.image-top+mark.v*picture.fit-height - self.height/2;
+                            border-width:1px;border-color:mark.chosen?#e7b577:#677181;border-radius:self.width/2;background:transparent;
+                            Text {text:""+(index+1);color:mark.chosen?#ffdf9f:#99a3b2;font-size:9px;x:parent.width+2px;}
+                        }
                         canvas-keys:=FocusScope {
                             width:0px;height:0px;
                             key-pressed(event)=>{
@@ -486,6 +507,17 @@ export component AppWindow inherits Window {
                                 ToolButton { label: "识别皮肤"; active: root.portrait-ready && root.skin-assets-ready && root.face-assets-ready && !root.face-busy && !root.busy && !root.ai-busy && !root.batch-running && !root.export-busy; triggered => { root.segment-skin(); } }
                             }
                             Text { text: root.skin-mode; color: #a8cbbd; font-size: 11px; }
+                            ToolButton {label:root.blemish-busy?"取消瑕疵分析":"查找皮肤瑕疵候选";active:root.blemish-busy || root.blemish-ready;triggered=>{if root.blemish-busy {root.cancel-blemishes();}else{root.find-blemishes();}}}
+                            Text {text:root.blemish-status;color:#b8ac91;font-size:11px;wrap:word-wrap;min-height:32px;vertical-stretch:0;}
+                            if root.blemish-count>0: VerticalLayout {
+                                spacing:8px;
+                                Text {text:"已选 "+root.blemish-selected+" / "+root.blemish-count+" 个候选";color:#dec58b;font-size:11px;}
+                                for item[index] in root.blemish-items: CheckBox {text:item.label;checked:item.chosen;enabled:root.blemish-ready && !root.blemish-busy;toggled=>{root.select-blemish(index,self.checked);}}
+                                Adjustment {label:"候选修复强度 (%)";minimum:0;maximum:100;value<=>root.blemish-strength;active:root.blemish-ready;adjusted(v)=>{}}
+                                Text {text:"小暗点可能包含痣、雀斑或纹理；请对照照片取消不需要的项。这里只提供候选，不判断皮肤问题。";color:#98a3b1;font-size:10px;wrap:word-wrap;min-height:42px;vertical-stretch:0;}
+                                ToolButton {label:"应用选中的修复";primary:true;active:root.blemish-ready && root.blemish-selected>0 && root.blemish-strength>0;triggered=>{root.apply-blemishes();}}
+                                ToolButton {label:"收起候选";active:!root.blemish-busy;triggered=>{root.cancel-blemishes();}}
+                            }
                             ToolButton { label: root.show-skin-mask ? "隐藏皮肤区域" : "查看皮肤区域"; active: root.has-skin-mask && !root.has-warp; triggered => { root.show-skin-mask = !root.show-skin-mask; } }
                             Adjustment { label: "面部柔化"; minimum: 0; value <=> root.skin-smooth; active: root.engine-ready && root.portrait-ready && !root.face-busy; adjusted(v) => { root.adjust("skin_smooth", v); } }
                             Adjustment { label: "肤色均匀"; minimum: 0; value <=> root.skin-uniformity; active: root.engine-ready && root.has-skin-mask && !root.face-busy; adjusted(v) => { root.adjust("skin_uniformity", v); } }
