@@ -17,10 +17,12 @@ import tempfile
 import zipfile
 
 if __package__:
+    from .native_gui_patch import PATCH_ID, verify_source as verify_gui_patch
     from .build_native_libraw import SDK_HASH, SDK_NAME, check_system_imports, sha256
     from .prepare_native_vision import verify_component
     from .prepare_native_skin import verify_component as verify_skin_component
 else:
+    from native_gui_patch import PATCH_ID, verify_source as verify_gui_patch
     from build_native_libraw import SDK_HASH, SDK_NAME, check_system_imports, sha256
     from prepare_native_vision import verify_component
     from prepare_native_skin import verify_component as verify_skin_component
@@ -149,6 +151,13 @@ def verify_stage(stage: Path) -> dict:
     if not imports or any(name.lower() not in APP_SYSTEM_DLLS for name in imports):
         raise ValueError(f'Application has unaudited runtime imports: {imports}')
     verify_runtime(stage)
+    gui_source = stage/'sources/slint-winit'
+    if info.get('gui_repaint_patch') is not None:
+        if info['gui_repaint_patch'] != PATCH_ID:
+            raise ValueError('Unknown GUI repaint patch')
+        verify_gui_patch(gui_source)
+    elif gui_source.exists():
+        raise ValueError('Undeclared GUI patch source directory')
     if info.get('vision_bundled') is True:
         if info.get('models_bundled') is not True or info.get('vision_external_vc_runtime') is not True:
             raise ValueError('Bundled vision must declare model weights and external VC++ dependency')

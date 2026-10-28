@@ -16,6 +16,7 @@ param(
     [switch]$RetouchProbe,
     [switch]$WarpProbe,
     [switch]$BlemishProbe,
+    [switch]$RepaintProbe,
     [switch]$VisionFixtures,
     [string]$RawRuntime,
     [string]$VisionRuntime,
@@ -80,6 +81,11 @@ if($ToolchainRoot){
     }
 }
 if(-not (Get-Command $cargoTool -ErrorAction SilentlyContinue)){throw 'Install Rust or pass -ToolchainRoot. No global PATH changes are made.'}
+$guiPython=Join-Path $repoRoot '.venv\Scripts\python.exe'
+if(-not (Test-Path -LiteralPath $guiPython)){$guiPython='python'}
+$guiSource=Join-Path $repoRoot 'native\vendor\slint-winit'
+& $guiPython (Join-Path $repoRoot 'tools\native_gui_patch.py') --source $guiSource
+if($LASTEXITCODE -ne 0){throw 'Pinned GUI source patch verification failed'}
 $previousBuildCommit=$env:Z30_BUILD_SOURCE_COMMIT
 $previousBuildDirty=$env:Z30_BUILD_SOURCE_DIRTY
 Push-Location (Join-Path $repoRoot 'native')
@@ -108,6 +114,7 @@ try {
     if($RetouchProbe){& $cargoTool build -p z30-core --example retouch_probe --example retouch_benchmark --example repairs_workflow_probe --example saved_recipe_export --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Retouch probe build failed'}}
     if($WarpProbe){& $cargoTool build -p z30-core --example warp_probe --example warp_benchmark --example warp_workflow_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Warp probe build failed'}}
     if($BlemishProbe){& $cargoTool build -p z30-core --example blemish_probe --example blemish_workflow_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Blemish probe build failed'}}
+    if($RepaintProbe){& $cargoTool build -p z30-desktop --example repaint_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Repaint probe build failed'}}
     $profile=if($DebugBuild){'debug'}else{'release'}
     if(((& git rev-parse HEAD).Trim() -ne $sourceCommit) -or ([bool]((& git status --porcelain) -join '') -ne $sourceDirty)){
         throw 'Source revision/cleanliness changed during build; rebuild before staging'
@@ -136,6 +143,8 @@ try {
         & $packPython (Join-Path $repoRoot 'tools\prepare_native_skin.py') --component $skinRuntimePath --install-to-stage $staging
         if($LASTEXITCODE -ne 0){throw 'Optional skin distribution verification failed'}
     }
+    & $guiPython (Join-Path $repoRoot 'tools\native_gui_patch.py') --source $guiSource --install-to-stage $staging
+    if($LASTEXITCODE -ne 0){throw 'GUI patch source distribution verification failed'}
     $buildInfo=[ordered]@{
         app='Z30 Studio Native';version='0.1.0-native-preview';profile=$profile
         source_commit=$sourceCommit
@@ -149,6 +158,7 @@ try {
         skin_bundled=[bool]$SkinRuntime
         vision_external_vc_runtime=[bool]$VisionRuntime
         raw_bundled=[bool]$RawRuntime
+        gui_repaint_patch='slint-winit-1.18.1-win32-invalidation-13568'
         runtime=if($VisionRuntime){'Windows system DLLs/fonts; optional portrait runtime needs Microsoft VC++ x64; no Python/browser/local HTTP server'}else{'Windows system DLLs and OS UI fonts; no Python/browser/local HTTP server'}
     }
     [System.IO.File]::WriteAllText((Join-Path $staging 'build-info.json'),($buildInfo|ConvertTo-Json -Depth 5),[System.Text.UTF8Encoding]::new($false))

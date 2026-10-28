@@ -2,6 +2,8 @@
 
 更新：2026-10-28（Asia/Hong_Kong）。原生迁移总任务未完成。
 
+当前6A（提前修复可靠性）：已定位Windows更新区域未进入Slint局部重绘的缺陷，应用内固定回移上游#13568；相同自窗口GDI探针在旧后端12例全部保留错误像素、修正后12例全部恢复，覆盖100/125/150/200%合成缩放。构建/打包增加补丁源码、许可和哈希校验，两项分发负例加入原套件；Python182含RAW无跳过、Node31、Rust134及all-targets通过。最终干净包414项/2显式fixture/12探针/30数值、实际恢复和当前CI以 `.development/native-6a-final-artifact.json`/checkpoint为准。详见 docs/reports/native-stage6a-window-repaint.md。阶段5/6总体仍未完成。
+
 当前5E3：皮肤小暗点候选、照片编号/逐项勾选、独立强度和一次应用/撤销已接实际桌面。134项Rust、all-targets、8组独立NumPy冻结对照、39项实际进程流程、Python180含RAW无跳过/Node31通过。Computer Use已实际检查列表/编号/取消勾选/应用/精确撤销重做与布局，旧物理Esc中断记录保留。公开人像用真实面部/皮肤模型返回0候选，查找不改变输出，真实祛痘自然度未验证。完成提示改为“上次添加”，不混淆当前修复数量。最终干净包414项（旧375+新39）、两项显式fixture/对应CI和修正后提示复验以 `.development/native-5e3-final-artifact.json`/checkpoint为准；尚未生成前不能宣称最终交付。详见 docs/reports/native-stage5e3-blemish-review.md/json。自动轮廓/GPU、真实人像及阶段6仍待，总任务未完成。
 
 历史5F2b：实际鼠标形变已接入常驻工具入口、半径/计数、按下提示圈、松开预览、独立撤销/重做和Esc退出；浏览平移保留。双尺寸位移限幅、当前合成坐标、视口/版本/原片变化保护已实现。提交前125Rust、all-targets、Python180含RAW无跳过、Node31及47项新增窗口流程通过，另增两项状态提示回归；实际拖动、快捷键、0%及缩放平移已检查。完整375项干净包/对应CI和修正后提示实际复验以checkpoint为准。详见 docs/reports/native-stage5f2b-manual-warp.md/json；尚无自动祛痘/自动瘦脸/GPU，阶段5和阶段6仍未完成。

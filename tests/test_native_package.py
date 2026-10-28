@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import struct
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -63,6 +64,30 @@ class NativePackageTests(unittest.TestCase):
 
     def write_runtime(self):
         (self.stage/'raw/runtime.json').write_text(json.dumps(self.runtime))
+
+    def test_declared_gui_patch_requires_unchanged_corresponding_source(self):
+        self.info['gui_repaint_patch'] = package.PATCH_ID
+        self.write_info()
+        with self.assertRaises(FileNotFoundError):
+            package.verify_stage(self.stage)
+        source = self.stage/'sources/slint-winit'
+        shutil.copytree(Path(__file__).resolve().parents[1]/'native/vendor/slint-winit', source)
+        package.verify_stage(self.stage)
+        adapter = source/'winitwindowadapter.rs'
+        adapter.write_bytes(adapter.read_bytes()+b'// unintended modification\n')
+        with self.assertRaisesRegex(ValueError, 'Changed GUI patch source'):
+            package.verify_stage(self.stage)
+
+    def test_gui_patch_cannot_be_silently_undeclared_or_replaced(self):
+        self.info['gui_repaint_patch'] = 'unknown-patch'
+        self.write_info()
+        with self.assertRaisesRegex(ValueError, 'Unknown GUI repaint patch'):
+            package.verify_stage(self.stage)
+        self.info.pop('gui_repaint_patch')
+        self.write_info()
+        (self.stage/'sources/slint-winit').mkdir()
+        with self.assertRaisesRegex(ValueError, 'Undeclared GUI patch'):
+            package.verify_stage(self.stage)
 
     def write_info(self):
         (self.stage/'build-info.json').write_text(json.dumps(self.info))

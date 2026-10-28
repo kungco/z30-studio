@@ -22,5 +22,12 @@ tempfile = "3"
 base64 = "0.23"
 url = "2"
 
+[dev-dependencies]
+slint = { version = "=1.18.1", default-features = false, features = ["raw-window-handle-06"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+raw-window-handle = "=0.6.2"
+windows = { version = "=0.62.2", features = ["Win32_Foundation", "Win32_Graphics_Gdi"] }
+
 [build-dependencies]
 slint-build = "=1.18.1"

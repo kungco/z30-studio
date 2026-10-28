@@ -1,6 +1,11 @@
 [workspace]
 members = ["crates/core", "crates/desktop", "crates/vision"]
+exclude = ["vendor/slint-winit"]
 resolver = "2"
+
+[patch.crates-io]
+# Published 1.18.1 plus pinned upstream Windows invalidation fix #13568.
+i-slint-backend-winit = { path = "vendor/slint-winit" }
 
 [workspace.package]
 version = "0.1.0"

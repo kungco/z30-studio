@@ -15,7 +15,9 @@ jobs:
       - name: Install pinned compiler
         run: rustup toolchain install 1.99.1 --profile minimal --no-self-update
       - name: Native regression and Release build
-        run: ./tools/native_build.ps1 -Test
+        run: ./tools/native_build.ps1 -Test -RepaintProbe
+      - name: Native Win32 invalidation at synthetic scale factors
+        run: python tools/verify_native_repaint.py --probe native/target/release/examples/repaint_probe.exe --out native/dist/repaint-ci.json
       - name: Check developer verification harness syntax
         run: python -m compileall -q tools
       - name: Report stage binary size

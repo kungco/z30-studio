@@ -1,5 +1,7 @@
 # Z30 Studio 原生开发版
 
+6A修复了Windows恢复/遮挡后的无效区域重绘路径，使用方式仍是完整解压后运行Z30Studio.exe。混合DPI多屏、休眠和驱动重置实机验证仍待；详见 docs/reports/native-stage6a-window-repaint.md。
+
 这是 Rust + Slint 迁移分支，不是功能已经迁移完成的正式版本。原 Python 2.0 保留在仓库根目录，仍是 RAW/算法对照；先读 PROJECT_PROGRESS.md 和 DEVELOPMENT_PLAN.md。
 
 当前开发版可在原生窗口中调节九个全局参数、逐张保存配方、撤销/重做、重置、查看调整前后，以及后台导出全尺寸 JPEG（质量 95）、PNG8、真正的 TIFF16。导出均带 sRGB ICC，并拒绝覆盖任何已有文件。同一滑块连续拖动约 450 ms 停顿后合并为一步撤销，切换滑块则分别记录；历史最多 50 步且仅保留在当前进程，最终参数会自动保存并在重启后恢复。
