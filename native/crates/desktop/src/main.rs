@@ -1315,7 +1315,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 skin.poll(&ui);
                 repairs.poll(&ui);
                 warps.sync(&ui);
-                blemishes.poll(&ui);
                 for outcome in completed_faces.try_iter() {
                     let mut state=state.borrow_mut();let cancelled=state.face_control.as_ref().is_some_and(|control|control.load(Ordering::Acquire));state.face_control=None;ui.set_face_busy(false);
                     if state.close_after_face {continue;}
@@ -1538,6 +1537,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 }
+                // Derive candidate readiness from this tick's completed preview,
+                // face and AI state; never publish "preview ready" with stale gates.
+                blemishes.poll(&ui);
                 match qa.command() {
                     Ok(Some((id, command))) => {
                         match command {
