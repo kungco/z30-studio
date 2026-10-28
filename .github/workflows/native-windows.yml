@@ -1,9 +1,9 @@
 name: Native Windows migration
 on:
   push:
-    paths: ['native/**', 'tools/native_build.ps1', 'tools/build_native_libraw.py', 'tools/package_native.py', 'tools/compare_native_libraw.py', '.github/workflows/native-windows.yml']
+    paths: ['native/**', 'tools/native_build.ps1', 'tools/*native*.py', '.github/workflows/native-windows.yml']
   pull_request:
-    paths: ['native/**', 'tools/native_build.ps1', 'tools/build_native_libraw.py', 'tools/package_native.py', 'tools/compare_native_libraw.py', '.github/workflows/native-windows.yml']
+    paths: ['native/**', 'tools/native_build.ps1', 'tools/*native*.py', '.github/workflows/native-windows.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -16,6 +16,8 @@ jobs:
         run: rustup toolchain install 1.99.1 --profile minimal --no-self-update
       - name: Native regression and Release build
         run: ./tools/native_build.ps1 -Test
+      - name: Check developer verification harness syntax
+        run: python -m compileall -q tools
       - name: Report stage binary size
         shell: pwsh
         run: |

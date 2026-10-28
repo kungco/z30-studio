@@ -37,7 +37,7 @@ def main():
     originals={str(photo):sha(photo)}
     if args.raw: originals[str(args.raw)]=sha(args.raw)
     report={'stage':'native-ai-compatible-loopback','exe_sha256':sha(args.exe),'qa_directory':str(root),
-            'real_cloud_inference_requests':0,'checks':[],'timings':{},'memory_mib':{}}
+            'real_cloud_inference_requests':0,'checks':[],'timings':{},'memory_mib':{},'temp_audits':{}}
     secret='sk-local-test-only'
     def check(label,condition):
         if not condition: raise AssertionError(label)
@@ -46,16 +46,20 @@ def main():
         for case in ['auto','invalid','cancel','stale','exit']+(['raw'] if args.raw else []):
             source=args.raw if case=='raw' else photo
             folder=root/case;folder.mkdir();control=folder/'control';control.mkdir();tmp=folder/'tmp';tmp.mkdir()
-            ready=folder/'ready.json';stop=folder/'stop.signal';captured={};entered=threading.Event()
+            ready=folder/'ready.json';stop=folder/'stop.signal';captured={};entered=threading.Event();release=threading.Event()
             class Handler(BaseHTTPRequestHandler):
                 def log_message(self,*_):pass
-                def do_POST(self):
+                def do_POST(self,case=case,captured=captured,entered=entered,release=release):
                     size=int(self.headers.get('Content-Length','0'))
                     if size>8_000_000 or self.path!='/v1/chat/completions':
                         self.send_error(400);return
                     body=self.rfile.read(size)
                     captured.update(body=body,authorization=self.headers.get('Authorization'),path=self.path)
                     entered.set()
+                    # Keep the request alive at a stable inspection boundary.
+                    # On Windows curl exclusively locks its response output;
+                    # racing that write/cleanup cannot verify request secrecy.
+                    if not release.wait(10):return
                     if case in ('cancel','stale','exit'):time.sleep(5)
                     exposure=9.0 if case=='invalid' else 0.7
                     advice={'title':'本机模拟建议','summary':'保持自然层次','observations':['画面可略提亮'],
@@ -113,10 +117,14 @@ def main():
                     check(f'{case}: two bounded images without original path or metadata',len(images)==2
                         and all(max(size)<=1024 for size in dimensions)
                         and source.stem.encode('utf8') not in captured['body'])
+                    audited=[p for d in tmp.glob('z30-ai-http-*') for p in d.rglob('*') if p.is_file()]
+                    report['temp_audits'][case]=[p.name for p in audited]
                     check(f'{case}: model and JSON schema are sent without a temp-file secret',body['model']=='vision-test'
                         and body['response_format']=={'type':'json_object'} and body['max_tokens']==4096
                         and '"required"' in parts[0]['text']
-                        and all(secret.encode() not in p.read_bytes() for d in tmp.glob('z30-ai-http-*') for p in d.rglob('*') if p.is_file()))
+                        and any(p.name=='request.json' for p in audited)
+                        and all(secret.encode() not in p.read_bytes() for p in audited))
+                    release.set()
                     if case=='cancel':
                         command('ai_cancel');result=until(lambda s:not s['ai_busy'])
                         check('cancel: no recipe applied',result['exposure']==0)
@@ -140,6 +148,7 @@ def main():
                     check(f'{case}: original bytes unchanged',sha(source)==originals[str(source)])
                     check(f'{case}: HTTP request files cleaned',not list(tmp.glob('z30-ai-http-*')))
                 finally:
+                    release.set()
                     if process.poll() is None:
                         try:stop.write_text('stop');process.wait(timeout=12)
                         except subprocess.TimeoutExpired:process.kill();process.wait(timeout=5)
