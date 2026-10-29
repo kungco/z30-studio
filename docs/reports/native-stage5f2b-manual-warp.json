@@ -1,0 +1,46 @@
+{
+  "stage": "5F2b",
+  "baseline": "8a667e4c8e4d98d8ff588cff20b0b3246969728f",
+  "scope": "Actual bounded manual warp tool; no automatic face contour",
+  "tests": {
+    "rust_precommit": 125,
+    "all_targets": true,
+    "python_passed": 180,
+    "python_skipped": 0,
+    "node_passed": 31,
+    "new_process_precommit": 47,
+    "new_process_expected": 49,
+    "clean_process_expected": 375
+  },
+  "physical_precommit": {
+    "passed": [
+      "1322x892 tool panel layout",
+      "actual drag adds geometry without panning",
+      "Ctrl+Z restores exact neutral",
+      "Ctrl+Shift+Z restores exact deformation",
+      "focused slider Home reaches0% and exact neutral",
+      "Escape exits tool",
+      "zoomed browsing pans without adding controls"
+    ],
+    "source_unchanged": true,
+    "precommit": true,
+    "source_dirty": true,
+    "exe_sha256": "46b95bcec22c6b2e1ec9b4d6bb1ea9ac4909215cd13a1ed761795b68e6ff76d2",
+    "high_dpi": false,
+    "real_portrait": false,
+    "known_precommit_issue": "Undo/zero status string was stale; source corrected after this review, exact clean-build status checks required"
+  },
+  "schema_unchanged": "session7/queue5",
+  "max_drags": 4,
+  "max_shift_radius": 0.1,
+  "preview_and_original_bounds": true,
+  "no_ui_decoding": true,
+  "existing_linear_srgb_kernel_unchanged": true,
+  "automatic_face_contour": false,
+  "gpu": false,
+  "real_user_portrait": false,
+  "high_dpi": false,
+  "clean_windows": false,
+  "paid_requests": 0,
+  "final_artifact": "local .development/native-5f2b-final-artifact.json; independent clean package/CI verification required"
+}

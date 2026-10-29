@@ -1,0 +1,157 @@
+{
+  "stage": "5F1",
+  "baseline": "6d0aa6fdc35bd9bb6fdcb4bd10b684f5d2abd171",
+  "new_algorithm": true,
+  "legacy_python_port": false,
+  "scope": "Bounded compact inverse local-warp core; no desktop or face-contour inference",
+  "tests": {
+    "rust_passed": 110,
+    "explicit_external_fixtures_passed": 2,
+    "python_passed": 180,
+    "python_skipped": 0,
+    "node_passed": 31,
+    "new_warp_reference_cases": 8,
+    "old_repair_reference_cases": 10,
+    "clean_process_suite_expected": 289
+  },
+  "constraints": {
+    "max_drags": 4,
+    "max_shift_radius": 0.1,
+    "max_pixels": 80000000,
+    "max_mapping_steps": 128000000,
+    "contained_disks": true,
+    "c1_boundary": true,
+    "single_interpolation": true,
+    "negative_hdr_preserved": true,
+    "disabled_output_allocation": false,
+    "active_full_output_copies": 1,
+    "full_xy_map_allocation": false,
+    "cancel_row_interval": 32
+  },
+  "numeric": {
+    "stage": "5F1 constrained float warp core",
+    "passed": true,
+    "synthetic": true,
+    "corpus_sha256": "244f8bae1ca2cb0a6fd375afaf91f2031a3f26a6413fab085ee9d4606139b60e",
+    "probe_sha256": "229e71d2f8eb1cf1623bc80070da9d867daf631f615d31bd75278fcea90d8861",
+    "rgb_abs_tolerance": 2e-06,
+    "coordinate_tolerance": 1e-09,
+    "cases": [
+      {
+        "case": "disabled-gradient",
+        "max_rgb_error": 0.0,
+        "max_coordinate_error": 0.0,
+        "outside_exact": true,
+        "owned": false,
+        "signed_preserved": false,
+        "hdr_preserved": false,
+        "minimum_analytic_determinant": 1.0
+      },
+      {
+        "case": "single-max-shift",
+        "max_rgb_error": 0.0,
+        "max_coordinate_error": 0.0,
+        "outside_exact": true,
+        "owned": true,
+        "signed_preserved": false,
+        "hdr_preserved": false,
+        "minimum_analytic_determinant": 0.8469336376758085
+      },
+      {
+        "case": "diagonal-hdr",
+        "max_rgb_error": 0.0,
+        "max_coordinate_error": 0.0,
+        "outside_exact": true,
+        "owned": true,
+        "signed_preserved": true,
+        "hdr_preserved": true,
+        "minimum_analytic_determinant": 0.8615074133979296
+      },
+      {
+        "case": "mirrored-pair",
+        "max_rgb_error": 0.0,
+        "max_coordinate_error": 0.0,
+        "outside_exact": true,
+        "owned": true,
+        "signed_preserved": true,
+        "hdr_preserved": true,
+        "minimum_analytic_determinant": 0.8790675174221286
+      },
+      {
+        "case": "four-overlapping",
+        "max_rgb_error": 0.0,
+        "max_coordinate_error": 3.552713678800501e-15,
+        "outside_exact": true,
+        "owned": true,
+        "signed_preserved": true,
+        "hdr_preserved": true,
+        "minimum_analytic_determinant": 0.8758476470685348
+      },
+      {
+        "case": "portrait-texture",
+        "max_rgb_error": 0.0,
+        "max_coordinate_error": 3.552713678800501e-15,
+        "outside_exact": true,
+        "owned": true,
+        "signed_preserved": true,
+        "hdr_preserved": true,
+        "minimum_analytic_determinant": 0.8775842090272103
+      },
+      {
+        "case": "constant-signed-hdr",
+        "max_rgb_error": 0.0,
+        "max_coordinate_error": 0.0,
+        "outside_exact": true,
+        "owned": true,
+        "signed_preserved": true,
+        "hdr_preserved": true,
+        "minimum_analytic_determinant": 0.8493504749756636
+      },
+      {
+        "case": "one-pixel-wide-disabled",
+        "max_rgb_error": 0.0,
+        "max_coordinate_error": 0.0,
+        "outside_exact": true,
+        "owned": false,
+        "signed_preserved": true,
+        "hdr_preserved": true,
+        "minimum_analytic_determinant": 1.0
+      }
+    ],
+    "desktop_integration": false,
+    "face_contour_inference": false,
+    "real_portrait": false,
+    "gpu": false,
+    "scratch": "D:\\codex\\2026-10-23\\ni-k\\outputs\\Z30-Studio\\.development\\warp-reference-mjzpjz6x"
+  },
+  "synthetic_benchmark": {
+    "0": {
+      "median_seconds": 0.0102818,
+      "peak_working_set_max_mib": 231.855
+    },
+    "1": {
+      "median_seconds": 0.035637,
+      "peak_working_set_max_mib": 460.184
+    },
+    "4": {
+      "median_seconds": 0.0577251,
+      "peak_working_set_max_mib": 460.184
+    }
+  },
+  "desktop_integration": false,
+  "recipe_integration": false,
+  "face_contour_inference": false,
+  "real_z30_portrait": false,
+  "diverse_skin_tones": false,
+  "high_dpi": false,
+  "clean_windows": false,
+  "gpu": false,
+  "cloud_requests": 0,
+  "automatic_resume": false,
+  "automatic_shutdown": false,
+  "primary_references": [
+    "https://docs.opencv.org/4.13.0/da/d54/group__imgproc__transform.html",
+    "https://developers.google.com/edge/mediapipe/solutions/vision/face_landmarker"
+  ],
+  "artifact_and_ci": "Final clean build, ZIP, 289 process checks and matching CI recorded after commit in local checkpoint/final-artifact"
+}

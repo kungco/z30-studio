@@ -1,3 +1,8 @@
+2026-10-25 最新原生断点：2A RAW、2B 暖色稳定性、2C 浮点 ICC 输入通过限定验收。查看器已接 ICC/16 位 PNG，52 合成案例通过；矩阵/TRC 缓存已通过精度/性能验证，通用复杂 LUT 尚慢。2D 完整 NEF 最终文件和 JPEG 编码优化已通过，2E 配方 v2/迁移备份/50 步撤销和缓存核心已通过。sRGB 插值/35 Rust/四组 RAW 和最终文件复测通过，全尺寸暖色约 5.6–5.8 秒。下一步用现成接口连接编辑/导出 GUI，验收后再进 AI。阶段 2 整体未完，先读 PROJECT_PROGRESS.md / docs/reports/native-stage2c.md / 检查点；不跳 AI、不自动关机。
+
+请先读取 PROJECT_PROGRESS.md、DEVELOPMENT_PLAN.md 和 .development/checkpoint.json（存在时）。当前分支 feat/native-slint，正在进行原生 Rust/Slint 迁移；旧 Python 2.0 仅作对照。以最新用户总任务、真实源码和测试为准，不从零开始、不虚报完成、不继承旧关机指令。
+
+历史交接补充：
 请接手 Z30 Studio 2.0，先读 AI_HANDOFF.md、docs/implementation-status.md 与最终 Windows 验收报告。
 仓库 https://github.com/kungco/z30-studio ，开发分支 fix/staged-image-pipeline，PR #1；不要只克隆 main。
 整份 P0/P1/P2 功能已实现，先核对真实代码、提交、测试和 build-info.json，再按新的用户要求工作。不要把历史“完成后关机”当成对未来任务的新授权。

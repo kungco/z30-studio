@@ -1,0 +1,408 @@
+{
+  "stage": "2F-native-editing-export-ui",
+  "date": "2026-10-26",
+  "tests": {
+    "rust_passed": 40,
+    "rust_default_ignored_raw_fixture": 1,
+    "python_passed": 163,
+    "node_passed": 31
+  },
+  "full_migration_complete": false,
+  "raw_runtime_bundled": false,
+  "cloud_inference_requests": 0,
+  "synthetic": {
+    "stage": "native-editing-callback-process",
+    "exe_sha256": "e6e9828ba23721061b4e0e90d5f602ed7fa2713ae070f4c9b2fd3dfbe71e9cdd",
+    "checks": [
+      "sliders update actual pixels and preserve neutral comparison",
+      "before/after toggle uses a neutral image",
+      "one undo reverses a whole drag gesture",
+      "redo restores edited pixels",
+      "reset restores neutral pixels",
+      "switching photos restores each set of sliders",
+      "rapid switching rejects stale preview requests",
+      "cancelled preview cannot reappear and retains recipe",
+      "jpg exports captured photo despite selection change",
+      "jpg output includes ICC",
+      "png exports captured photo despite selection change",
+      "png output includes ICC",
+      "tif exports captured photo despite selection change",
+      "real GUI TIFF output has sub-eight-bit precision",
+      "UI refuses to overwrite an existing original",
+      "cancellation leaves no final output or temporary parts",
+      "close during active rendering cancels and exits cleanly",
+      "close does not leave partial exports",
+      "per-photo recipe restored after a real process restart",
+      "undo is explicitly in-memory and starts empty on restart",
+      "exit flushes the most recent slider value before debounce",
+      "all original sample hashes unchanged"
+    ],
+    "timings": {
+      "three_slider_changes_to_latest_preview_seconds": 0.6255951999992249,
+      "close_during_render_seconds": 0.477302300001611
+    },
+    "physical_clicks_verified": false,
+    "screenshot_visual_acceptance": false,
+    "real_cloud_inference_requests": 0,
+    "build1": {
+      "pid": 17872,
+      "event_loop_ready_ms": 98.217,
+      "backend": "winit-software",
+      "version": "0.1.0",
+      "source_commit": "4da12a3c219e4dd19a145eb2731b8928c049d182",
+      "source_dirty": true
+    },
+    "memory_mib": {
+      "peak_working_set": 156.141,
+      "working_set": 125.617,
+      "private_bytes": 148.012
+    },
+    "build2": {
+      "pid": 15340,
+      "event_loop_ready_ms": 86.199,
+      "backend": "winit-software",
+      "version": "0.1.0",
+      "source_commit": "4da12a3c219e4dd19a145eb2731b8928c049d182",
+      "source_dirty": true
+    },
+    "success": true
+  },
+  "raw12": {
+    "stage": "native-editing-callback-process",
+    "exe_sha256": "0df16fc20604d9c125f71dd755232749bcdc5e4d1a1d9763f265a68326d765dc",
+    "checks": [
+      "sliders update actual pixels and preserve neutral comparison",
+      "before/after toggle uses a neutral image",
+      "one undo reverses a whole drag gesture",
+      "redo restores edited pixels",
+      "reset restores neutral pixels",
+      "switching photos restores each set of sliders",
+      "rapid switching rejects stale preview requests",
+      "cancelled preview cannot reappear and retains recipe",
+      "jpg exports captured photo despite selection change",
+      "jpg output includes ICC",
+      "png exports captured photo despite selection change",
+      "png output includes ICC",
+      "tif exports captured photo despite selection change",
+      "real GUI TIFF output has sub-eight-bit precision",
+      "UI refuses to overwrite an existing original",
+      "real RAW enters the same editable UI pipeline",
+      "real RAW UI export is full-size 16-bit",
+      "cancellation leaves no final output or temporary parts",
+      "close during active rendering cancels and exits cleanly",
+      "close does not leave partial exports",
+      "per-photo recipe restored after a real process restart",
+      "undo is explicitly in-memory and starts empty on restart",
+      "exit flushes the most recent slider value before debounce",
+      "all original sample hashes unchanged"
+    ],
+    "timings": {
+      "three_slider_changes_to_latest_preview_seconds": 0.5104510999954073,
+      "real_raw_export_seconds": 3.5150488000072073,
+      "close_during_render_seconds": 0.8560892999958014
+    },
+    "physical_clicks_verified": false,
+    "screenshot_visual_acceptance": false,
+    "real_cloud_inference_requests": 0,
+    "build1": {
+      "pid": 29324,
+      "event_loop_ready_ms": 105.716,
+      "backend": "winit-software",
+      "version": "0.1.0",
+      "source_commit": "4da12a3c219e4dd19a145eb2731b8928c049d182",
+      "source_dirty": true
+    },
+    "memory_mib": {
+      "peak_working_set": 542.164,
+      "working_set": 353.496,
+      "private_bytes": 533.75
+    },
+    "build2": {
+      "pid": 17416,
+      "event_loop_ready_ms": 85.116,
+      "backend": "winit-software",
+      "version": "0.1.0",
+      "source_commit": "4da12a3c219e4dd19a145eb2731b8928c049d182",
+      "source_dirty": true
+    },
+    "success": true
+  },
+  "raw14": {
+    "stage": "native-editing-callback-process",
+    "exe_sha256": "e6e9828ba23721061b4e0e90d5f602ed7fa2713ae070f4c9b2fd3dfbe71e9cdd",
+    "checks": [
+      "sliders update actual pixels and preserve neutral comparison",
+      "before/after toggle uses a neutral image",
+      "one undo reverses a whole drag gesture",
+      "redo restores edited pixels",
+      "reset restores neutral pixels",
+      "switching photos restores each set of sliders",
+      "rapid switching rejects stale preview requests",
+      "cancelled preview cannot reappear and retains recipe",
+      "jpg exports captured photo despite selection change",
+      "jpg output includes ICC",
+      "png exports captured photo despite selection change",
+      "png output includes ICC",
+      "tif exports captured photo despite selection change",
+      "real GUI TIFF output has sub-eight-bit precision",
+      "UI refuses to overwrite an existing original",
+      "real RAW enters the same editable UI pipeline",
+      "real RAW UI export is full-size 16-bit",
+      "cancellation leaves no final output or temporary parts",
+      "close during active rendering cancels and exits cleanly",
+      "close does not leave partial exports",
+      "per-photo recipe restored after a real process restart",
+      "undo is explicitly in-memory and starts empty on restart",
+      "exit flushes the most recent slider value before debounce",
+      "all original sample hashes unchanged"
+    ],
+    "timings": {
+      "three_slider_changes_to_latest_preview_seconds": 0.5063326000017696,
+      "real_raw_export_seconds": 3.4875969999993686,
+      "close_during_render_seconds": 0.8607300000003306
+    },
+    "physical_clicks_verified": false,
+    "screenshot_visual_acceptance": false,
+    "real_cloud_inference_requests": 0,
+    "build1": {
+      "pid": 6308,
+      "event_loop_ready_ms": 123.58,
+      "backend": "winit-software",
+      "version": "0.1.0",
+      "source_commit": "4da12a3c219e4dd19a145eb2731b8928c049d182",
+      "source_dirty": true
+    },
+    "memory_mib": {
+      "peak_working_set": 541.852,
+      "working_set": 342.074,
+      "private_bytes": 534.145
+    },
+    "build2": {
+      "pid": 27676,
+      "event_loop_ready_ms": 104.148,
+      "backend": "winit-software",
+      "version": "0.1.0",
+      "source_commit": "4da12a3c219e4dd19a145eb2731b8928c049d182",
+      "source_dirty": true
+    },
+    "success": true
+  },
+  "before_viewer": {
+    "stage": "native-viewer-process-smoke",
+    "exe_sha256": "c581cf2911c8a86a82f6d14717524fc12e0d07acc809e6400b9b6e6a2f6c68d6",
+    "exe_bytes": 15983969,
+    "source_sha256": "6cca66a3e62bf68a53dfc3ac4c9c4c046c7a05b438134f7dce7b44af69dcbdcf",
+    "timing_definition": "process spawn to file marker / event-loop entry; not first on-screen paint",
+    "cycles": [
+      {
+        "cycle": 1,
+        "spawn_to_event_loop_ms": 157.152,
+        "marker": {
+          "pid": 21240,
+          "event_loop_ready_ms": 90.635,
+          "backend": "winit-software",
+          "version": "0.1.0",
+          "source_commit": "4da12a3c219e4dd19a145eb2731b8928c049d182",
+          "source_dirty": false
+        },
+        "preview": {
+          "first_preview_ms": 442.669,
+          "width": 2400,
+          "height": 1600
+        },
+        "memory_mib": {
+          "peak_working_set": 95.18,
+          "working_set": 31.859,
+          "private_bytes": 13.941
+        },
+        "shutdown_seconds": 0.023,
+        "exit_code": 0
+      },
+      {
+        "cycle": 2,
+        "spawn_to_event_loop_ms": 155.167,
+        "marker": {
+          "pid": 26484,
+          "event_loop_ready_ms": 84.844,
+          "backend": "winit-software",
+          "version": "0.1.0",
+          "source_commit": "4da12a3c219e4dd19a145eb2731b8928c049d182",
+          "source_dirty": false
+        },
+        "preview": {
+          "first_preview_ms": 436.357,
+          "width": 2400,
+          "height": 1600
+        },
+        "memory_mib": {
+          "peak_working_set": 95.172,
+          "working_set": 31.547,
+          "private_bytes": 13.762
+        },
+        "shutdown_seconds": 0.059,
+        "exit_code": 0
+      }
+    ],
+    "real_raw_decode_verified": false,
+    "real_cloud_inference_requests": 0,
+    "automatic_desktop_visual_verification": false,
+    "duplicate_instance_rejected_without_overwrite": true,
+    "legacy_migrated_with_exact_backup": true,
+    "original_unchanged": true,
+    "draft_recovered": true,
+    "python_and_developer_tools_removed_from_PATH": true,
+    "unicode_and_space_paths": true,
+    "success": true
+  },
+  "after_viewer": {
+    "stage": "native-viewer-process-smoke",
+    "exe_sha256": "0df16fc20604d9c125f71dd755232749bcdc5e4d1a1d9763f265a68326d765dc",
+    "exe_bytes": 17165427,
+    "source_sha256": "6cca66a3e62bf68a53dfc3ac4c9c4c046c7a05b438134f7dce7b44af69dcbdcf",
+    "timing_definition": "process spawn to file marker / event-loop entry; not first on-screen paint",
+    "cycles": [
+      {
+        "cycle": 1,
+        "spawn_to_event_loop_ms": 117.155,
+        "marker": {
+          "pid": 6372,
+          "event_loop_ready_ms": 86.606,
+          "backend": "winit-software",
+          "version": "0.1.0",
+          "source_commit": "4da12a3c219e4dd19a145eb2731b8928c049d182",
+          "source_dirty": true
+        },
+        "preview": {
+          "first_preview_ms": 287.371,
+          "width": 2400,
+          "height": 1600
+        },
+        "memory_mib": {
+          "peak_working_set": 95.797,
+          "working_set": 76.727,
+          "private_bytes": 58.391
+        },
+        "shutdown_seconds": 0.061,
+        "exit_code": 0
+      },
+      {
+        "cycle": 2,
+        "spawn_to_event_loop_ms": 115.965,
+        "marker": {
+          "pid": 11464,
+          "event_loop_ready_ms": 87.647,
+          "backend": "winit-software",
+          "version": "0.1.0",
+          "source_commit": "4da12a3c219e4dd19a145eb2731b8928c049d182",
+          "source_dirty": true
+        },
+        "preview": {
+          "first_preview_ms": 288.074,
+          "width": 2400,
+          "height": 1600
+        },
+        "memory_mib": {
+          "peak_working_set": 95.785,
+          "working_set": 76.574,
+          "private_bytes": 58.262
+        },
+        "shutdown_seconds": 0.055,
+        "exit_code": 0
+      }
+    ],
+    "real_raw_decode_verified": false,
+    "real_cloud_inference_requests": 0,
+    "automatic_desktop_visual_verification": false,
+    "duplicate_instance_rejected_without_overwrite": true,
+    "legacy_migrated_with_exact_backup": true,
+    "original_unchanged": true,
+    "draft_recovered": true,
+    "python_and_developer_tools_removed_from_PATH": true,
+    "unicode_and_space_paths": true,
+    "success": true
+  },
+  "raw_comparison": {
+    "previous_verified_probe_sha256": "ab9aa3bc919cab6091334cd0760300882dcf356e412fcec29fdd9202395e5fe1",
+    "new_gui_exe_sha256": "e6e9828ba23721061b4e0e90d5f602ed7fa2713ae070f4c9b2fd3dfbe71e9cdd",
+    "parameters": {
+      "exposure": 0.6,
+      "other_parameters": 0
+    },
+    "raw_bits": 14,
+    "dimensions": [
+      5568,
+      3712,
+      3
+    ],
+    "max_tiff16_channel_difference": 0,
+    "pixels_identical": true,
+    "before_core_probe": {
+      "decode_seconds": 2.1996089,
+      "full_migration_complete": false,
+      "height": 5568,
+      "metadata": {
+        "active_height": 3728,
+        "active_width": 5600,
+        "half_size": false,
+        "libraw_version": "0.22.2",
+        "linear_space": "linear-srgb",
+        "model": "Z 30",
+        "original_flip": 5,
+        "output_bits": 16,
+        "sensor_height": 3728,
+        "sensor_width": 5600,
+        "source_bits": 14
+      },
+      "outputs": [
+        {
+          "bytes": 124012298,
+          "encode_seconds": 0.4349026,
+          "file": "developed.tif"
+        },
+        {
+          "bytes": 34664174,
+          "encode_seconds": 0.4791598,
+          "file": "developed.png"
+        },
+        {
+          "bytes": 10432438,
+          "encode_seconds": 0.719705,
+          "file": "developed.jpg"
+        }
+      ],
+      "parameters": {
+        "contrast": 0.0,
+        "exposure": 0.6000000238418579,
+        "highlights": 0.0,
+        "saturation": 0.0,
+        "shadows": 0.0,
+        "sharpen": 0.0,
+        "temperature": 0.0,
+        "tint": 0.0,
+        "vibrance": 0.0
+      },
+      "render_seconds": 0.8070245,
+      "width": 3712,
+      "peak_working_set_mib": 479.125,
+      "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+    },
+    "after_gui_end_to_end_seconds": 3.4875969999993686,
+    "after_gui_peak_working_set_mib": 541.852,
+    "caveat": "Core probe writes float dump and all three formats; GUI includes preview cache/UI/timer and exports TIFF only. These are not identical timing or memory scopes."
+  },
+  "visual": {
+    "exposure_slider_accessibility_action": true,
+    "before_after_visually_confirmed": true,
+    "save_dialog_used": true,
+    "output_dimensions": [
+      3712,
+      5568
+    ],
+    "icc_matches": true,
+    "output_bytes": 11355618,
+    "tested_build_sha256": "e6e9828ba23721061b4e0e90d5f602ed7fa2713ae070f4c9b2fd3dfbe71e9cdd",
+    "ui_layout_followup": "fixed excessive ComboBox and export button stretch in subsequent build",
+    "final_layout_recheck": "interrupted_by_user_physical_escape"
+  },
+  "clean_commit_build_pending": true
+}

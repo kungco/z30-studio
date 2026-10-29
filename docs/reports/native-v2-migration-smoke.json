@@ -1,0 +1,68 @@
+{
+  "stage": "native-viewer-process-smoke",
+  "exe_sha256": "6102878541a388f354128df5550623d520450fe008d209cfdf2112d65ae294ff",
+  "exe_bytes": 15983993,
+  "source_sha256": "d2a91ce35c85715cdf287c5be0772e593691e99bf01e36f8bb42e1757d46bf70",
+  "timing_definition": "process spawn to file marker / event-loop entry; not first on-screen paint",
+  "cycles": [
+    {
+      "cycle": 1,
+      "spawn_to_event_loop_ms": 212.679,
+      "marker": {
+        "pid": 10052,
+        "event_loop_ready_ms": 107.334,
+        "backend": "winit-software",
+        "version": "0.1.0",
+        "source_commit": "80b43bafa2ea1f13f3b99aefb9fd1e4c897b3466",
+        "source_dirty": true
+      },
+      "preview": {
+        "first_preview_ms": 1111.719,
+        "width": 5568,
+        "height": 3712
+      },
+      "memory_mib": {
+        "peak_working_set": 323.73,
+        "working_set": 31.742,
+        "private_bytes": 14.191
+      },
+      "shutdown_seconds": 0.082,
+      "exit_code": 0
+    },
+    {
+      "cycle": 2,
+      "spawn_to_event_loop_ms": 189.908,
+      "marker": {
+        "pid": 29816,
+        "event_loop_ready_ms": 107.01,
+        "backend": "winit-software",
+        "version": "0.1.0",
+        "source_commit": "80b43bafa2ea1f13f3b99aefb9fd1e4c897b3466",
+        "source_dirty": true
+      },
+      "preview": {
+        "first_preview_ms": 1059.619,
+        "width": 5568,
+        "height": 3712
+      },
+      "memory_mib": {
+        "peak_working_set": 323.332,
+        "working_set": 31.211,
+        "private_bytes": 13.82
+      },
+      "shutdown_seconds": 0.059,
+      "exit_code": 0
+    }
+  ],
+  "real_raw_decode_verified": false,
+  "real_cloud_inference_requests": 0,
+  "automatic_desktop_visual_verification": false,
+  "qa_directory": "D:\\codex\\2026-10-23\\ni-k\\outputs\\Z30-Studio\\.development\\native-smoke\\原生 smoke y6l33d2p",
+  "duplicate_instance_rejected_without_overwrite": true,
+  "legacy_migrated_with_exact_backup": true,
+  "original_unchanged": true,
+  "draft_recovered": true,
+  "python_and_developer_tools_removed_from_PATH": true,
+  "unicode_and_space_paths": true,
+  "success": true
+}

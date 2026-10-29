@@ -1,0 +1,231 @@
+{
+  "stage": "2D-full-nef-file-export",
+  "full_migration_complete": false,
+  "gui_export_enabled": false,
+  "probe_sha256": "3bdabd2351a27cd58fb7058ec9265877e9a46e4a85a5e2c9a630fef207845709",
+  "reference_report_sha256": "c1fd2a85ec4b5b36335422dd744b37883461b97c9dd61d6982d24d1bae5ebfdf",
+  "parameters": {
+    "exposure": 0.75,
+    "contrast": 15,
+    "highlights": -35,
+    "shadows": 20,
+    "temperature": 30,
+    "tint": 10,
+    "saturation": 30,
+    "vibrance": 25,
+    "sharpen": 35
+  },
+  "cases": [
+    {
+      "bits": 12,
+      "native": {
+        "decode_seconds": 2.2986108,
+        "full_migration_complete": false,
+        "height": 5568,
+        "metadata": {
+          "active_height": 3728,
+          "active_width": 5600,
+          "half_size": false,
+          "libraw_version": "0.22.2",
+          "linear_space": "linear-srgb",
+          "model": "Z 30",
+          "original_flip": 5,
+          "output_bits": 16,
+          "sensor_height": 3728,
+          "sensor_width": 5600,
+          "source_bits": 12
+        },
+        "outputs": [
+          {
+            "bytes": 124012298,
+            "encode_seconds": 0.3454324,
+            "file": "developed.tif"
+          },
+          {
+            "bytes": 42125824,
+            "encode_seconds": 0.4319918,
+            "file": "developed.png"
+          },
+          {
+            "bytes": 14858593,
+            "encode_seconds": 33.9892064,
+            "file": "developed.jpg"
+          }
+        ],
+        "parameters": {
+          "contrast": 15.0,
+          "exposure": 0.75,
+          "highlights": -35.0,
+          "saturation": 30.0,
+          "shadows": 20.0,
+          "sharpen": 35.0,
+          "temperature": 30.0,
+          "tint": 10.0,
+          "vibrance": 25.0
+        },
+        "render_seconds": 14.762054,
+        "width": 3712,
+        "peak_working_set_mib": 479.164,
+        "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+      },
+      "reference_comparison": {
+        "max_abs_error": 6.010755896568298e-06,
+        "mean_abs_error": 1.3582579436751221e-08,
+        "different_channels": 27304356,
+        "nonfinite_channels": 0,
+        "within_one_rgb16_code": true
+      },
+      "source_unchanged": true,
+      "files": [
+        {
+          "bytes": 124012298,
+          "encode_seconds": 0.3454324,
+          "file": "developed.tif",
+          "sha256": "dd9bb7b5428bb9e3ed9b0eea79644ea4e23dcca219c4c55270bfffd2ef3bab74",
+          "bits_per_sample": 16,
+          "icc_matches": true,
+          "dtype": "uint16",
+          "dimensions_match": true,
+          "max_quantized_error": 0,
+          "distinct_codes": 65536,
+          "channels_not_8bit_upscaled": 61368299,
+          "success": true
+        },
+        {
+          "bytes": 42125824,
+          "encode_seconds": 0.4319918,
+          "file": "developed.png",
+          "sha256": "0d4fcf8a2b8c3421e9f0ec9109a9b46ff266b92dd9de14cb202a2a3446c8c137",
+          "icc_matches": true,
+          "dimensions_match": true,
+          "max_quantized_error": 0,
+          "success": true
+        },
+        {
+          "bytes": 14858593,
+          "encode_seconds": 33.9892064,
+          "file": "developed.jpg",
+          "sha256": "8dcde39221828c78f25a850de47ffc2bc3efa58aa1c1acb1e9af7a7f920cb640",
+          "icc_matches": true,
+          "dimensions_match": true,
+          "max_quantized_error": 27,
+          "psnr_db": 37.651090344656694,
+          "jpeg_quality_sanity": true,
+          "success": true
+        }
+      ],
+      "existing_directory_rejected_without_changes": true,
+      "temporary_parts_remaining": false,
+      "success": true
+    },
+    {
+      "bits": 14,
+      "native": {
+        "decode_seconds": 2.2552911,
+        "full_migration_complete": false,
+        "height": 5568,
+        "metadata": {
+          "active_height": 3728,
+          "active_width": 5600,
+          "half_size": false,
+          "libraw_version": "0.22.2",
+          "linear_space": "linear-srgb",
+          "model": "Z 30",
+          "original_flip": 5,
+          "output_bits": 16,
+          "sensor_height": 3728,
+          "sensor_width": 5600,
+          "source_bits": 14
+        },
+        "outputs": [
+          {
+            "bytes": 124012298,
+            "encode_seconds": 0.3484331,
+            "file": "developed.tif"
+          },
+          {
+            "bytes": 39525367,
+            "encode_seconds": 0.4176135,
+            "file": "developed.png"
+          },
+          {
+            "bytes": 13186687,
+            "encode_seconds": 31.0454985,
+            "file": "developed.jpg"
+          }
+        ],
+        "parameters": {
+          "contrast": 15.0,
+          "exposure": 0.75,
+          "highlights": -35.0,
+          "saturation": 30.0,
+          "shadows": 20.0,
+          "sharpen": 35.0,
+          "temperature": 30.0,
+          "tint": 10.0,
+          "vibrance": 25.0
+        },
+        "render_seconds": 14.4215022,
+        "width": 3712,
+        "peak_working_set_mib": 478.934,
+        "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+      },
+      "reference_comparison": {
+        "max_abs_error": 6.44288957118988e-06,
+        "mean_abs_error": 1.4816073736704519e-08,
+        "different_channels": 28667419,
+        "nonfinite_channels": 0,
+        "within_one_rgb16_code": true
+      },
+      "source_unchanged": true,
+      "files": [
+        {
+          "bytes": 124012298,
+          "encode_seconds": 0.3484331,
+          "file": "developed.tif",
+          "sha256": "e9be9c027b994dff22ffc520ddae7e3ef8292d7628220b78f977983e6eb066c8",
+          "bits_per_sample": 16,
+          "icc_matches": true,
+          "dtype": "uint16",
+          "dimensions_match": true,
+          "max_quantized_error": 0,
+          "distinct_codes": 65536,
+          "channels_not_8bit_upscaled": 61387462,
+          "success": true
+        },
+        {
+          "bytes": 39525367,
+          "encode_seconds": 0.4176135,
+          "file": "developed.png",
+          "sha256": "14ece1e4f41490baee516b641d202af67022a5ae397ed7894ce632d45bdcb146",
+          "icc_matches": true,
+          "dimensions_match": true,
+          "max_quantized_error": 0,
+          "success": true
+        },
+        {
+          "bytes": 13186687,
+          "encode_seconds": 31.0454985,
+          "file": "developed.jpg",
+          "sha256": "21776f6219e569e0b4e67190faf91ad6a14357c490800ea74fc2b5e0cb557e69",
+          "icc_matches": true,
+          "dimensions_match": true,
+          "max_quantized_error": 31,
+          "psnr_db": 38.17988448509149,
+          "jpeg_quality_sanity": true,
+          "success": true
+        }
+      ],
+      "existing_directory_rejected_without_changes": true,
+      "temporary_parts_remaining": false,
+      "success": true
+    }
+  ],
+  "success": true,
+  "limitations": [
+    "Public 12/14-bit camera-WB samples, not user originals or calibrated print/skin tests",
+    "Core end-to-end probe; GUI export/lifecycle not enabled",
+    "Single timing per case; no steady performance claim",
+    "JPEG is lossy; PSNR sanity does not replace visual assessment"
+  ]
+}

@@ -1,3 +1,7 @@
+2026-10-25 最新原生断点：2A RAW、2B 暖色稳定性、2C 浮点 ICC 输入通过限定验收。查看器已接 ICC/16 位 PNG，52 合成案例通过；矩阵/TRC 缓存已通过精度/性能验证，通用复杂 LUT 尚慢。2D 完整 NEF 最终文件和 JPEG 编码优化已通过，2E 配方 v2/迁移备份/50 步撤销和缓存核心已通过。sRGB 插值/35 Rust/四组 RAW 和最终文件复测通过，全尺寸暖色约 5.6–5.8 秒。下一步用现成接口连接编辑/导出 GUI，验收后再进 AI。阶段 2 整体未完，先读 PROJECT_PROGRESS.md / docs/reports/native-stage2c.md / 检查点；不跳 AI、不自动关机。
+
+> 新任务：当前开发分支为 `feat/native-slint`，正在进行 Rust + Slint 原生迁移。请优先阅读 PROJECT_PROGRESS.md 和 DEVELOPMENT_PLAN.md。下文 2.0“已完成”仅指历史 Python 工作台，不代表原生迁移完成。严禁据此直接宣布新总任务完成或关机。
+
 # Z30 Studio 2.0：开发者 / AI 交接
 
 更新：2026-10-25，Asia/Hong_Kong。事实以实际源码/Git/报告为准，新用户指令优先。

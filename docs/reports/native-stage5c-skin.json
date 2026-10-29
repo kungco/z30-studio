@@ -1,0 +1,740 @@
+{
+  "stage": "5C1",
+  "scope": "CPU semantic skin engine and explicit developer probe; not desktop integration",
+  "baseline_commit": "d1e20a655ad25cead017cd14f71bfb82cb8d8f03",
+  "tested_before_commit": true,
+  "thresholds": {
+    "max_probability_error": 0.0002,
+    "mean_error": 1e-05,
+    "class_agreement": 0.9998,
+    "max_gate_byte_error": 1
+  },
+  "probe_sha256": "eaad9d553b9de5d2804b520e47b22afd64a9829dea06542cedbd71ab40504d49",
+  "metadata_contract": {
+    "mean": [
+      127.5
+    ],
+    "std": [
+      127.5
+    ],
+    "activation": "softmax",
+    "labels": [
+      "background",
+      "hair",
+      "body-skin",
+      "face-skin",
+      "clothes",
+      "others"
+    ]
+  },
+  "model_sha256": "13961350bb2099688eb96182ffe26f24eb12c77b1df278a2ec95bbdc923136e1",
+  "original_tflite_sha256": "c6748b1253a99067ef71f7e26ca71096cd449baefa8f101900ea23016507e0e0",
+  "tests": {
+    "rust_passed": 71,
+    "rust_default_ignored": 2,
+    "explicit_ignored_fixtures_passed": 2,
+    "python_total": 179,
+    "python_skipped": 2,
+    "node_passed": 31,
+    "existing_portrait_callbacks": 18,
+    "existing_face_reference_cases": 5,
+    "raw_callbacks": 14,
+    "skin_reference_cases": 9
+  },
+  "cases": [
+    {
+      "name": "original",
+      "metrics": {
+        "native_vs_onnx": {
+          "max_error": 2.384185791015625e-07,
+          "mean_error": 6.523777074107784e-10
+        },
+        "conversion_vs_tflite": {
+          "max_error": 8.58306884765625e-06,
+          "mean_error": 6.81294025639545e-08
+        },
+        "native_vs_tflite": {
+          "max_error": 3.2186508178710938e-06,
+          "mean_error": 1.906794722117411e-08
+        },
+        "native_class_agreement": 1.0,
+        "conversion_class_agreement": 1.0,
+        "gate_max_byte_error": 0,
+        "excluded_pixels_unchanged": true,
+        "geometry_changed_excluded_pixels": 301,
+        "semantic_changed_pixels": 5034,
+        "finite_in_gamut": true
+      },
+      "native": {
+        "cancelled_request_rejected": true,
+        "cloud_requests": 0,
+        "desktop_integration": false,
+        "faces": [
+          {
+            "confidence": 0.9436302781105042,
+            "landmarks": [
+              {
+                "x": 0.39363306760787964,
+                "y": 0.20478323101997375
+              },
+              {
+                "x": 0.4790111184120178,
+                "y": 0.20461013913154602
+              },
+              {
+                "x": 0.4311541020870209,
+                "y": 0.24839401245117188
+              },
+              {
+                "x": 0.3982422947883606,
+                "y": 0.2837776839733124
+              },
+              {
+                "x": 0.4732034206390381,
+                "y": 0.2834901213645935
+              }
+            ],
+            "rect": [
+              0.34924545884132385,
+              0.12277153879404068,
+              0.17762288451194763,
+              0.217422753572464
+            ]
+          }
+        ],
+        "filter_seconds": 0.0222593,
+        "first": {
+          "accepted_pixels": 1630,
+          "inference_seconds": 0.056791,
+          "local_only": true,
+          "postprocess_seconds": 0.0084866,
+          "prepare_seconds": 0.001181,
+          "source_height": 512,
+          "source_width": 512
+        },
+        "model_load_seconds": 0.1418884,
+        "repeat": {
+          "accepted_pixels": 1630,
+          "inference_seconds": 0.0476125,
+          "local_only": true,
+          "postprocess_seconds": 0.00847,
+          "prepare_seconds": 0.0014506,
+          "source_height": 512,
+          "source_width": 512
+        },
+        "user_photos_tested": false,
+        "wall_seconds": 0.4261821999971289,
+        "peak_working_set_mib": 100.527,
+        "stderr_bytes": 0
+      }
+    },
+    {
+      "name": "wide",
+      "metrics": {
+        "native_vs_onnx": {
+          "max_error": 1.1920928955078125e-07,
+          "mean_error": 5.905818056817225e-10
+        },
+        "conversion_vs_tflite": {
+          "max_error": 6.973743438720703e-06,
+          "mean_error": 3.122587699522228e-08
+        },
+        "native_vs_tflite": {
+          "max_error": 3.9637088775634766e-06,
+          "mean_error": 1.4742965959158028e-08
+        },
+        "native_class_agreement": 1.0,
+        "conversion_class_agreement": 1.0,
+        "gate_max_byte_error": 0,
+        "excluded_pixels_unchanged": true,
+        "geometry_changed_excluded_pixels": 239,
+        "semantic_changed_pixels": 4834,
+        "finite_in_gamut": true
+      },
+      "native": {
+        "cancelled_request_rejected": true,
+        "cloud_requests": 0,
+        "desktop_integration": false,
+        "faces": [
+          {
+            "confidence": 0.938451886177063,
+            "landmarks": [
+              {
+                "x": 0.4318506717681885,
+                "y": 0.20569975674152374
+              },
+              {
+                "x": 0.48636704683303833,
+                "y": 0.20480644702911377
+              },
+              {
+                "x": 0.4585656225681305,
+                "y": 0.24915239214897156
+              },
+              {
+                "x": 0.43652334809303284,
+                "y": 0.2855282127857208
+              },
+              {
+                "x": 0.4827895164489746,
+                "y": 0.2779751718044281
+              }
+            ],
+            "rect": [
+              0.40596747398376465,
+              0.12617795169353485,
+              0.10947275161743164,
+              0.21593953669071198
+            ]
+          }
+        ],
+        "filter_seconds": 0.0109329,
+        "first": {
+          "accepted_pixels": 998,
+          "inference_seconds": 0.0569646,
+          "local_only": true,
+          "postprocess_seconds": 0.0085945,
+          "prepare_seconds": 0.0015943,
+          "source_height": 512,
+          "source_width": 800
+        },
+        "model_load_seconds": 0.1422191,
+        "repeat": {
+          "accepted_pixels": 998,
+          "inference_seconds": 0.0463133,
+          "local_only": true,
+          "postprocess_seconds": 0.008436,
+          "prepare_seconds": 0.0014923,
+          "source_height": 512,
+          "source_width": 800
+        },
+        "user_photos_tested": false,
+        "wall_seconds": 0.38871520000247983,
+        "peak_working_set_mib": 103.801,
+        "stderr_bytes": 0
+      }
+    },
+    {
+      "name": "tall",
+      "metrics": {
+        "native_vs_onnx": {
+          "max_error": 1.7881393432617188e-07,
+          "mean_error": 6.215472581061476e-10
+        },
+        "conversion_vs_tflite": {
+          "max_error": 2.0802021026611328e-05,
+          "mean_error": 7.562325521348612e-08
+        },
+        "native_vs_tflite": {
+          "max_error": 3.993511199951172e-06,
+          "mean_error": 1.7517550077172928e-08
+        },
+        "native_class_agreement": 1.0,
+        "conversion_class_agreement": 0.9999847412109375,
+        "gate_max_byte_error": 0,
+        "excluded_pixels_unchanged": true,
+        "geometry_changed_excluded_pixels": 362,
+        "semantic_changed_pixels": 5088,
+        "finite_in_gamut": true
+      },
+      "native": {
+        "cancelled_request_rejected": true,
+        "cloud_requests": 0,
+        "desktop_integration": false,
+        "faces": [
+          {
+            "confidence": 0.941927433013916,
+            "landmarks": [
+              {
+                "x": 0.39457806944847107,
+                "y": 0.3090288043022156
+              },
+              {
+                "x": 0.47767144441604614,
+                "y": 0.3084348142147064
+              },
+              {
+                "x": 0.43649348616600037,
+                "y": 0.33689430356025696
+              },
+              {
+                "x": 0.40434664487838745,
+                "y": 0.36036232113838196
+              },
+              {
+                "x": 0.4767667353153229,
+                "y": 0.3587915003299713
+              }
+            ],
+            "rect": [
+              0.35166749358177185,
+              0.26004236936569214,
+              0.17684707045555115,
+              0.1406705379486084
+            ]
+          }
+        ],
+        "filter_seconds": 0.0107179,
+        "first": {
+          "accepted_pixels": 1017,
+          "inference_seconds": 0.0586136,
+          "local_only": true,
+          "postprocess_seconds": 0.0085683,
+          "prepare_seconds": 0.0015736,
+          "source_height": 800,
+          "source_width": 512
+        },
+        "model_load_seconds": 0.1445698,
+        "repeat": {
+          "accepted_pixels": 1017,
+          "inference_seconds": 0.0459091,
+          "local_only": true,
+          "postprocess_seconds": 0.0089704,
+          "prepare_seconds": 0.0014872,
+          "source_height": 800,
+          "source_width": 512
+        },
+        "user_photos_tested": false,
+        "wall_seconds": 0.38958239999919897,
+        "peak_working_set_mib": 103.75,
+        "stderr_bytes": 0
+      }
+    },
+    {
+      "name": "mirror",
+      "metrics": {
+        "native_vs_onnx": {
+          "max_error": 2.384185791015625e-07,
+          "mean_error": 6.461391421908047e-10
+        },
+        "conversion_vs_tflite": {
+          "max_error": 1.3113021850585938e-05,
+          "mean_error": 6.513463546298226e-08
+        },
+        "native_vs_tflite": {
+          "max_error": 3.039836883544922e-06,
+          "mean_error": 1.7071187130568433e-08
+        },
+        "native_class_agreement": 1.0,
+        "conversion_class_agreement": 1.0,
+        "gate_max_byte_error": 0,
+        "excluded_pixels_unchanged": true,
+        "geometry_changed_excluded_pixels": 342,
+        "semantic_changed_pixels": 5060,
+        "finite_in_gamut": true
+      },
+      "native": {
+        "cancelled_request_rejected": true,
+        "cloud_requests": 0,
+        "desktop_integration": false,
+        "faces": [
+          {
+            "confidence": 0.9469565749168396,
+            "landmarks": [
+              {
+                "x": 0.5153429508209229,
+                "y": 0.20740492641925812
+              },
+              {
+                "x": 0.6019509434700012,
+                "y": 0.2037438154220581
+              },
+              {
+                "x": 0.5598044991493225,
+                "y": 0.24946966767311096
+              },
+              {
+                "x": 0.5219423174858093,
+                "y": 0.2868073582649231
+              },
+              {
+                "x": 0.6019532680511475,
+                "y": 0.2843379080295563
+              }
+            ],
+            "rect": [
+              0.4710167348384857,
+              0.12334974855184555,
+              0.17806270718574524,
+              0.22187748551368713
+            ]
+          }
+        ],
+        "filter_seconds": 0.0223483,
+        "first": {
+          "accepted_pixels": 1652,
+          "inference_seconds": 0.0616554,
+          "local_only": true,
+          "postprocess_seconds": 0.0093726,
+          "prepare_seconds": 0.0014211,
+          "source_height": 512,
+          "source_width": 512
+        },
+        "model_load_seconds": 0.1500612,
+        "repeat": {
+          "accepted_pixels": 1652,
+          "inference_seconds": 0.0492507,
+          "local_only": true,
+          "postprocess_seconds": 0.0093291,
+          "prepare_seconds": 0.0013109,
+          "source_height": 512,
+          "source_width": 512
+        },
+        "user_photos_tested": false,
+        "wall_seconds": 0.430557100000442,
+        "peak_working_set_mib": 100.508,
+        "stderr_bytes": 0
+      }
+    },
+    {
+      "name": "rotate90",
+      "metrics": {
+        "native_vs_onnx": {
+          "max_error": 1.1920928955078125e-07,
+          "mean_error": 7.563585313619114e-10
+        },
+        "conversion_vs_tflite": {
+          "max_error": 9.59634780883789e-06,
+          "mean_error": 8.208382951124804e-08
+        },
+        "native_vs_tflite": {
+          "max_error": 8.970499038696289e-06,
+          "mean_error": 6.243084271773114e-08
+        },
+        "native_class_agreement": 1.0,
+        "conversion_class_agreement": 1.0,
+        "gate_max_byte_error": 0
+      },
+      "native": {
+        "cancelled_request_rejected": true,
+        "cloud_requests": 0,
+        "desktop_integration": false,
+        "faces": [],
+        "filter_seconds": null,
+        "first": {
+          "accepted_pixels": 1628,
+          "inference_seconds": 0.0615579,
+          "local_only": true,
+          "postprocess_seconds": 0.0085819,
+          "prepare_seconds": 0.0018441,
+          "source_height": 512,
+          "source_width": 512
+        },
+        "model_load_seconds": 0.1533476,
+        "repeat": {
+          "accepted_pixels": 1628,
+          "inference_seconds": 0.0505493,
+          "local_only": true,
+          "postprocess_seconds": 0.0086626,
+          "prepare_seconds": 0.0013069,
+          "source_height": 512,
+          "source_width": 512
+        },
+        "user_photos_tested": false,
+        "wall_seconds": 0.39061539999966044,
+        "peak_working_set_mib": 100.684,
+        "stderr_bytes": 0
+      }
+    },
+    {
+      "name": "rotate180",
+      "metrics": {
+        "native_vs_onnx": {
+          "max_error": 1.4901161193847656e-08,
+          "mean_error": 5.996980689815246e-10
+        },
+        "conversion_vs_tflite": {
+          "max_error": 1.5795230865478516e-05,
+          "mean_error": 1.3336097026694915e-07
+        },
+        "native_vs_tflite": {
+          "max_error": 1.0654330253601074e-06,
+          "mean_error": 1.791208603663108e-08
+        },
+        "native_class_agreement": 1.0,
+        "conversion_class_agreement": 1.0,
+        "gate_max_byte_error": 0
+      },
+      "native": {
+        "cancelled_request_rejected": true,
+        "cloud_requests": 0,
+        "desktop_integration": false,
+        "faces": [],
+        "filter_seconds": null,
+        "first": {
+          "accepted_pixels": 0,
+          "inference_seconds": 0.0650341,
+          "local_only": true,
+          "postprocess_seconds": 0.0083996,
+          "prepare_seconds": 0.0013128,
+          "source_height": 512,
+          "source_width": 512
+        },
+        "model_load_seconds": 0.1496822,
+        "repeat": {
+          "accepted_pixels": 0,
+          "inference_seconds": 0.0489039,
+          "local_only": true,
+          "postprocess_seconds": 0.008439,
+          "prepare_seconds": 0.001307,
+          "source_height": 512,
+          "source_width": 512
+        },
+        "user_photos_tested": false,
+        "wall_seconds": 0.3895020999989356,
+        "peak_working_set_mib": 100.582,
+        "stderr_bytes": 0
+      }
+    },
+    {
+      "name": "rotate270",
+      "metrics": {
+        "native_vs_onnx": {
+          "max_error": 1.1920928955078125e-07,
+          "mean_error": 6.851479383840342e-10
+        },
+        "conversion_vs_tflite": {
+          "max_error": 1.5288591384887695e-05,
+          "mean_error": 1.0703111996690495e-07
+        },
+        "native_vs_tflite": {
+          "max_error": 1.0013580322265625e-05,
+          "mean_error": 5.202365116474539e-08
+        },
+        "native_class_agreement": 1.0,
+        "conversion_class_agreement": 1.0,
+        "gate_max_byte_error": 0
+      },
+      "native": {
+        "cancelled_request_rejected": true,
+        "cloud_requests": 0,
+        "desktop_integration": false,
+        "faces": [],
+        "filter_seconds": null,
+        "first": {
+          "accepted_pixels": 1631,
+          "inference_seconds": 0.0644662,
+          "local_only": true,
+          "postprocess_seconds": 0.0084937,
+          "prepare_seconds": 0.001133,
+          "source_height": 512,
+          "source_width": 512
+        },
+        "model_load_seconds": 0.1537084,
+        "repeat": {
+          "accepted_pixels": 1631,
+          "inference_seconds": 0.0497853,
+          "local_only": true,
+          "postprocess_seconds": 0.0086824,
+          "prepare_seconds": 0.0013484,
+          "source_height": 512,
+          "source_width": 512
+        },
+        "user_photos_tested": false,
+        "wall_seconds": 0.3895873000001302,
+        "peak_working_set_mib": 100.727,
+        "stderr_bytes": 0
+      }
+    },
+    {
+      "name": "face-crop",
+      "metrics": {
+        "native_vs_onnx": {
+          "max_error": 1.7881393432617188e-07,
+          "mean_error": 1.1214211781407357e-09
+        },
+        "conversion_vs_tflite": {
+          "max_error": 4.351139068603516e-06,
+          "mean_error": 3.616015931129368e-08
+        },
+        "native_vs_tflite": {
+          "max_error": 4.351139068603516e-06,
+          "mean_error": 4.46328414227537e-08
+        },
+        "native_class_agreement": 1.0,
+        "conversion_class_agreement": 1.0,
+        "gate_max_byte_error": 0,
+        "excluded_pixels_unchanged": true,
+        "geometry_changed_excluded_pixels": 354,
+        "semantic_changed_pixels": 5096,
+        "finite_in_gamut": true
+      },
+      "native": {
+        "cancelled_request_rejected": true,
+        "cloud_requests": 0,
+        "desktop_integration": false,
+        "faces": [
+          {
+            "confidence": 0.9362843632698059,
+            "landmarks": [
+              {
+                "x": 0.35613468289375305,
+                "y": 0.3926258683204651
+              },
+              {
+                "x": 0.631904661655426,
+                "y": 0.41097912192344666
+              },
+              {
+                "x": 0.48559170961380005,
+                "y": 0.5377164483070374
+              },
+              {
+                "x": 0.3377125561237335,
+                "y": 0.610183835029602
+              },
+              {
+                "x": 0.6013233065605164,
+                "y": 0.6270725131034851
+              }
+            ],
+            "rect": [
+              0.18883919715881348,
+              0.17122086882591248,
+              0.5988115668296814,
+              0.6308380365371704
+            ]
+          }
+        ],
+        "filter_seconds": 0.0058052,
+        "first": {
+          "accepted_pixels": 17633,
+          "inference_seconds": 0.061763,
+          "local_only": true,
+          "postprocess_seconds": 0.0092719,
+          "prepare_seconds": 0.0013279,
+          "source_height": 180,
+          "source_width": 150
+        },
+        "model_load_seconds": 0.1479135,
+        "repeat": {
+          "accepted_pixels": 17633,
+          "inference_seconds": 0.0481137,
+          "local_only": true,
+          "postprocess_seconds": 0.0094715,
+          "prepare_seconds": 0.0008993,
+          "source_height": 180,
+          "source_width": 150
+        },
+        "user_photos_tested": false,
+        "wall_seconds": 0.3572608000031323,
+        "peak_working_set_mib": 95.574,
+        "stderr_bytes": 0
+      }
+    },
+    {
+      "name": "blank",
+      "metrics": {
+        "native_vs_onnx": {
+          "max_error": 5.587935447692871e-09,
+          "mean_error": 5.104823230794864e-10
+        },
+        "conversion_vs_tflite": {
+          "max_error": 1.341104507446289e-05,
+          "mean_error": 7.59568692387802e-08
+        },
+        "native_vs_tflite": {
+          "max_error": 4.917383193969727e-07,
+          "mean_error": 1.170752739199088e-08
+        },
+        "native_class_agreement": 1.0,
+        "conversion_class_agreement": 1.0,
+        "gate_max_byte_error": 0
+      },
+      "native": {
+        "cancelled_request_rejected": true,
+        "cloud_requests": 0,
+        "desktop_integration": false,
+        "faces": [],
+        "filter_seconds": null,
+        "first": {
+          "accepted_pixels": 0,
+          "inference_seconds": 0.0604906,
+          "local_only": true,
+          "postprocess_seconds": 0.0098426,
+          "prepare_seconds": 0.0012601,
+          "source_height": 512,
+          "source_width": 512
+        },
+        "model_load_seconds": 0.1482794,
+        "repeat": {
+          "accepted_pixels": 0,
+          "inference_seconds": 0.0473946,
+          "local_only": true,
+          "postprocess_seconds": 0.0096202,
+          "prepare_seconds": 0.0012967,
+          "source_height": 512,
+          "source_width": 512
+        },
+        "user_photos_tested": false,
+        "wall_seconds": 0.3589808000033372,
+        "peak_working_set_mib": 100.094,
+        "stderr_bytes": 0
+      }
+    }
+  ],
+  "raw_comparison": {
+    "before_outputs": {
+      "single-0.tif": "ce4216394603464ac14395df75a2c8c9ee6a3ef9ab59a657c3e1d8a0a7eeae8f",
+      "single-1.tif": "8c10f8735d6cef2070e4fc5c6957d14bfd8dcb973196f83f94cea903fa0aafc5",
+      "single-repeat.tif": "ce4216394603464ac14395df75a2c8c9ee6a3ef9ab59a657c3e1d8a0a7eeae8f",
+      "batch\\Z30-12bit-z30-001.tif": "ce4216394603464ac14395df75a2c8c9ee6a3ef9ab59a657c3e1d8a0a7eeae8f",
+      "batch\\Z30-14bit-z30-002.tif": "8c10f8735d6cef2070e4fc5c6957d14bfd8dcb973196f83f94cea903fa0aafc5"
+    },
+    "after_outputs": {
+      "single-0.tif": "ce4216394603464ac14395df75a2c8c9ee6a3ef9ab59a657c3e1d8a0a7eeae8f",
+      "single-1.tif": "8c10f8735d6cef2070e4fc5c6957d14bfd8dcb973196f83f94cea903fa0aafc5",
+      "single-repeat.tif": "ce4216394603464ac14395df75a2c8c9ee6a3ef9ab59a657c3e1d8a0a7eeae8f",
+      "batch\\Z30-12bit-z30-001.tif": "ce4216394603464ac14395df75a2c8c9ee6a3ef9ab59a657c3e1d8a0a7eeae8f",
+      "batch\\Z30-14bit-z30-002.tif": "8c10f8735d6cef2070e4fc5c6957d14bfd8dcb973196f83f94cea903fa0aafc5"
+    },
+    "all_tiff_bytes_identical": true,
+    "before_timings": {
+      "single_0_seconds": 2.369,
+      "single_repeat_seconds": 1.015,
+      "single_1_seconds": 2.355,
+      "batch_seconds": 4.31
+    },
+    "after_timings": {
+      "single_0_seconds": 2.224,
+      "single_repeat_seconds": 0.989,
+      "single_1_seconds": 2.225,
+      "batch_seconds": 4.269
+    },
+    "before_memory": {
+      "peak_working_set": 553.129,
+      "working_set": 80.227,
+      "private_bytes": 61.086
+    },
+    "after_memory": {
+      "peak_working_set": 553.277,
+      "working_set": 79.848,
+      "private_bytes": 60.672
+    },
+    "before_single_memory": {
+      "peak_working_set": 671.926,
+      "working_set": 317.098,
+      "private_bytes": 298.109
+    },
+    "after_single_memory": {
+      "peak_working_set": 671.738,
+      "working_set": 316.91,
+      "private_bytes": 298.141
+    },
+    "interpretation": "Single previous/current observations, not a controlled speedup claim"
+  },
+  "tampered_model_rejected": true,
+  "original_image_unchanged": true,
+  "user_photos_validated": false,
+  "clean_windows_validated": false,
+  "gpu_validated": false,
+  "cloud_requests": 0,
+  "clean_package_and_ci": "See the post-commit local checkpoint; this report is pre-commit evidence",
+  "residual": [
+    "No desktop/session/batch persistence wiring for semantic masks",
+    "180-degree physically inverted public photo produced an empty skin gate",
+    "Source identity is path+size+mtime+dimensions, not full source-content hashing",
+    "Optional ONNX runtime still requires system Microsoft VC++ x64",
+    "Converted graph uses deprecated tf_half_pixel_for_nn Resize attributes; pinned runtime accepted, original-model equivalence tested"
+  ]
+}

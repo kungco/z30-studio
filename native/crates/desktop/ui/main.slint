@@ -1,0 +1,709 @@
+import { Button, Slider, ScrollView, ListView, AboutSlint, ComboBox, LineEdit, CheckBox } from "std-widgets.slint";
+
+export struct PhotoView {
+    name: string,
+    detail: string,
+    stars: string,
+    thumbnail: image,
+}
+export struct FacePoint { x: float, y: float }
+export struct BlemishItem { label: string, chosen: bool }
+export struct BlemishMark { u: float, v: float, rx: float, ry: float, chosen: bool }
+export struct RepairMark { u: float, v: float, rx: float, ry: float }
+
+component ToolButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    in property <bool> active: true;
+    callback triggered();
+    height: 34px;
+    min-width: 72px;
+    horizontal-stretch: 0;
+    border-radius: 6px;
+    background: !root.active ? #20242a : root.primary ? #e6bd65 : pointer.has-hover ? #343b45 : #272d35;
+    border-color: root.primary ? #e6bd65 : #414851;
+    border-width: 1px;
+    opacity: root.active ? 1 : 0.45;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { if root.active { root.triggered(); } }
+    Text { text: root.label; color: !root.active ? #a4adb9 : root.primary ? #191d22 : #d8dce3; font-size: 13px; horizontal-alignment: center; vertical-alignment: center; }
+    pointer := TouchArea { enabled: root.active; mouse-cursor: MouseCursor.pointer; clicked => { root.triggered(); } }
+}
+
+component Adjustment inherits VerticalLayout {
+    in property <string> label;
+    in property <bool> active;
+    in property <float> minimum: -100;
+    in property <float> maximum: 100;
+    in-out property <float> value;
+    callback adjusted(float);
+    spacing: 5px;
+    HorizontalLayout {
+        Text { text: root.label; color: #cbd1d9; font-size: 12px; }
+        Text { text: "" + round(root.value * 100) / 100; color: #d9bd81; font-size: 12px; horizontal-alignment: right; }
+    }
+    Slider { minimum: root.minimum; maximum: root.maximum; value <=> root.value; enabled: root.active; changed(v) => { root.adjusted(v); } }
+}
+
+export component AppWindow inherits Window {
+    title: "Z30 Studio · 原生开发预览";
+    preferred-width: 1320px; preferred-height: 860px;
+    min-width: 1000px; min-height: 680px;
+    background: #161a20;
+    default-font-family: "Microsoft YaHei UI";
+    default-font-size: 13px;
+    in property <[PhotoView]> photos;
+    in property <int> selected-index: -1;
+    in property <image> preview;
+    in property <image> original-preview;
+    in property <string> preview-fingerprint;
+    in property <string> neutral-fingerprint;
+    in property <float> preview-aspect: 1;
+    in property <bool> face-assets-ready: false;
+    in property <bool> skin-assets-ready: false;
+    in property <bool> has-skin-mask: false;
+    in property <bool> blemish-ready: false;
+    in property <bool> contour-ready: false;
+    in property <bool> contour-assets-ready: false;
+    in property <bool> contour-busy: false;
+    in property <int> contour-count: 0;
+    in property <[FacePoint]> contour-points;
+    in-out property <float> contour-strength: 60;
+    in property <string> contour-status: "定位完整面部后，可分析轮廓并生成轻微修形建议。";
+    in property <bool> blemish-busy: false;
+    in property <int> blemish-count: 0;
+    in property <int> blemish-selected: 0;
+    in property <[BlemishItem]> blemish-items;
+    in property <[BlemishMark]> blemish-marks;
+    in-out property <float> blemish-strength: 60;
+    in property <string> blemish-status: "先定位面部并识别皮肤，再查找小暗点候选。";
+    in property <image> skin-preview;
+    in property <string> skin-mode: "当前使用面部几何区域";
+    in-out property <bool> show-skin-mask: false;
+    in property <bool> has-warp: false;
+    in property <bool> has-warp-record: false;
+    in-out property <float> warp-amount: 100;
+    in-out property <bool> warp-mode: false;
+    in property <bool> warp-ready: false;
+    in property <bool> warp-dragging: false;
+    in property <int> warp-count: 0;
+    in-out property <float> warp-radius: 12;
+    in property <float> warp-origin-x;
+    in property <float> warp-origin-y;
+    in property <string> warp-status: "拖动可做局部微调；请检查背景和细节。";
+    in property <bool> face-busy: false;
+    in property <bool> has-face: false;
+    in property <bool> portrait-ready: false;
+    in property <bool> multiple-faces: false;
+    in property <string> face-status: "";
+    in property <string> face-selection: "尚未定位面部";
+    in property <float> face-x;
+    in property <float> face-y;
+    in property <float> face-w;
+    in property <float> face-h;
+    in property <[FacePoint]> face-points;
+    in-out property <bool> show-face-box: false;
+    in-out property <float> skin-smooth: 0;
+    in-out property <float> skin-uniformity: 0;
+    in-out property <float> skin-lighten: 0;
+    in property <bool> can-undo: false;
+    in property <bool> can-redo: false;
+    in property <bool> export-busy: false;
+    in property <bool> export-cancellable: false;
+    in property <string> export-status: "";
+    in property <string> batch-status: "";
+    in property <string> batch-report: "";
+    in property <bool> batch-running: false;
+    in property <bool> batch-paused: true;
+    in property <bool> batch-has-queued: false;
+    in property <bool> batch-has-retry: false;
+    in property <bool> batch-has-records: false;
+    in property <bool> batch-protected: false;
+    in-out property <bool> batch-settings-visible: false;
+    in-out property <bool> batch-report-visible: false;
+    in-out property <int> batch-mode: 0;
+    in-out property <int> export-format: 0;
+    in property <bool> has-preview: false;
+    in property <bool> busy: false;
+    in property <bool> can-import: true;
+    in property <bool> engine-ready: false;
+    in property <bool> ai-ready: false;
+    in property <bool> ai-busy: false;
+    in property <string> ai-status: "";
+    in property <string> ai-report: "";
+    in-out property <bool> ai-report-visible: false;
+    in property <bool> ai-suggestion-ready: false;
+    in-out property <bool> ai-settings-visible: false;
+    in-out property <int> ai-style: 0;
+    in-out property <int> ai-provider: 0;
+    in-out property <string> ai-api-base: "";
+    in-out property <string> ai-model: "";
+    in-out property <string> ai-api-key: "";
+    in-out property <int> ai-mode: 0;
+    in-out property <float> ai-strength: 100;
+    in-out property <string> ai-goal: "";
+    in property <string> photo-name: "欢迎来到你的暗房";
+    in property <string> photo-info: "从本机导入照片开始";
+    in property <string> colour-info: "";
+    in property <string> status: "就绪 · 本机原生窗口";
+    in property <string> draft-status: "原片仅引用，不会被覆盖";
+    in-out property <bool> compare: false;
+    in-out property <bool> about-visible: false;
+    in-out property <bool> exit-warning: false;
+    in-out property <float> zoom: 1;
+    in-out property <float> pan-x: 0;
+    in-out property <float> pan-y: 0;
+    in property <int> displayed-width;
+    in property <int> displayed-height;
+    out property <float> canvas-width: picture.width / 1px;
+    out property <float> canvas-height: picture.height / 1px;
+    out property <float> image-left: picture.image-left / 1px;
+    out property <float> image-top: picture.image-top / 1px;
+    out property <float> image-width: picture.fit-width / 1px;
+    out property <float> image-height: picture.fit-height / 1px;
+    in-out property <bool> repair-controls-visible: false;
+    in-out property <int> repair-mode: 0;
+    in property <bool> repair-ready: false;
+    in property <bool> repair-busy: false;
+    in property <bool> repair-settings-enabled: false;
+    in property <bool> repair-can-clear: false;
+    in property <int> repair-selected: -1;
+    in-out property <int> repair-choice: 0;
+    in property <int> repair-count: 0;
+    in property <[string]> repair-labels;
+    in property <[RepairMark]> repair-marks;
+    in property <bool> repair-picking: false;
+    in property <bool> repair-has-source: false;
+    in property <float> repair-source-u;
+    in property <float> repair-source-v;
+    in property <float> repair-source-rx;
+    in property <float> repair-source-ry;
+    in-out property <bool> show-repair-marks: true;
+    in-out property <float> repair-radius: 1.5;
+    in-out property <float> repair-opacity: 100;
+    in-out property <float> repair-feather: 50;
+    in property <string> repair-status: "选择修复或克隆，再点击照片。";
+    in-out property <float> exposure: 0;
+    in-out property <float> contrast: 0;
+    in-out property <float> highlights: 0;
+    in-out property <float> shadows: 0;
+    in-out property <float> temperature: 0;
+    in-out property <float> tint: 0;
+    in-out property <float> saturation: 0;
+    in-out property <float> vibrance: 0;
+    in-out property <float> sharpen: 0;
+    callback import-files();
+    callback select-photo(int);
+    callback rate-photo(int);
+    callback cancel-preview();
+    callback adjust(string, float);
+    callback reset-edits();
+    callback undo-edit();
+    callback redo-edit();
+    callback retry-preview();
+    callback cancel-export();
+    callback export-photo();
+    callback batch-export();
+    callback batch-pause-resume();
+    callback batch-cancel();
+    callback batch-retry();
+    callback batch-clear();
+    callback choose-face-assets();
+    callback choose-skin-assets();
+    callback segment-skin();
+    callback detect-face();
+    callback cancel-face();
+    callback next-face();
+    callback clear-portrait();
+    callback auto-grade();
+    callback cancel-ai();
+    callback apply-ai-suggestion();
+    callback dismiss-ai-suggestion();
+    callback confirm-exit();
+    callback find-blemishes();
+    callback choose-contour-assets();
+    callback find-contour();
+    callback cancel-contour();
+    callback apply-contour();
+    callback cancel-blemishes();
+    callback select-blemish(int, bool);
+    callback apply-blemishes();
+    callback warp-tool(bool);
+    callback warp-pointer(int, float, float);
+    callback repair-tool(int);
+    callback repair-canvas-click(float, float);
+    callback select-repair(int);
+    callback adjust-repair(string, float);
+    callback pick-repair-source();
+    callback suggest-repair-source();
+    callback remove-repair();
+    callback clear-repairs();
+    callback cancel-repair();
+
+    VerticalLayout {
+        spacing: 1px; padding: 0px;
+        Rectangle {
+            height: 70px; background: #20252d;
+            HorizontalLayout {
+                padding-left: 22px; padding-right: 22px; padding-top: 16px; padding-bottom: 16px; spacing: 12px;
+                VerticalLayout {
+                    alignment: center; spacing: 2px;
+                    Text { text: "Z30  STUDIO"; color: #f0d39b; font-size: 23px; font-weight: 700; }
+                    Text { text: "你的摄影暗房"; color: #969faa; font-size: 10px; }
+                }
+                Rectangle { horizontal-stretch: 1; background: transparent; }
+                ToolButton { label: "＋ 导入照片"; min-width: 108px; active: root.can-import; triggered => { root.import-files(); } }
+                ToolButton { label: "一键 AI 调色"; min-width: 105px; active: root.ai-ready && root.has-preview && !root.busy && !root.ai-busy && !root.batch-running && !root.repair-busy; triggered => { root.auto-grade(); } }
+                ToolButton { label: "AI 设置"; min-width: 68px; triggered => { root.ai-settings-visible = true; } }
+                ComboBox { width: 145px; height: 34px; model: ["JPEG · 95", "PNG · 8 位", "TIFF · 16 位"]; current-index <=> root.export-format; enabled: !root.export-busy; }
+                ToolButton { label: "导出照片"; primary: true; active: root.engine-ready && root.has-preview && !root.busy && !root.export-busy && !root.batch-running && !root.face-busy && !root.repair-busy; triggered => { root.export-photo(); } }
+                ToolButton { label: "批量导出"; min-width: 84px; active: root.photos.length > 0 && !root.batch-protected && !root.batch-running && !root.export-busy && !root.ai-busy && !root.face-busy && !root.repair-busy; triggered => { root.batch-settings-visible = true; } }
+                ToolButton { label: "关于"; min-width: 54px; triggered => { root.about-visible = true; } }
+            }
+        }
+        HorizontalLayout {
+            spacing: 1px;
+            Rectangle {
+                width: 228px; background: #1d2229;
+                VerticalLayout {
+                    padding: 16px; spacing: 14px;
+                    HorizontalLayout {
+                        Text { text: "照片库"; color: #e6e9ee; font-size: 15px; font-weight: 600; }
+                        Text { text: "" + root.photos.length; color: #d7b773; horizontal-alignment: right; }
+                    }
+                    Text { text: "NEF  /  JPEG  /  PNG"; color: #7f8996; font-size: 10px; }
+                    ListView {
+                        for photo[index] in root.photos: Rectangle {
+                            height: 92px;
+                            background: root.selected-index == index ? #303137 : #242a32;
+                            border-radius: 5px;
+                            border-width: root.selected-index == index ? 1px : 0px;
+                            border-color: #c6a35d;
+                            HorizontalLayout {
+                                padding: 8px; spacing: 8px;
+                                Rectangle {
+                                    width: 54px; background: #161a20; border-radius: 3px;
+                                    Image { width: parent.width; height: parent.height; source: photo.thumbnail; image-fit: contain; }
+                                }
+                                VerticalLayout {
+                                    alignment: center; spacing: 5px;
+                                    Text { text: photo.name; color: #d8dde4; font-size: 11px; overflow: elide; }
+                                    Text { text: photo.detail; color: #7f8996; font-size: 9px; overflow: elide; }
+                                    Text { text: photo.stars; color: #d7b773; font-size: 11px; }
+                                }
+                            }
+                            TouchArea { clicked => { root.select-photo(index); } }
+                            accessible-role: list-item;
+                            accessible-label: photo.name;
+                        }
+                    }
+                    Text { text: root.draft-status; color: #929da9; font-size: 10px; wrap: word-wrap; }
+                    Text { text: "本机浮点显影 · 原片只读\n逐张保存参数 · 全尺寸 sRGB 导出"; color: #7b8796; font-size: 10px; wrap: word-wrap; }
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1; background: #12161b;
+                VerticalLayout {
+                    padding: 16px; spacing: 12px;
+                    HorizontalLayout {
+                        Text { text: root.photo-name; color: #d8dee7; font-size: 12px; overflow: elide; }
+                        ToolButton { label: root.compare ? "显示调整后" : "查看调整前"; active: root.has-preview; triggered => { root.compare = !root.compare; } }
+                        ToolButton { label: root.zoom == 1 ? "放大" : "适合窗口"; active: root.has-preview; triggered => { root.zoom = root.zoom == 1 ? 1.5 : 1; root.pan-x=0;root.pan-y=0; } }
+                    }
+                    picture := Rectangle {
+                        vertical-stretch: 1; background: #101318; clip: true;
+                        property <length> fit-width: min(self.width, self.height * root.preview-aspect) * root.zoom;
+                        property <length> fit-height: self.fit-width / max(0.01, root.preview-aspect);
+                        property <length> limit-x: max(0px,(self.fit-width - self.width)/2);
+                        property <length> limit-y: max(0px,(self.fit-height - self.height)/2);
+                        property <length> applied-pan-x: max( - self.limit-x,min(self.limit-x,root.pan-x*1px));
+                        property <length> applied-pan-y: max( - self.limit-y,min(self.limit-y,root.pan-y*1px));
+                        property <length> image-left: (self.width - self.fit-width)/2+self.applied-pan-x;
+                        property <length> image-top: (self.height - self.fit-height)/2+self.applied-pan-y;
+                        if root.has-preview: Image {
+                            source: root.compare ? root.original-preview : root.preview; image-fit: contain;
+                            width: picture.fit-width; height: picture.fit-height;
+                            x: picture.image-left; y: picture.image-top;
+                        }
+                        if root.show-skin-mask && !root.has-warp && root.has-skin-mask && root.has-preview && !root.busy && !root.compare: Image {
+                            source: root.skin-preview; image-fit: fill;
+                            width: picture.fit-width; height: picture.fit-height;
+                            x: picture.image-left; y: picture.image-top;
+                        }
+                        if root.show-face-box && !root.has-warp && root.has-face && root.has-preview: Rectangle {
+                            x: picture.image-left + root.face-x*picture.fit-width;
+                            y: picture.image-top + root.face-y*picture.fit-height;
+                            width: root.face-w*picture.fit-width; height: root.face-h*picture.fit-height;
+                            background: transparent; border-width: 1px; border-color: #f2cc74;
+                        }
+                        for point in root.face-points: Rectangle {
+                            visible: root.show-face-box && !root.has-warp && root.has-face && root.has-preview;
+                            x: picture.image-left + point.x*picture.fit-width - 2px;
+                            y: picture.image-top + point.y*picture.fit-height - 2px;
+                            width: 4px; height: 4px; border-radius: 2px; background: #7be2c6;
+                        }
+                        for point in root.contour-points: Rectangle {
+                            visible: root.contour-count>0 && !root.has-warp && root.has-preview && !root.busy && !root.compare;
+                            x: picture.image-left + point.x*picture.fit-width - 2px;
+                            y: picture.image-top + point.y*picture.fit-height - 2px;
+                            width:4px;height:4px;border-radius:2px;background:#65dec8;
+                        }
+                        for mark[index] in root.repair-marks: Rectangle {
+                            visible: root.show-repair-marks && root.repair-mode>0 && root.repair-ready && !root.compare;
+                            x: picture.image-left+mark.u*picture.fit-width;
+                            y: picture.image-top+mark.v*picture.fit-height;
+                            width: 0px; height: 0px;
+                            if index==root.repair-selected: Rectangle {
+                                x: -mark.rx*picture.fit-width; y: -mark.ry*picture.fit-height;
+                                width: 2*mark.rx*picture.fit-width; height: 2*mark.ry*picture.fit-height;
+                                border-radius: self.width/2; border-width: 1.5px; border-color: #f3cd78; background: #e8bd5910;
+                            }
+                            Rectangle { x:-8px;y:-8px;width:16px;height:16px;border-radius:8px;border-width:1px;border-color:#f3cd78;background:index==root.repair-selected?#e6bd65:#20252ddd;
+                                Text {text:""+(index+1);color:index==root.repair-selected?#1b2028:#f3cd78;font-size:10px;horizontal-alignment:center;vertical-alignment:center;}
+                            }
+                        }
+                        if root.repair-mode>0 && root.repair-ready && root.repair-has-source && root.show-repair-marks && !root.compare: Rectangle {
+                            x:picture.image-left+root.repair-source-u*picture.fit-width;
+                            y:picture.image-top+root.repair-source-v*picture.fit-height;width:0px;height:0px;
+                            Rectangle {x: - root.repair-source-rx*picture.fit-width;y: - root.repair-source-ry*picture.fit-height;width:2*root.repair-source-rx*picture.fit-width;height:2*root.repair-source-ry*picture.fit-height;border-radius:self.width/2;border-width:1.5px;border-color:#72c8ff;background:transparent;}
+                            Rectangle {x:-5px;y:-5px;width:10px;height:10px;border-radius:5px;border-width:2px;border-color:#72c8ff;background:#142530;}
+                            Text {x:8px;y:6px;text:"取样";color:#92d5ff;font-size:11px;}
+                        }
+                        if !root.has-preview: VerticalLayout {
+                            alignment: center; padding: 50px; spacing: 14px;
+                            Text { text: "光影，从这里开始"; color: #e7cf9f; font-size: 25px; horizontal-alignment: center; }
+                            Text { text: "导入照片，在本机调整光线与色彩。\n导出为新文件，原片保持不变。"; color: #8e99a6; font-size: 13px; horizontal-alignment: center; wrap: word-wrap; }
+                            ToolButton { label: "选择照片"; primary: true; active: root.can-import; triggered => { root.import-files(); } }
+                        }
+                        if root.busy: Rectangle {
+                            x: 12px; y: 12px; width: 140px; height: 33px;
+                            border-radius: 5px; background: #292d34;
+                            Text { text: "正在更新预览…"; color: #e6c783; horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                        for mark[index] in root.blemish-marks: Rectangle {
+                            visible:root.has-preview && !root.busy && !root.compare && !root.has-warp;
+                            width:max(6px,2*mark.rx*picture.fit-width);height:max(6px,2*mark.ry*picture.fit-height);
+                            x:picture.image-left+mark.u*picture.fit-width - self.width/2;y:picture.image-top+mark.v*picture.fit-height - self.height/2;
+                            border-width:1px;border-color:mark.chosen?#e7b577:#677181;border-radius:self.width/2;background:transparent;
+                            Text {text:""+(index+1);color:mark.chosen?#ffdf9f:#99a3b2;font-size:9px;x:parent.width+2px;}
+                        }
+                        canvas-keys:=FocusScope {
+                            width:0px;height:0px;
+                            key-pressed(event)=>{
+                                if root.ai-settings-visible || root.ai-report-visible || root.about-visible || root.batch-settings-visible || root.batch-report-visible || root.exit-warning {return reject;}
+                                if event.text==Key.Escape {root.warp-tool(false);root.repair-tool(0);return accept;}
+                                if event.text==Key.Delete && root.repair-mode>0 {root.remove-repair();return accept;}
+                                if event.modifiers.control && (event.text=="z" || event.text=="Z") {if event.modifiers.shift {root.redo-edit();}else{root.undo-edit();}return accept;}
+                                return reject;
+                            }
+                        }
+                        if root.warp-dragging: Rectangle {
+                            width: 2 * root.warp-radius / 100 * min(picture.fit-width,picture.fit-height);
+                            height: self.width;
+                            x: root.warp-origin-x*1px-self.width/2;
+                            y: root.warp-origin-y*1px-self.height/2;
+                            border-radius: self.width/2;border-width:1px;border-color:#e7c889;background:#16e7c889;
+                        }
+                        canvas-pointer:=TouchArea {
+                            enabled:root.has-preview && !root.repair-busy && !root.ai-settings-visible && !root.ai-report-visible && !root.about-visible && !root.batch-settings-visible && !root.batch-report-visible && !root.exit-warning;
+                            property <bool> dragged:false;
+                            property <bool> shape-press:false;
+                            property <float> start-pan-x;
+                            property <float> start-pan-y;
+                            mouse-cursor: root.warp-mode ? MouseCursor.crosshair : self.pressed && self.dragged ? MouseCursor.grabbing : root.repair-mode>0 ? MouseCursor.crosshair : MouseCursor.grab;
+                            pointer-event(event)=>{
+                                if event.button!=PointerEventButton.left {return;}
+                                if event.kind==PointerEventKind.down {
+                                    self.dragged=false;self.shape-press=root.warp-mode;self.start-pan-x=picture.applied-pan-x/1px;self.start-pan-y=picture.applied-pan-y/1px;canvas-keys.focus();
+                                    if self.shape-press {root.warp-pointer(0,self.mouse-x/1px,self.mouse-y/1px);}
+                                }
+                                if event.kind==PointerEventKind.up {
+                                    if self.shape-press {root.warp-pointer(1,self.mouse-x/1px,self.mouse-y/1px);}
+                                    else if !self.dragged && root.repair-mode>0 && root.repair-ready {root.repair-canvas-click(self.mouse-x/1px,self.mouse-y/1px);}
+                                }
+                            }
+                            moved=>{
+                                if self.pressed && !self.shape-press {
+                                    if abs(self.mouse-x - self.pressed-x)>4px || abs(self.mouse-y - self.pressed-y)>4px {self.dragged=true;}
+                                    if self.dragged {
+                                        root.pan-x=max( - picture.limit-x/1px,min(picture.limit-x/1px,self.start-pan-x+(self.mouse-x - self.pressed-x)/1px));
+                                        root.pan-y=max( - picture.limit-y/1px,min(picture.limit-y/1px,self.start-pan-y+(self.mouse-y - self.pressed-y)/1px));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Text { text: root.photo-info; color: #a2adba; font-size: 11px; overflow: elide; }
+                    if root.has-warp: Text {text:"局部形变已应用；原位置标记暂不可用。";color:#dfc48a;font-size:11px;}
+                    Text { text: root.colour-info; color: #818b97; font-size: 10px; wrap: word-wrap; }
+                    HorizontalLayout {
+                        alignment: start; spacing: 8px;
+                        Text { text: "评分"; color: #929da9; vertical-alignment: center; }
+                        for rating in 6: ToolButton { label: rating == 0 ? "清除" : "" + rating + " ★"; min-width: 42px; active: root.selected-index >= 0; triggered => { root.rate-photo(rating); } }
+                        Rectangle { horizontal-stretch: 1; background: transparent; }
+                        ToolButton { label: root.busy ? "取消预览" : "重新预览"; active: root.selected-index >= 0; triggered => { if root.busy { root.cancel-preview(); } else { root.retry-preview(); } } }
+                    }
+                }
+            }
+            Rectangle {
+                width: 300px; background: #1d2229;
+                VerticalLayout {
+                    padding: 18px; spacing: 14px;
+                    HorizontalLayout {
+                        Text { text: "显影调整"; color: #e0e5ed; font-size: 15px; font-weight: 600; }
+                        ToolButton { label: "重置"; min-width: 50px; active: root.engine-ready; triggered => { root.reset-edits(); } }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        ToolButton { label: "撤销"; active: root.can-undo; triggered => { root.undo-edit(); } }
+                        ToolButton { label: "重做"; active: root.can-redo; triggered => { root.redo-edit(); } }
+                    }
+                    Text { text: root.engine-ready ? "浮点显影 · 参数自动保存\n同一滑块连续调整约半秒后记为一步撤销" : "选择照片并等待预览后即可调整"; color: #b19c76; font-size: 11px; wrap: word-wrap; }
+                    ToolButton {label:root.repair-controls-visible?"收起修复工具":"局部修复 · "+root.repair-count+" 点";active:root.selected-index>=0;triggered=>{if root.repair-controls-visible {root.repair-tool(0);root.repair-controls-visible=false;}else{root.repair-controls-visible=true;root.repair-tool(1);}}}
+                    ScrollView {
+                        VerticalLayout {
+                            spacing: 12px; padding-right: 6px;
+                            VerticalLayout {
+                                spacing:10px;
+                                Text {text:"局部形变 · "+root.warp-count+" / 4";color:#e7d0a4;font-size:13px;}
+                                ToolButton {label:root.warp-mode?"退出形变 · 浏览":"开始拖动形变";active:root.warp-mode || root.engine-ready;triggered=>{root.warp-tool(!root.warp-mode);}}
+                                if root.warp-mode || root.has-warp-record: VerticalLayout {
+                                    spacing:10px;
+                                    Adjustment {label:"作用半径 (%)";minimum:0.2;maximum:20;value<=>root.warp-radius;active:!root.warp-dragging;adjusted(v)=>{}}
+                                    if root.has-warp-record: Adjustment {label:"形变强度 (%)";minimum:0;maximum:100;value<=>root.warp-amount;active:root.engine-ready;adjusted(v)=>{root.adjust("warp_amount",v);}}
+                                    Text {text:root.warp-status;color:#b8ac91;font-size:11px;wrap:word-wrap;min-height:32px;vertical-stretch:0;}
+                                    Text {text:"松开后应用；单次位移最多为半径的10%，最多4次。作用圈须在照片内；Esc退出工具。";color:#8d98a6;font-size:10px;wrap:word-wrap;min-height:40px;vertical-stretch:0;}
+                                    if root.has-warp-record: ToolButton {label:"清除形变";active:!root.busy && !root.ai-busy && !root.face-busy;triggered=>{root.adjust("warp_clear",0);}}
+                                }
+                            }
+                            if root.repair-controls-visible: VerticalLayout {
+                                spacing:10px;
+                                Text {text:"局部修复";color:#e7d0a4;font-size:13px;}
+                                ComboBox {model:["浏览 / 平移","修复 · 邻近取样","克隆 · 手动取样"];current-index <=> root.repair-mode;enabled:!root.repair-busy;selected(v)=>{root.repair-tool(self.current-index);}}
+                                ComboBox {model:root.repair-labels;current-index <=> root.repair-choice;enabled:!root.repair-busy;selected(v)=>{root.select-repair(self.current-index - 1);}}
+                                HorizontalLayout {spacing:6px;
+                                    ToolButton {label:root.repair-busy?"取消取样":root.repair-picking?"正在选取样位置":"选择取样位置";active:root.repair-busy || root.repair-ready;triggered=>{if root.repair-busy {root.cancel-repair();}else{root.pick-repair-source();}}}
+                                    ToolButton {label:"邻近取样";active:root.repair-ready && !root.repair-busy;triggered=>{root.suggest-repair-source();}}
+                                }
+                                Adjustment {label:"半径 (%)";minimum:0.2;maximum:20;value<=>root.repair-radius;active:root.repair-settings-enabled;adjusted(v)=>{root.adjust-repair("radius",v);}}
+                                Adjustment {label:"羽化 (%)";minimum:1;maximum:100;value<=>root.repair-feather;active:root.repair-settings-enabled;adjusted(v)=>{root.adjust-repair("feather",v);}}
+                                Adjustment {label:"强度 (%)";minimum:0;maximum:100;value<=>root.repair-opacity;active:root.repair-settings-enabled;adjusted(v)=>{root.adjust-repair("opacity",v);}}
+                                HorizontalLayout {spacing:6px;
+                                    ToolButton {label:"移除当前点";active:root.repair-selected>=0 && root.repair-settings-enabled;triggered=>{root.remove-repair();}}
+                                    ToolButton {label:"清除全部";active:root.repair-can-clear;triggered=>{root.clear-repairs();}}
+                                }
+                                ToolButton {label:root.show-repair-marks?"隐藏修复标记":"显示修复标记";triggered=>{root.show-repair-marks=!root.show-repair-marks;}}
+                                Text {text:root.repair-status;color:#a9c4d4;font-size:11px;wrap:word-wrap;}
+                                Text {text:"金色为修复点，蓝色为取样。单击标记可选择，拖动照片可平移。取样读取原图，请检查纹理；可撤销。";color:#8e99a6;font-size:10px;wrap:word-wrap;}
+                            }
+                            Text { text: "光线"; color: #e7d0a4; font-size: 12px; }
+                            Adjustment { label: "曝光 EV"; minimum: -4; maximum: 4; value <=> root.exposure; active: root.engine-ready; adjusted(v) => { root.adjust("exposure", v); } }
+                            Adjustment { label: "对比度"; value <=> root.contrast; active: root.engine-ready; adjusted(v) => { root.adjust("contrast", v); } }
+                            Adjustment { label: "高光"; value <=> root.highlights; active: root.engine-ready; adjusted(v) => { root.adjust("highlights", v); } }
+                            Adjustment { label: "阴影"; value <=> root.shadows; active: root.engine-ready; adjusted(v) => { root.adjust("shadows", v); } }
+                            Text { text: "色彩"; color: #e7d0a4; font-size: 12px; }
+                            Adjustment { label: "色温"; value <=> root.temperature; active: root.engine-ready; adjusted(v) => { root.adjust("temperature", v); } }
+                            Adjustment { label: "色调"; value <=> root.tint; active: root.engine-ready; adjusted(v) => { root.adjust("tint", v); } }
+                            Adjustment { label: "饱和度"; value <=> root.saturation; active: root.engine-ready; adjusted(v) => { root.adjust("saturation", v); } }
+                            Adjustment { label: "自然饱和度"; value <=> root.vibrance; active: root.engine-ready; adjusted(v) => { root.adjust("vibrance", v); } }
+                            Text { text: "细节"; color: #e7d0a4; font-size: 12px; }
+                            Adjustment { label: "锐化"; minimum: 0; value <=> root.sharpen; active: root.engine-ready; adjusted(v) => { root.adjust("sharpen", v); } }
+                            Text { text: "本机人像"; color: #e7d0a4; font-size: 13px; }
+                            HorizontalLayout { spacing: 6px;
+                                ToolButton { label: "选择组件"; active: !root.face-busy; triggered => { root.choose-face-assets(); } }
+                                ToolButton { label: root.face-busy ? "取消分析" : "定位面部"; active: root.face-busy || (root.face-assets-ready && root.selected-index >= 0 && !root.busy && !root.ai-busy && !root.batch-running && !root.export-busy); triggered => { if root.face-busy { root.cancel-face(); } else { root.detect-face(); } } }
+                            }
+                            Text { text: root.face-selection; color: #d8c08c; font-size: 11px; }
+                            HorizontalLayout { spacing: 6px;
+                                ToolButton { label: "下一面部"; active: root.multiple-faces && !root.face-busy; triggered => { root.next-face(); } }
+                                ToolButton { label: "清除人像"; active: root.has-face && !root.face-busy; triggered => { root.clear-portrait(); } }
+                            }
+                            HorizontalLayout { spacing: 6px;
+                                ToolButton { label: "皮肤组件"; active: !root.face-busy; triggered => { root.choose-skin-assets(); } }
+                                ToolButton { label: "识别皮肤"; active: root.portrait-ready && root.skin-assets-ready && root.face-assets-ready && !root.face-busy && !root.busy && !root.ai-busy && !root.batch-running && !root.export-busy; triggered => { root.segment-skin(); } }
+                            }
+                            Text { text: root.skin-mode; color: #a8cbbd; font-size: 11px; }
+                            ToolButton {label:root.blemish-busy?"取消瑕疵分析":"查找皮肤瑕疵候选";active:root.blemish-busy || root.blemish-ready;triggered=>{if root.blemish-busy {root.cancel-blemishes();}else{root.find-blemishes();}}}
+                            Text {text:root.blemish-status;color:#b8ac91;font-size:11px;wrap:word-wrap;min-height:32px;vertical-stretch:0;}
+                            if root.blemish-count>0: VerticalLayout {
+                                spacing:8px;
+                                Text {text:"已选 "+root.blemish-selected+" / "+root.blemish-count+" 个候选";color:#dec58b;font-size:11px;}
+                                for item[index] in root.blemish-items: CheckBox {text:item.label;checked:item.chosen;enabled:root.blemish-ready && !root.blemish-busy;toggled=>{root.select-blemish(index,self.checked);}}
+                                Adjustment {label:"候选修复强度 (%)";minimum:0;maximum:100;value<=>root.blemish-strength;active:root.blemish-ready;adjusted(v)=>{}}
+                                Text {text:"小暗点可能包含痣、雀斑或纹理；请对照照片取消不需要的项。这里只提供候选，不判断皮肤问题。";color:#98a3b1;font-size:10px;wrap:word-wrap;min-height:42px;vertical-stretch:0;}
+                                ToolButton {label:"应用选中的修复";primary:true;active:root.blemish-ready && root.blemish-selected>0 && root.blemish-strength>0;triggered=>{root.apply-blemishes();}}
+                                ToolButton {label:"收起候选";active:!root.blemish-busy;triggered=>{root.cancel-blemishes();}}
+                            }
+                            ToolButton { label: root.show-skin-mask ? "隐藏皮肤区域" : "查看皮肤区域"; active: root.has-skin-mask && !root.has-warp; triggered => { root.show-skin-mask = !root.show-skin-mask; } }
+                            Adjustment { label: "面部柔化"; minimum: 0; value <=> root.skin-smooth; active: root.engine-ready && root.portrait-ready && !root.face-busy; adjusted(v) => { root.adjust("skin_smooth", v); } }
+                            Adjustment { label: "肤色均匀"; minimum: 0; value <=> root.skin-uniformity; active: root.engine-ready && root.has-skin-mask && !root.face-busy; adjusted(v) => { root.adjust("skin_uniformity", v); } }
+                            Adjustment { label: "肤色提亮"; minimum: 0; value <=> root.skin-lighten; active: root.engine-ready && root.has-skin-mask && !root.face-busy; adjusted(v) => { root.adjust("skin_lighten", v); } }
+                            ToolButton { label: root.show-face-box ? "隐藏定位框" : "显示定位框"; active: root.has-face && !root.has-warp; triggered => { root.show-face-box = !root.show-face-box; } }
+                            Text {text:"面部轮廓 · 轻微修形";color:#e5c98c;font-size:13px;}
+                            HorizontalLayout {
+                                ToolButton {label:"轮廓组件";active:!root.face-busy && !root.contour-busy;triggered=>{root.choose-contour-assets();}}
+                                ToolButton {label:root.contour-busy?"取消分析":"分析轮廓";active:root.contour-busy || root.contour-ready;triggered=>{if root.contour-busy {root.cancel-contour();}else{root.find-contour();}}}
+                            }
+                            Text {text:root.contour-status;color:#a8cfc7;font-size:11px;wrap:word-wrap;min-height:32px;vertical-stretch:0;}
+                            if root.contour-count>0: VerticalLayout {
+                                Adjustment {label:"修形强度 (%)";minimum:0;maximum:100;value<=>root.contour-strength;active:root.contour-ready;adjusted(v)=>{}}
+                                ToolButton {label:"应用轻微修形";primary:true;active:root.contour-ready && root.contour-strength>0;triggered=>{root.apply-contour();}}
+                                ToolButton {label:"收起轮廓建议";triggered=>{root.cancel-contour();}}
+                            }
+                            Text {text:"适用于正面、完整可见的面部。应用前检查轮廓，应用后检查五官和背景；支持一步撤销。";color:#8d99a7;font-size:10px;wrap:word-wrap;}
+                            Text { text: root.face-status; color: #aab6c4; font-size: 11px; wrap: word-wrap; }
+                            Text { text: "只处理当前面部的皮肤区域，保护眼口。均匀肤色与提亮可分别调整，深暗和高光受保护；请检查头发、眼镜和边缘。区域随草稿保存。新识别需要 VC++ x64 运行库。"; color: #8d99a7; font-size: 10px; wrap: word-wrap; }
+                        }
+                    }
+                }
+            }
+        }
+        if root.ai-status != "": HorizontalLayout {
+            height: 42px; padding-left: 18px; padding-right: 18px; spacing: 9px;
+            Text { text: root.ai-status; color: #e5c58e; font-size: 11px; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; }
+            ToolButton { label: "查看分析"; width: 76px; active: root.ai-report != "" && !root.ai-busy; triggered => { root.ai-report-visible = true; } }
+            ToolButton { label: "取消 AI"; width: 76px; active: root.ai-busy; triggered => { root.cancel-ai(); } }
+            ToolButton { label: "应用建议"; width: 88px; primary: true; active: root.ai-suggestion-ready && !root.ai-busy; triggered => { root.apply-ai-suggestion(); } }
+            ToolButton { label: "关闭"; width: 56px; active: !root.ai-busy; triggered => { root.dismiss-ai-suggestion(); } }
+        }
+        if root.export-status != "": HorizontalLayout {
+            height: 40px; padding-left: 18px; padding-right: 18px; spacing: 8px;
+            Text { text: root.export-status; color: #d8bd86; font-size: 11px; overflow: elide; vertical-alignment: center; }
+            ToolButton { label: "取消导出"; width: 90px; active: root.export-cancellable; triggered => { root.cancel-export(); } }
+        }
+        if root.batch-status != "": HorizontalLayout {
+            height: 42px; padding-left: 18px; padding-right: 18px; spacing: 8px;
+            Text { text: root.batch-status; color: #d6c294; font-size: 11px; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; }
+            ToolButton { label: root.batch-paused ? "继续队列" : "暂停队列"; width: 80px; active: !root.batch-protected && root.batch-has-queued; triggered => { root.batch-pause-resume(); } }
+            ToolButton { label: "取消批量"; width: 80px; active: !root.batch-protected && (root.batch-has-queued || root.batch-running); triggered => { root.batch-cancel(); } }
+            ToolButton { label: "重试失败"; width: 80px; active: !root.batch-protected && root.batch-has-retry && !root.batch-running; triggered => { root.batch-retry(); } }
+            ToolButton { label: "明细"; width: 55px; active: root.batch-has-records; triggered => { root.batch-report-visible = true; } }
+        }
+        Rectangle {
+            height: 34px; background: #20252d;
+            HorizontalLayout {
+                padding-left: 18px; padding-right: 18px;
+                Text { text: root.status; color: #aab4c1; font-size: 10px; vertical-alignment: center; overflow: elide; }
+                Text { text: "NATIVE  /  0.1 开发版"; color: #d8bd86; font-size: 10px; horizontal-alignment: right; vertical-alignment: center; }
+            }
+        }
+    }
+    if root.ai-report-visible: Rectangle {
+        background: #101318ec;
+        Rectangle {
+            width: 620px; height: 450px; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+            border-radius: 10px; border-width: 1px; border-color: #675e4b; background: #222831;
+            VerticalLayout {
+                padding: 24px; spacing: 16px;
+                Text { text: "AI 画面分析"; color: #f0d39b; font-size: 22px; font-weight: 700; }
+                ScrollView { Text { text: root.ai-report; color: #d4dde6; font-size: 13px; wrap: word-wrap; } }
+                ToolButton { label: "返回暗房"; triggered => { root.ai-report-visible = false; } }
+            }
+        }
+    }
+    if root.batch-settings-visible: Rectangle {
+        background: #101318ec;
+        Rectangle {
+            width: 560px; height: 360px; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+            border-radius: 10px; border-width: 1px; border-color: #675e4b; background: #222831;
+            VerticalLayout {
+                padding: 24px; spacing: 15px;
+                Text { text: "批量导出全部照片"; color: #f0d39b; font-size: 22px; font-weight: 700; }
+                Text { text: "每张照片全尺寸导出到新目录，任务会先保存到本机。重启后保持暂停，需要手动继续。已有文件和原片不会覆盖。"; color: #bec8d2; font-size: 12px; wrap: word-wrap; }
+                Text { text: "调色配方"; color: #d1d9e1; }
+                ComboBox { model: ["每张照片各自的参数", "统一当前全局调色，保留逐张人像"]; current-index <=> root.batch-mode; }
+                Text { text: "输出格式沿用顶部的 JPEG / PNG / TIFF16 选择。暂停会在当前照片完成后生效；取消会停止当前编码并取消未开始任务。"; color: #9ba9b7; font-size: 11px; wrap: word-wrap; }
+                Rectangle { vertical-stretch: 1; background: transparent; }
+                HorizontalLayout {
+                    ToolButton { label: "返回"; triggered => { root.batch-settings-visible = false; } }
+                    Rectangle { horizontal-stretch: 1; background: transparent; }
+                    ToolButton { label: "选择输出目录并开始"; min-width: 170px; primary: true; triggered => { root.batch-settings-visible = false; root.batch-export(); } }
+                }
+            }
+        }
+    }
+    if root.batch-report-visible: Rectangle {
+        background: #101318ec;
+        Rectangle {
+            width: 720px; height: min(590px, parent.height - 30px);
+            x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+            border-radius: 10px; border-width: 1px; border-color: #675e4b; background: #222831;
+            VerticalLayout {
+                padding: 22px; spacing: 12px;
+                Text { text: "批量任务明细"; color: #f0d39b; font-size: 22px; font-weight: 700; }
+                ScrollView { vertical-stretch: 1; Text { text: root.batch-report; color: #d4dde6; font-size: 12px; wrap: word-wrap; } }
+                HorizontalLayout {
+                    ToolButton { label: "清理已结束记录"; min-width: 122px; active: !root.batch-protected; triggered => { root.batch-clear(); } }
+                    Rectangle { horizontal-stretch: 1; background: transparent; }
+                    ToolButton { label: "返回暗房"; triggered => { root.batch-report-visible = false; } }
+                }
+            }
+        }
+    }
+    if root.ai-settings-visible: Rectangle {
+        background: #101318ec;
+        Rectangle {
+            width: 620px; height: min(680px, parent.height - 20px);
+            x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+            border-radius: 10px; border-width: 1px; border-color: #675e4b; background: #222831;
+            VerticalLayout {
+                padding: 22px; spacing: 10px;
+                Text { text: "AI 调色设置"; color: #f0d39b; font-size: 22px; font-weight: 700; }
+                ScrollView { vertical-stretch: 1;
+                  VerticalLayout { spacing: 10px;
+                    Text { text: "选择服务后才会发送两张最长边 1024 像素的 sRGB JPEG 预览和当前九参数、调色目标；程序不自动附带原片、文件名、路径、EXIF 或 GPS。请勿在目标中写入不想发送的信息。输出均经过相同的参数和画质检查。"; color: #bec8d2; font-size: 12px; wrap: word-wrap; }
+                    Text { text: "模型来源"; color: #d1d9e1; }
+                    ComboBox { model: ["Codex CLI（使用现有登录）", "DeepSeek Flash（图像）", "OpenAI 兼容图像接口"]; current-index <=> root.ai-provider; enabled: !root.ai-busy; }
+                    if root.ai-provider == 2: VerticalLayout { spacing: 8px;
+                        Text { text: "Base URL（例如 https://服务商/v1；本机可用 http://127.0.0.1:端口/v1）"; color: #d1d9e1; font-size: 11px; }
+                        LineEdit { text <=> root.ai-api-base; placeholder-text: "https://example.com/v1"; enabled: !root.ai-busy; }
+                        Text { text: "支持图片输入的模型名"; color: #d1d9e1; }
+                        LineEdit { text <=> root.ai-model; placeholder-text: "模型 ID"; enabled: !root.ai-busy; }
+                    }
+                    if root.ai-provider != 0: VerticalLayout { spacing: 7px;
+                        Text { text: root.ai-provider == 1 ? "API Key（仅本次请求驻留内存；也可设 DEEPSEEK_API_KEY 环境变量）" : "API Key（仅本次请求驻留内存；也可设 Z30_AI_API_KEY 环境变量）"; color: #d1d9e1; font-size: 11px; wrap: word-wrap; }
+                        LineEdit { text <=> root.ai-api-key; input-type: password; placeholder-text: root.ai-provider == 1 ? "sk-…" : "API Key；本机回环接口可留空"; enabled: !root.ai-busy; }
+                    }
+                Text { text: "风格"; color: #d1d9e1; }
+                ComboBox { model: ["自然", "人像", "胶片", "产品静物", "夜景"]; current-index <=> root.ai-style; enabled: !root.ai-busy; }
+                Text { text: "补充目标（仅作数据传给模型，最多 350 字）"; color: #d1d9e1; }
+                LineEdit { text <=> root.ai-goal; placeholder-text: "例如：保留傍晚暖光，肤色自然"; enabled: !root.ai-busy; }
+                Text { text: "调色强度  " + round(root.ai-strength) + "%"; color: #d1d9e1; }
+                Slider { minimum: 0; maximum: 100; value <=> root.ai-strength; enabled: !root.ai-busy; }
+                Text { text: "处理方式"; color: #d1d9e1; }
+                ComboBox { model: ["自动应用（可撤销）", "只给建议（手动应用）"]; current-index <=> root.ai-mode; enabled: !root.ai-busy; }
+                Text { text: root.ai-provider == 0 ? "Codex CLI 需先运行 codex login。" : "兼容接口需支持图像输入与 JSON 对象响应；远端必须为 HTTPS，可能由服务商计费。Key 不写入项目或命令行。"; color: #9ba9b7; font-size: 11px; wrap: word-wrap; }
+                Text { text: "AI 仅能调整九个全局参数；不会修复污点、局部蒙版或增加丢失的 RAW 细节。不会自动重试或重复调用。"; color: #9ba9b7; font-size: 11px; wrap: word-wrap; }
+                  }
+                }
+                HorizontalLayout {
+                    spacing: 12px;
+                    ToolButton { label: "返回暗房"; triggered => { root.ai-settings-visible = false; } }
+                    Rectangle { horizontal-stretch: 1; background: transparent; }
+                    ToolButton { label: "开始调色"; primary: true; active: root.ai-ready && root.has-preview && !root.busy && !root.ai-busy; triggered => { root.ai-settings-visible = false; root.auto-grade(); } }
+                }
+            }
+        }
+    }
+    if root.about-visible: Rectangle {
+        background: #101318e8;
+        VerticalLayout {
+            alignment: center; padding: 80px; spacing: 18px;
+            Text { text: "Z30 Studio · 原生开发版"; color: #ead4ab; font-size: 24px; horizontal-alignment: center; }
+            Text { text: "Rust + Slint  /  本机照片工具\n阶段能力与未验证项见随附文档。"; color: #b3becb; horizontal-alignment: center; }
+            AboutSlint { }
+            ToolButton { label: "返回暗房"; triggered => { root.about-visible = false; } }
+        }
+    }
+    if root.exit-warning: Rectangle {
+        background: #101318ee;
+        VerticalLayout {
+            alignment: center; padding: 90px; spacing: 20px;
+            Text { text: "有尚未成功保存的改动"; color: #f0d39b; font-size: 24px; horizontal-alignment: center; }
+            Text { text: "原片保持不变。返回后可以检查保存错误，或明确放弃未保存的参数、评分与选择。"; color: #c0c8d3; wrap: word-wrap; horizontal-alignment: center; }
+            ToolButton { label: "返回检查"; primary: true; triggered => { root.exit-warning = false; } }
+            ToolButton { label: "放弃未保存改动并退出"; triggered => { root.confirm-exit(); } }
+        }
+    }
+}

@@ -1,0 +1,66 @@
+{
+  "stage": "5E1",
+  "baseline": "38f88e13529b8f2dc15fdc7569be8747e067a3de",
+  "scope": "Core/probes only; desktop, Recipe and rendering/export integration intentionally remain 5E2 work",
+  "implementation": [
+    "float linear clone / ring-mean matched heal",
+    "original source donors; sequential destination updates",
+    "one output copy, no per-patch image buffers",
+    "cancel checks / strict mode / work budget",
+    "six deterministic donor candidates; coordinates selected once"
+  ],
+  "tests": {
+    "rust_passed": 93,
+    "external_fixtures_default_ignored": 2,
+    "python_passed": 180,
+    "python_skipped": 0,
+    "node_passed": 31
+  },
+  "numeric": {
+    "cases": 10,
+    "threshold": 2e-06,
+    "max_rgb_error": 4.76837158203125e-07,
+    "excluded_pixels_exact": true,
+    "finite": true,
+    "hdr_retained": true,
+    "donor_tolerance": 1e-08
+  },
+  "synthetic_benchmark": {
+    "width": 5472,
+    "height": 3648,
+    "points": 32,
+    "radius": 0.015,
+    "repeat": 3,
+    "summary": {
+      "disabled": {
+        "median_seconds": 3.2e-06,
+        "peak_working_set_max_mib": 231.941
+      },
+      "clone": {
+        "median_seconds": 0.0395075,
+        "peak_working_set_max_mib": 460.168
+      },
+      "heal": {
+        "median_seconds": 0.0399371,
+        "peak_working_set_max_mib": 460.172
+      }
+    },
+    "limitations": [
+      "Synthetic float linear RGB; no RAW decode, model, desktop or photographic quality validation",
+      "32 small normalized-radius .015 edits, not 256 worst-size patches",
+      "Windows process peak counter polled every 20 ms; whole process includes source buffer and verification"
+    ]
+  },
+  "desktop_integration": false,
+  "persistence_integration": false,
+  "export_integration": false,
+  "automatic_blemish_detection": false,
+  "source_bound_recipe_pending": true,
+  "real_z30_portrait": false,
+  "diverse_skin_tones": false,
+  "gpu": false,
+  "cloud_requests": 0,
+  "automatic_resume": false,
+  "automatic_shutdown": false,
+  "artifact_and_ci": "Exact clean build, hashes and CI recorded after commit in local checkpoint.json"
+}

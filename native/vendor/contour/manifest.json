@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "model": {
+    "name": "face_mesh_Nx3x192x192.onnx",
+    "bytes": 2466068,
+    "sha256": "3ca77cf59c18e4da0eccb46695bf604683fa564253e3385892981a5c274fb10f",
+    "url": "https://github.com/yakhyo/mediapipe-face-mesh-onnx/releases/download/weights/face_mesh_Nx3x192x192.onnx",
+    "source_revision": "3bdf1e0d100a4c709766c051a0c9e9cdab1fed62",
+    "license": "Apache-2.0",
+    "modification": "None; independently compared with original Google float16 TFLite weights"
+  },
+  "reference": {
+    "name": "face_landmark.tflite",
+    "bytes": 1242398,
+    "sha256": "1055cb9d4a9ca8b8c688902a3a5194311138ba256bcc94e336d8373a5f30c814",
+    "url": "https://storage.googleapis.com/mediapipe-assets/face_landmark.tflite"
+  },
+  "input": {
+    "name": "input",
+    "shape": [
+      1,
+      3,
+      192,
+      192
+    ],
+    "channels": "RGB",
+    "range": [
+      0,
+      1
+    ],
+    "roi": "1.5 x square face box, eye-line rotation; bilinear pixel centres, zero border"
+  },
+  "output": {
+    "landmarks": [
+      1,
+      468,
+      3
+    ],
+    "score": [
+      1,
+      1
+    ],
+    "coordinates": "model crop pixels; score is a logit",
+    "activation": "sigmoid",
+    "presence_threshold": 0.9
+  },
+  "runtime": "Shared pinned native/vendor/vision ONNX Runtime CPU; Microsoft VC++ x64 required",
+  "automatic_download": false,
+  "identity_recognition": false,
+  "user_z30_portrait_verified": false,
+  "gpu": false
+}
