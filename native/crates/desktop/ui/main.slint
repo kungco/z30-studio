@@ -64,6 +64,13 @@ export component AppWindow inherits Window {
     in property <bool> skin-assets-ready: false;
     in property <bool> has-skin-mask: false;
     in property <bool> blemish-ready: false;
+    in property <bool> contour-ready: false;
+    in property <bool> contour-assets-ready: false;
+    in property <bool> contour-busy: false;
+    in property <int> contour-count: 0;
+    in property <[FacePoint]> contour-points;
+    in-out property <float> contour-strength: 60;
+    in property <string> contour-status: "定位完整面部后，可分析轮廓并生成轻微修形建议。";
     in property <bool> blemish-busy: false;
     in property <int> blemish-count: 0;
     in property <int> blemish-selected: 0;
@@ -215,6 +222,10 @@ export component AppWindow inherits Window {
     callback dismiss-ai-suggestion();
     callback confirm-exit();
     callback find-blemishes();
+    callback choose-contour-assets();
+    callback find-contour();
+    callback cancel-contour();
+    callback apply-contour();
     callback cancel-blemishes();
     callback select-blemish(int, bool);
     callback apply-blemishes();
@@ -331,6 +342,12 @@ export component AppWindow inherits Window {
                             x: picture.image-left + point.x*picture.fit-width - 2px;
                             y: picture.image-top + point.y*picture.fit-height - 2px;
                             width: 4px; height: 4px; border-radius: 2px; background: #7be2c6;
+                        }
+                        for point in root.contour-points: Rectangle {
+                            visible: root.contour-count>0 && !root.has-warp && root.has-preview && !root.busy && !root.compare;
+                            x: picture.image-left + point.x*picture.fit-width - 2px;
+                            y: picture.image-top + point.y*picture.fit-height - 2px;
+                            width:4px;height:4px;border-radius:2px;background:#65dec8;
                         }
                         for mark[index] in root.repair-marks: Rectangle {
                             visible: root.show-repair-marks && root.repair-mode>0 && root.repair-ready && !root.compare;
@@ -523,6 +540,18 @@ export component AppWindow inherits Window {
                             Adjustment { label: "肤色均匀"; minimum: 0; value <=> root.skin-uniformity; active: root.engine-ready && root.has-skin-mask && !root.face-busy; adjusted(v) => { root.adjust("skin_uniformity", v); } }
                             Adjustment { label: "肤色提亮"; minimum: 0; value <=> root.skin-lighten; active: root.engine-ready && root.has-skin-mask && !root.face-busy; adjusted(v) => { root.adjust("skin_lighten", v); } }
                             ToolButton { label: root.show-face-box ? "隐藏定位框" : "显示定位框"; active: root.has-face && !root.has-warp; triggered => { root.show-face-box = !root.show-face-box; } }
+                            Text {text:"面部轮廓 · 轻微修形";color:#e5c98c;font-size:13px;}
+                            HorizontalLayout {
+                                ToolButton {label:"轮廓组件";active:!root.face-busy && !root.contour-busy;triggered=>{root.choose-contour-assets();}}
+                                ToolButton {label:root.contour-busy?"取消分析":"分析轮廓";active:root.contour-busy || root.contour-ready;triggered=>{if root.contour-busy {root.cancel-contour();}else{root.find-contour();}}}
+                            }
+                            Text {text:root.contour-status;color:#a8cfc7;font-size:11px;wrap:word-wrap;min-height:32px;vertical-stretch:0;}
+                            if root.contour-count>0: VerticalLayout {
+                                Adjustment {label:"修形强度 (%)";minimum:0;maximum:100;value<=>root.contour-strength;active:root.contour-ready;adjusted(v)=>{}}
+                                ToolButton {label:"应用轻微修形";primary:true;active:root.contour-ready && root.contour-strength>0;triggered=>{root.apply-contour();}}
+                                ToolButton {label:"收起轮廓建议";triggered=>{root.cancel-contour();}}
+                            }
+                            Text {text:"适用于正面、完整可见的面部。应用前检查轮廓，应用后检查五官和背景；支持一步撤销。";color:#8d99a7;font-size:10px;wrap:word-wrap;}
                             Text { text: root.face-status; color: #aab6c4; font-size: 11px; wrap: word-wrap; }
                             Text { text: "只处理当前面部的皮肤区域，保护眼口。均匀肤色与提亮可分别调整，深暗和高光受保护；请检查头发、眼镜和边缘。区域随草稿保存。新识别需要 VC++ x64 运行库。"; color: #8d99a7; font-size: 10px; wrap: word-wrap; }
                         }

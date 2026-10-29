@@ -21,11 +21,13 @@ if __package__:
     from .build_native_libraw import SDK_HASH, SDK_NAME, check_system_imports, sha256
     from .prepare_native_vision import verify_component
     from .prepare_native_skin import verify_component as verify_skin_component
+    from .prepare_native_contour import verify_component as verify_contour_component
 else:
     from native_gui_patch import PATCH_ID, verify_source as verify_gui_patch
     from build_native_libraw import SDK_HASH, SDK_NAME, check_system_imports, sha256
     from prepare_native_vision import verify_component
     from prepare_native_skin import verify_component as verify_skin_component
+    from prepare_native_contour import verify_component as verify_contour_component
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_LICENSES = {'LibRaw-COPYRIGHT.txt', 'LibRaw-CDDL-1.0.txt', 'LibRaw-LGPL-2.1.txt',
@@ -170,6 +172,12 @@ def verify_stage(stage: Path) -> dict:
         verify_skin_component(stage/'skin')
     elif (stage/'skin').exists():
         raise ValueError('Undeclared optional skin directory')
+    if info.get('contour_bundled') is True:
+        if info.get('vision_bundled') is not True:
+            raise ValueError('Bundled contour requires the audited vision runtime')
+        verify_contour_component(stage/'contour')
+    elif (stage/'contour').exists():
+        raise ValueError('Undeclared optional contour directory')
     return info
 
 

@@ -1,6 +1,10 @@
 # Z30 Studio 开发检查点
 
-更新：2026-10-28（Asia/Hong_Kong）。原生迁移总任务未完成。
+更新：2026-10-29（Asia/Hong_Kong）。原生迁移总任务未完成。
+
+当前 5F3：本机 468 点轮廓、四项保守修形建议、可确认应用/强度/一次撤销、旧任务作废已接通。新增 7 项 Rust 单测、四组官方 TFLite/ONNX/原生对照及 45 项工作区实际程序流程已通过；该试构建为 dirty，尚不能交付。下一步提交后干净打包、旧 414+新45 项最终流程、RAW 对照、实际窗口与同提交 CI。最终状态以 `.development/native-5f3-final-artifact.json` / checkpoint 为准。用户实拍自然度、多样人像和 GPU 未验证。见 docs/reports/native-stage5f3-contour.md。
+
+6A 已收尾：提交 14571da 的干净包、414 项流程、30 数值对照、12 重绘探针、11 份 RAW 输出哈希、成对性能及六项 CI 通过；实际窗口最小化恢复三轮、应用/撤销/重做已复验。记录 `.development/native-6a-final-artifact.json`；这一结果不覆盖 5F3 后续修改。
 
 当前6A（提前修复可靠性）：已定位Windows更新区域未进入Slint局部重绘的缺陷，应用内固定回移上游#13568；相同自窗口GDI探针在旧后端12例全部保留错误像素、修正后12例全部恢复，覆盖100/125/150/200%合成缩放。构建/打包增加补丁源码、许可和哈希校验，两项分发负例加入原套件；Python182含RAW无跳过、Node31、Rust134及all-targets通过。最终干净包414项/2显式fixture/12探针/30数值、实际恢复和当前CI以 `.development/native-6a-final-artifact.json`/checkpoint为准。详见 docs/reports/native-stage6a-window-repaint.md。阶段5/6总体仍未完成。
 

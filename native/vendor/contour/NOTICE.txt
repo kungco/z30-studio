@@ -1,0 +1,20 @@
+MediaPipe Face Mesh / optional Z30 Studio contour component
+
+Original trained model: Google / The MediaPipe Authors, Apache License 2.0.
+https://github.com/google-ai-edge/mediapipe
+https://storage.googleapis.com/mediapipe-assets/face_landmark.tflite
+
+ONNX network export: yakhyo (upstream repository author),
+Apache License 2.0, repository revision
+3bdf1e0d100a4c709766c051a0c9e9cdab1fed62.
+https://github.com/yakhyo/mediapipe-face-mesh-onnx
+The upstream README attributes original weights via PINTO0309's conversion:
+https://github.com/PINTO0309/facemesh_onnx_tensorrt
+No upstream Python/PyTorch code executes in Z30 Studio, and the ONNX graph
+has not been modified. Only its exact pinned weights are accepted.
+
+All processing is local; no identity templates or recognition are created.
+The model predicts geometry, not a quality guarantee or a safe edit decision.
+The shared ONNX Runtime component has separate notices and system VC++ needs.
+Original TFLite and Python tools are developer references, not application
+dependencies. See manifest.json and the included Apache 2.0 license.

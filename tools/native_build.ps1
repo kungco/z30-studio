@@ -11,6 +11,8 @@ param(
     [switch]$FullCacheProbe,
     [switch]$VisionProbe,
     [switch]$SkinProbe,
+    [switch]$ContourProbe,
+    [switch]$ContourFixtures,
     [switch]$SkinPersistenceProbe,
     [switch]$SkinToneProbe,
     [switch]$RetouchProbe,
@@ -20,7 +22,8 @@ param(
     [switch]$VisionFixtures,
     [string]$RawRuntime,
     [string]$VisionRuntime,
-    [string]$SkinRuntime
+    [string]$SkinRuntime,
+    [string]$ContourRuntime
 )
 $ErrorActionPreference='Stop'
 $repoRoot=Split-Path -Parent $PSScriptRoot
@@ -29,6 +32,10 @@ if($VisionRuntime){$visionRuntimePath=(Resolve-Path -LiteralPath $VisionRuntime)
 if($SkinRuntime){
     if(-not $VisionRuntime){throw 'Skin model packaging requires -VisionRuntime'}
     $skinRuntimePath=(Resolve-Path -LiteralPath $SkinRuntime).Path
+}
+if($ContourRuntime){
+    if(-not $VisionRuntime){throw 'Contour model packaging requires -VisionRuntime'}
+    $contourRuntimePath=(Resolve-Path -LiteralPath $ContourRuntime).Path
 }
 $sourceCommit=(& git -C $repoRoot rev-parse HEAD).Trim()
 $sourceDirty=[bool]((& git -C $repoRoot status --porcelain) -join '')
@@ -97,6 +104,7 @@ try {
     if($Test){& $cargoTool test --workspace --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Native tests failed'}}
     if($RawFixtures){& $cargoTool test -p z30-core --release --locked raw::tests::real_z30_12_and_14_bit_full_and_half -- --ignored --test-threads=1;if($LASTEXITCODE -ne 0){throw 'Explicit RAW fixture tests failed'}}
     if($VisionFixtures){& $cargoTool test -p z30-vision --release --locked real_pinned_cpu_model_on_an_explicit_public_photo -- --ignored --test-threads=1;if($LASTEXITCODE -ne 0){throw 'Explicit local face fixture tests failed'}}
+    if($ContourFixtures){& $cargoTool test -p z30-vision --release --locked real_pinned_mesh_on_explicit_public_photo -- --ignored --test-threads=1;if($LASTEXITCODE -ne 0){throw 'Explicit contour fixture failed'}}
     $buildArgs=@('build','--workspace','--locked','-j','4')
     if(-not $DebugBuild){$buildArgs+='--release'}
     & $cargoTool @buildArgs
@@ -109,6 +117,7 @@ try {
     if($FullCacheProbe){& $cargoTool build -p z30-core --example full_cache_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Full-size cache probe build failed'}}
     if($VisionProbe){& $cargoTool build -p z30-vision --example face_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Face detector probe build failed'}}
     if($SkinProbe){& $cargoTool build -p z30-vision --example skin_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Skin segmenter probe build failed'}}
+    if($ContourProbe){& $cargoTool build -p z30-vision --example contour_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Contour probe build failed'}}
     if($SkinPersistenceProbe){& $cargoTool build -p z30-core --example skin_persistence_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Skin persistence probe build failed'}}
     if($SkinToneProbe){& $cargoTool build -p z30-core --example skin_tone_probe --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Skin tone probe build failed'}}
     if($RetouchProbe){& $cargoTool build -p z30-core --example retouch_probe --example retouch_benchmark --example repairs_workflow_probe --example saved_recipe_export --release --locked -j 4;if($LASTEXITCODE -ne 0){throw 'Retouch probe build failed'}}
@@ -145,6 +154,12 @@ try {
     }
     & $guiPython (Join-Path $repoRoot 'tools\native_gui_patch.py') --source $guiSource --install-to-stage $staging
     if($LASTEXITCODE -ne 0){throw 'GUI patch source distribution verification failed'}
+    if($ContourRuntime){
+        $packPython=Join-Path $repoRoot '.venv\Scripts\python.exe'
+        if(-not (Test-Path -LiteralPath $packPython)){$packPython='python'}
+        & $packPython (Join-Path $repoRoot 'tools\prepare_native_contour.py') --component $contourRuntimePath --install-to-stage $staging
+        if($LASTEXITCODE -ne 0){throw 'Optional contour distribution verification failed'}
+    }
     $buildInfo=[ordered]@{
         app='Z30 Studio Native';version='0.1.0-native-preview';profile=$profile
         source_commit=$sourceCommit
@@ -156,6 +171,7 @@ try {
         models_bundled=[bool]$VisionRuntime
         vision_bundled=[bool]$VisionRuntime
         skin_bundled=[bool]$SkinRuntime
+        contour_bundled=[bool]$ContourRuntime
         vision_external_vc_runtime=[bool]$VisionRuntime
         raw_bundled=[bool]$RawRuntime
         gui_repaint_patch='slint-winit-1.18.1-win32-invalidation-13568'

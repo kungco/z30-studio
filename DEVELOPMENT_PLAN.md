@@ -1,5 +1,7 @@
 # Z30 Studio 原生迁移计划
 
+2026-10-29 增量：6A 的最终干净包、实际窗口恢复和六项 CI 已完成。5F3 接入本机轮廓与四项可确认的轻微修形，新增七项 Rust、四组独立数值和45项试构建流程通过；最终包验收以 checkpoint 和 `.development/native-5f3-final-artifact.json` 为准。下表中的“自动轮廓尚未接入”为此前阶段记录；5F3 不代表自然度、GPU 或完整阶段5验收。见 docs/reports/native-stage5f3-contour.md。
+
 更新：2026-10-28；用户本轮总任务优先于旧交接说明。开发分支 `feat/native-slint`，保留 Python 2.0 基线 `a2a2e089d760221a52c8774cca8a2e42f0a82269`。不重写已经验证的算法设计，不删除原实现，不合并 main、不发布正式版、不覆盖原片。本轮没有关机授权。
 
 目标：Windows 10/11 x64，Rust + Slint，直接运行 Z30Studio.exe；无浏览器/WebView/Electron/Python 运行时/本地 HTTP 服务。RTX 4060 / 32 GiB 是目标硬件，不等于所有功能已经做过该硬件验证。基础分发 50 MB 是优化目标；不得隐瞒依赖或删减关键功能达标。

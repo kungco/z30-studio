@@ -31,6 +31,7 @@ mod skin_workflow;
 mod repair_workflow;
 mod warp_workflow;
 mod blemish_workflow;
+mod contour_workflow;
 
 enum AiBackend {
     Codex,
@@ -688,6 +689,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let repairs=repair_workflow::bind(&ui,Rc::clone(&state),Rc::clone(&worker),Arc::clone(&engine),Arc::clone(&compute));
     let warps=warp_workflow::bind(&ui,Rc::clone(&state),Rc::clone(&worker));
     let blemishes=blemish_workflow::bind(&ui,Rc::clone(&state),Rc::clone(&worker),Arc::clone(&engine),Arc::clone(&compute));
+    let contours=contour_workflow::bind(&ui,Rc::clone(&state),Rc::clone(&worker),Arc::clone(&engine),Arc::clone(&compute));
     let (picked, files) = mpsc::channel::<Vec<PathBuf>>();
     {
         let weak = ui.as_weak();
@@ -1540,10 +1542,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 // Derive candidate readiness from this tick's completed preview,
                 // face and AI state; never publish "preview ready" with stale gates.
                 blemishes.poll(&ui);
+                contours.poll(&ui);
                 match qa.command() {
                     Ok(Some((id, command))) => {
                         match command {
                             qa::Command::Snapshot => {}
+                            qa::Command::ContourFind=>ui.invoke_find_contour(),
+                            qa::Command::ContourCancel=>ui.invoke_cancel_contour(),
+                            qa::Command::ContourApply=>ui.invoke_apply_contour(),
+                            qa::Command::ContourStrength{value}=>{if value.is_finite()&&(0.0..=100.0).contains(&value){ui.set_contour_strength(value);}},
+                            qa::Command::ContourAssets{directory}=>{if directory.is_absolute(){*contours.chooser.borrow_mut()=Some(directory);ui.invoke_choose_contour_assets();contours.chooser.borrow_mut().take();}},
                             qa::Command::BlemishFind=>ui.invoke_find_blemishes(),
                             qa::Command::BlemishCancel=>ui.invoke_cancel_blemishes(),
                             qa::Command::BlemishSelect{index,selected}=>ui.invoke_select_blemish(index,selected),
@@ -1639,6 +1647,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             object.insert("full_cache_bytes".into(), serde_json::to_value(full_cache.try_lock().ok().map(|cache| cache.bytes())).unwrap_or_default());
                             object.insert("face_busy".into(),ui.get_face_busy().into());
                             object.insert("face_assets_ready".into(),ui.get_face_assets_ready().into());
+                            object.insert("contour".into(),serde_json::json!({"ready":ui.get_contour_ready(),"busy":ui.get_contour_busy(),"assets_ready":ui.get_contour_assets_ready(),"count":ui.get_contour_count(),"strength":ui.get_contour_strength(),"status":ui.get_contour_status().as_str(),"points":ui.get_contour_points().iter().map(|p|[p.x,p.y]).collect::<Vec<_>>()}));
                             object.insert("has_face".into(),ui.get_has_face().into());
                             object.insert("face_status".into(),ui.get_face_status().as_str().into());
                             object.insert("skin_smooth".into(),ui.get_skin_smooth().into());

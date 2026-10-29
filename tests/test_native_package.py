@@ -65,6 +65,23 @@ class NativePackageTests(unittest.TestCase):
     def write_runtime(self):
         (self.stage/'raw/runtime.json').write_text(json.dumps(self.runtime))
 
+    def test_contour_requires_declared_verified_runtime_and_weights(self):
+        self.info['contour_bundled']=True;self.write_info()
+        with self.assertRaisesRegex(ValueError,'audited vision runtime'):
+            package.verify_stage(self.stage)
+        self.info.update(vision_bundled=True,models_bundled=True,vision_external_vc_runtime=True);self.write_info()
+        with patch.object(package,'verify_component',return_value={}):
+            with self.assertRaisesRegex(ValueError,'exactly the pinned files'):package.verify_stage(self.stage)
+            with patch.object(package,'verify_contour_component',side_effect=ValueError('invalid model')):
+                with self.assertRaisesRegex(ValueError,'invalid model'):package.verify_stage(self.stage)
+            with patch.object(package,'verify_contour_component',return_value={}) as verify:
+                package.verify_stage(self.stage);verify.assert_called_once_with(self.stage/'contour')
+
+    def test_undeclared_contour_directory_is_rejected(self):
+        (self.stage/'contour').mkdir()
+        with self.assertRaisesRegex(ValueError,'Undeclared optional contour'):
+            package.verify_stage(self.stage)
+
     def test_declared_gui_patch_requires_unchanged_corresponding_source(self):
         self.info['gui_repaint_patch'] = package.PATCH_ID
         self.write_info()

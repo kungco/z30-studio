@@ -19,6 +19,11 @@ pub struct Harness {
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Command {
     Snapshot,
+    ContourFind,
+    ContourCancel,
+    ContourApply,
+    ContourAssets { directory: PathBuf },
+    ContourStrength { value: f32 },
     BlemishFind,
     BlemishCancel,
     BlemishSelect { index: i32, selected: bool },
