@@ -1,5 +1,7 @@
 # Z30 Studio 开发计划
 
+B小批量风格流程已通过限定离线验证，见 docs/reports/assistant-stage-b.md；当前下一项为C真实样片/模型效果与干净Windows/Release便携包交付。A/B历史计划保留，不将离线协议成功等同审美或正式发布验收。
+
 A 单张建议/本地试片已完成限定流程验证，见 docs/reports/assistant-stage-a.md；当前下一项为 B 小批量选择、参数复制/逐张风格适配。真实模型效果和干净交付仍保留为验收缺口，不启动历史人像/GPU主线。
 
 2026-11-14 当前主线：用户已确认收窄为“中文 AI 后期助手”。执行 [PRODUCT_DIRECTION.md](PRODUCT_DIRECTION.md) 的 A 单张建议/本地试片、B 小批量风格、C 可靠交付；下一项是 A，复用当前原生 AI/显影/撤销代码。新增人像修形、GPU 与完整高级暗房迁移不再是近期目标。历史验收缺口保留，不因缩小范围标记为已通过。

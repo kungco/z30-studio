@@ -112,7 +112,7 @@ pub fn bind(
         let weak = ui.as_weak();
         ui.on_review_ai(move || {
             let Some(ui)=weak.upgrade() else{return};
-            if ui.get_busy() || ui.get_ai_busy() || ui.get_ai_suggestion_ready() || !ui.get_has_preview() {return;}
+            if ui.get_busy() || ui.get_ai_busy() || ui.get_style_busy() || ui.get_style_running() || ui.get_ai_suggestion_ready() || !ui.get_has_preview() {return;}
             let result=(|| -> z30_core::Result<()> {
                 let goal=goal(&ui)?;
                 let s=w.state.borrow();

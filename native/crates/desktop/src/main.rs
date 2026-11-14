@@ -33,6 +33,7 @@ mod warp_workflow;
 mod blemish_workflow;
 mod contour_workflow;
 mod ai_trial;
+mod style_workflow;
 
 enum AiBackend {
     Codex,
@@ -58,6 +59,7 @@ struct State {
     dirty: bool,
     edit_revision: u64,
     ai_control: Option<Arc<AtomicBool>>,
+    style_control: Option<Arc<AtomicBool>>,
     ai_suggestion: Option<AiSuggestion>,
     close_after_ai: bool,
     face_assets: Option<PathBuf>,
@@ -98,6 +100,7 @@ struct AiSuggestion {
     source: Arc<ExportSource>,
     revision: u64,
     product: AiProduct,
+    style_id: Option<(u64,usize)>,
 }
 
 struct DisplayPreview {
@@ -268,6 +271,10 @@ fn prepare_exit(state: &mut State, ui: &AppWindow, discard: bool) -> bool {
         ui.set_face_status("退出前正在停止本机人像定位…".into());
     }
     if state.face_dialog {state.close_after_face=true;ui.set_face_status("请关闭组件目录对话框，随后退出".into());}
+    if let Some(control)=&state.style_control {
+        control.store(true,Ordering::Release);state.close_after_ai=true;
+        ui.set_style_status("退出前正在停止风格适配；重启后不会自动调用模型。".into());return false;
+    }
     if let Some(control) = &state.ai_control {
         control.store(true, Ordering::Release);
         state.close_after_ai = true;
@@ -643,6 +650,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         dirty: initial_dirty,
         edit_revision: 0,
         ai_control: None,
+        style_control: None,
         ai_suggestion: None,
         close_after_ai: false,
         face_assets: std::env::var_os("Z30_VISION_DIR").map(PathBuf::from).or_else(||std::env::current_exe().ok().and_then(|path|path.parent().map(|parent|parent.join("vision"))).filter(|path|path.is_dir())),
@@ -716,6 +724,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let blemishes=blemish_workflow::bind(&ui,Rc::clone(&state),Rc::clone(&worker),Arc::clone(&engine),Arc::clone(&compute));
     let contours=contour_workflow::bind(&ui,Rc::clone(&state),Rc::clone(&worker),Arc::clone(&engine),Arc::clone(&compute));
     let ai_trial=ai_trial::bind(&ui,Rc::clone(&state),Arc::clone(&engine),Arc::clone(&compute));
+    let styles=style_workflow::bind(&ui,Rc::clone(&state),Arc::clone(&engine),Arc::clone(&compute))?;
     let (picked, files) = mpsc::channel::<Vec<PathBuf>>();
     {
         let weak = ui.as_weak();
@@ -900,7 +909,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let engine = Arc::clone(&engine);
         ui.on_auto_grade(move || {
             let Some(ui)=weak.upgrade() else {return};
-            if !ui.get_has_preview() || ui.get_busy() || ui.get_ai_busy() || ui.get_repair_busy() {return}
+            if !ui.get_has_preview() || ui.get_busy() || ui.get_ai_busy() || ui.get_repair_busy() || ui.get_style_running() || ui.get_style_busy() {return}
             ui.set_ai_send_visible(false);
             let goal=match ai_trial::goal(&ui) {Ok(v)=>v,Err(e)=>{ui.set_ai_status(e.to_string().into());return;}};
             let options=Options{strength:ui.get_ai_strength(),..Options::default()};
@@ -924,7 +933,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 ui.set_ai_status("中性与当前预览尺寸不一致；没有发送照片".into());return;
             }
             let mut state=state.borrow_mut();
-            if state.protected || state.ai_control.is_some() || state.batch_control.is_some() || state.batch_dialog || state.face_control.is_some() || state.face_dialog {
+            if state.protected || state.ai_control.is_some() || state.style_control.is_some() || state.batch_control.is_some() || state.batch_dialog || state.face_control.is_some() || state.face_dialog {
                 ui.set_ai_status("AI 任务正在结束，或草稿处于只读保护；请稍后手动重试".into());return;
             }
             let Some(request)=state.edits.current() else {return};
@@ -988,6 +997,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let weak = ui.as_weak();
         let state = Rc::clone(&state);
         let rows = Rc::clone(&rows);
+        let styles = Rc::clone(&styles);
         ui.on_apply_ai_suggestion(move || {
             let Some(ui) = weak.upgrade() else { return };
             if ui.get_ai_trial_busy() {return;}
@@ -1007,7 +1017,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 ui.set_ai_status(format!("原片已变化，旧建议不再适用：{e}").into());
                 return;
             }
+            let id=suggestion.style_id;let parameters=suggestion.product.parameters;
             apply_ai_product(&mut state, &ui, &rows, suggestion.product);
+            let applied=state.edits.current().is_some_and(|p|p.recipe.parameters==parameters);drop(state);
+            if applied {if let Some(id)=id {styles.applied(id,&ui);}}
         });
     }
     {
@@ -1095,7 +1108,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let mut state = state.borrow_mut();
             if state.protected || state.batch_protected || state.batch_dialog
                 || state.batch_control.is_some() || state.export_dialog
-                || state.export_control.is_some() || state.ai_control.is_some() || state.face_control.is_some() || state.face_dialog
+                || state.export_control.is_some() || state.ai_control.is_some() || state.style_control.is_some() || state.face_control.is_some() || state.face_dialog
                 || state.edits.session.photos.is_empty()
             { return; }
             flush_edits(&mut state, &ui);
@@ -1410,7 +1423,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         && state.batch.counts().queued > 0
                         && state.batch_control.is_none() && !state.batch_dialog
                         && state.export_control.is_none() && !state.export_dialog
-                        && state.ai_control.is_none() && state.face_control.is_none() && !state.face_dialog && !state.close_after_batch
+                        && state.ai_control.is_none() && state.style_control.is_none() && state.face_control.is_none() && !state.face_dialog && !state.close_after_batch
                         && !state.close_after_export && !state.close_after_ai
                     {
                         match change_batch(&mut state, &ui, |queue| queue.start_next()) {
@@ -1481,7 +1494,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             ui.set_ai_status(format!("AI 建议已就绪 · 强度 {}% · {} · {}。点击应用建议或关闭。",product.used_strength,product.advice.title,product.quality_note).into());
                             ai_trial::show(&ui,&product,&outcome.request.recipe.parameters);
                             ui.set_ai_trial_strength(ui.get_ai_strength());
-                            state.ai_suggestion=Some(AiSuggestion{request:outcome.request,source:Arc::new(outcome.source),revision:outcome.revision,product});
+                            state.ai_suggestion=Some(AiSuggestion{request:outcome.request,source:Arc::new(outcome.source),revision:outcome.revision,product,style_id:None});
                             ui.set_ai_suggestion_ready(true);
                         }
                         Err(e) => ui.set_ai_status(format!("AI 调色失败：{e}；可手动重试").into()),
@@ -1498,7 +1511,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     if (state.close_after_export || state.close_after_batch || state.close_after_ai || state.close_after_face)
                         && !state.export_dialog && state.export_control.is_none()
                         && !state.batch_dialog && state.batch_control.is_none()
-                        && state.ai_control.is_none() && state.face_control.is_none() && !state.face_dialog && !state.dirty {
+                        && state.ai_control.is_none() && state.style_control.is_none() && state.face_control.is_none() && !state.face_dialog && !state.dirty {
                         let _ = slint::quit_event_loop(); return;
                     }
                 }
@@ -1568,6 +1581,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 blemishes.poll(&ui);
                 contours.poll(&ui);
                 ai_trial.poll(&ui);
+                styles.poll(&ui);
                 match qa.command() {
                     Ok(Some((id, command))) => {
                         match command {
@@ -1643,6 +1657,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             qa::Command::AiCancel => ui.invoke_cancel_ai(),
                             qa::Command::AiTrial {strength} => ui.invoke_trial_ai(strength),
                             qa::Command::AiReview => ui.invoke_review_ai(),
+                            qa::Command::StyleCapture=>ui.invoke_capture_style(),
+                            qa::Command::StyleChoose{index,chosen}=>ui.invoke_choose_style_photo(index,chosen),
+                            qa::Command::StyleCopy=>ui.invoke_copy_style(),
+                            qa::Command::StyleReview=>ui.invoke_review_style_send(),
+                            qa::Command::StyleStart=>ui.invoke_start_style(),
+                            qa::Command::StyleStop{cancel}=>ui.invoke_stop_style(cancel),
+                            qa::Command::StyleProof=>ui.invoke_proof_style(),
                             qa::Command::AiApply => ui.invoke_apply_ai_suggestion(),
                             qa::Command::AiDismiss => ui.invoke_dismiss_ai_suggestion(),
                             qa::Command::Compare { enabled } => { if ui.get_has_preview() { ui.set_compare(enabled); } }
@@ -1667,6 +1688,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             "ai_trial_ready":ui.get_ai_trial_ready(),"ai_trial_busy":ui.get_ai_trial_busy(),
                             "ai_trial_strength":ui.get_ai_trial_strength(),"ai_trial_fingerprint":ui.get_ai_trial_fingerprint().as_str(),
                             "ai_send_visible":ui.get_ai_send_visible(),"ai_mode":ui.get_ai_mode(),
+                            "style_running":ui.get_style_running(),"style_busy":ui.get_style_busy(),"style_count":ui.get_style_count(),"style_calls":ui.get_style_calls(),"style_confirm":ui.get_style_confirm(),"style_status":ui.get_style_status().as_str(),
                             "ai_suggestion_ready":ui.get_ai_suggestion_ready()});
                         let response = if let Some(object) = response.as_object() {
                             let mut object = object.clone();

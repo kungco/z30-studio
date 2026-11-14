@@ -152,6 +152,31 @@ impl EditingSession {
         self.session.photos[self.session.selected.unwrap()].recipe = next;
         Ok(true)
     }
+    /// Validate the entire small selection before any mutation. Each target
+    /// keeps its own WB/local edits and receives one independent undo step.
+    pub fn sync_parameters(&mut self, targets: &[(EditRequest, Parameters)]) -> Result<usize> {
+        if targets.is_empty() || targets.len()>20 {return Err(Error::Policy("请选择1至20张目标照片".into()));}
+        let mut seen=std::collections::HashSet::new();
+        let mut indices=Vec::new();
+        for (request,parameters) in targets {
+            parameters.validate()?;
+            request.recipe.validate()?;
+            if !seen.insert(&request.path) {return Err(Error::Policy("目标照片重复".into()));}
+            let index=self.session.photos.iter().position(|p|p.path==request.path && p.recipe==request.recipe)
+                .ok_or_else(||Error::Policy("目标照片或参数已变化，未同步任何照片".into()))?;
+            indices.push(index);
+        }
+        self.commit()?;
+        let mut changed=0;
+        for ((request,parameters),index) in targets.iter().zip(indices) {
+            if request.recipe.parameters==*parameters {continue;}
+            let mut next=request.recipe.clone();next.parameters=*parameters;
+            let history=self.histories.entry(request.path.clone()).or_insert(EditHistory::new(request.recipe.clone())?);
+            history.record(next.clone())?;
+            self.session.photos[index].recipe=next;changed+=1;
+        }
+        Ok(changed)
+    }
     pub fn apply_portrait(&mut self, portrait: crate::portrait::Portrait) -> Result<bool> {
         portrait.validate()?;
         let Some(current) = self.current() else {
@@ -373,6 +398,24 @@ mod tests {
         assert_eq!(s.current().unwrap().recipe.parameters.temperature, 50.);
         s.undo().unwrap();
         assert_eq!(snapshot.recipe.parameters.exposure, 4.);
+    }
+    #[test]
+    fn small_sync_preserves_target_wb_and_independent_history() {
+        let mut s=state();s.session.photos[1].recipe.white_balance=crate::recipe::WhiteBalance::Daylight;
+        let first=s.current().unwrap();s.select(1).unwrap();let second=s.current().unwrap();s.select(0).unwrap();
+        let parameters=Parameters{exposure:0.4,..Default::default()};
+        assert_eq!(s.sync_parameters(&[(first.clone(),parameters),(second.clone(),parameters)]).unwrap(),2);
+        assert_eq!(s.session.selected,Some(0));assert_eq!(s.session.photos[1].recipe.white_balance,second.recipe.white_balance);
+        s.undo().unwrap();assert_eq!(s.current().unwrap(),first);assert_eq!(s.session.photos[1].recipe.parameters.exposure,0.4);
+        s.select(1).unwrap();s.undo().unwrap();assert_eq!(s.current().unwrap(),second);s.redo().unwrap();assert_eq!(s.current().unwrap().recipe.parameters.exposure,0.4);
+    }
+    #[test]
+    fn stale_or_duplicate_small_sync_has_no_partial_application() {
+        let mut s=state();let first=s.current().unwrap();s.select(1).unwrap();let mut second=s.current().unwrap();s.select(0).unwrap();
+        second.recipe.parameters.contrast=20.;let p=Parameters{exposure:0.4,..Default::default()};
+        assert!(s.sync_parameters(&[(first.clone(),p),(second,p)]).is_err());assert_eq!(s.current().unwrap(),first);assert!(!s.can_undo());
+        assert!(s.sync_parameters(&[(first.clone(),p),(first,p)]).is_err());assert!(!s.can_undo());
+        assert!(s.sync_parameters(&[]).is_err());
     }
     #[test]
     fn reset_and_branch_are_undoable_invalid_input_cannot_mutate_draft() {

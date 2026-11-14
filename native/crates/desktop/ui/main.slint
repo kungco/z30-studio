@@ -7,6 +7,7 @@ export struct PhotoView {
     thumbnail: image,
 }
 export struct FacePoint { x: float, y: float }
+export struct StyleItem {index:int,name:string,chosen:bool,is-reference:bool,status:string}
 export struct BlemishItem { label: string, chosen: bool }
 export struct BlemishMark { u: float, v: float, rx: float, ry: float, chosen: bool }
 export struct RepairMark { u: float, v: float, rx: float, ry: float }
@@ -139,6 +140,18 @@ export component AppWindow inherits Window {
     in property <image> ai-trial-preview;
     in property <string> ai-trial-fingerprint;
     in property <string> ai-trial-summary;
+    in-out property <bool> style-visible: false;
+    in-out property <bool> style-confirm: false;
+    in property <bool> style-running: false;
+    in property <bool> style-busy: false;
+    in property <bool> style-protected: false;
+    in property <bool> style-has-advice: false;
+    in property <int> style-count: 0;
+    in property <int> style-calls: 0;
+    in property <[StyleItem]> style-items;
+    in property <string> style-reference;
+    in property <string> style-status;
+    in property <string> style-send-text;
     in-out property <float> ai-trial-strength: 100;
     in-out property <bool> ai-send-visible: false;
     in property <image> ai-send-neutral;
@@ -231,6 +244,14 @@ export component AppWindow inherits Window {
     callback apply-ai-suggestion();
     callback trial-ai(float);
     callback review-ai();
+    callback open-style();
+    callback capture-style();
+    callback choose-style-photo(int,bool);
+    callback copy-style();
+    callback review-style-send();
+    callback start-style();
+    callback stop-style(bool);
+    callback proof-style();
     callback dismiss-ai-suggestion();
     callback confirm-exit();
     callback find-blemishes();
@@ -266,7 +287,7 @@ export component AppWindow inherits Window {
                 }
                 Rectangle { horizontal-stretch: 1; background: transparent; }
                 ToolButton { label: "＋ 导入照片"; min-width: 108px; active: root.can-import; triggered => { root.import-files(); } }
-                ToolButton { label: "生成调色建议"; min-width: 105px; active: root.ai-ready && root.has-preview && !root.busy && !root.ai-busy && !root.batch-running && !root.repair-busy && !root.ai-suggestion-ready; triggered => { root.review-ai(); } }
+                ToolButton { label: "生成调色建议"; min-width: 105px; active: root.ai-ready && root.has-preview && !root.busy && !root.ai-busy && !root.batch-running && !root.repair-busy && !root.ai-suggestion-ready && !root.style-running && !root.style-busy; triggered => { root.review-ai(); } }
                 ToolButton { label: "AI 设置"; min-width: 68px; triggered => { root.ai-settings-visible = true; } }
                 ComboBox { width: 145px; height: 34px; model: ["JPEG · 95", "PNG · 8 位", "TIFF · 16 位"]; current-index <=> root.export-format; enabled: !root.export-busy; }
                 ToolButton { label: root.ai-suggestion-ready ? "导出已应用" : "导出照片"; primary: true; active: root.engine-ready && root.has-preview && !root.busy && !root.export-busy && !root.batch-running && !root.face-busy && !root.repair-busy; triggered => { root.export-photo(); } }
@@ -279,6 +300,7 @@ export component AppWindow inherits Window {
             Text {text:"想要什么效果";color:#e4cfab;vertical-alignment:center;}
             LineEdit {text<=>root.ai-goal;placeholder-text:"例如：保留傍晚暖光，提亮人物，肤色自然";enabled:!root.ai-busy && !root.ai-suggestion-ready;horizontal-stretch:1;}
             ComboBox {width:145px;model:["自然通透","柔和人像","温暖胶片","产品静物","夜景氛围"];current-index<=>root.ai-style;enabled:!root.ai-busy && !root.ai-suggestion-ready;}
+            ToolButton {label:"小批量风格";min-width:105px;active:root.photos.length>0;triggered=>{root.open-style();}}
         }
         HorizontalLayout {
             spacing: 1px;
@@ -409,7 +431,7 @@ export component AppWindow inherits Window {
                         canvas-keys:=FocusScope {
                             width:0px;height:0px;
                             key-pressed(event)=>{
-                                if root.ai-settings-visible || root.ai-send-visible || root.ai-report-visible || root.about-visible || root.batch-settings-visible || root.batch-report-visible || root.exit-warning {return reject;}
+                                if root.ai-settings-visible || root.style-visible || root.style-confirm || root.ai-send-visible || root.ai-report-visible || root.about-visible || root.batch-settings-visible || root.batch-report-visible || root.exit-warning {return reject;}
                                 if event.text==Key.Escape {root.warp-tool(false);root.repair-tool(0);return accept;}
                                 if event.text==Key.Delete && root.repair-mode>0 {root.remove-repair();return accept;}
                                 if event.modifiers.control && (event.text=="z" || event.text=="Z") {if event.modifiers.shift {root.redo-edit();}else{root.undo-edit();}return accept;}
@@ -424,7 +446,7 @@ export component AppWindow inherits Window {
                             border-radius: self.width/2;border-width:1px;border-color:#e7c889;background:#16e7c889;
                         }
                         canvas-pointer:=TouchArea {
-                            enabled:root.has-preview && !root.repair-busy && !root.ai-settings-visible && !root.ai-send-visible && !root.ai-report-visible && !root.about-visible && !root.batch-settings-visible && !root.batch-report-visible && !root.exit-warning;
+                            enabled:root.has-preview && !root.repair-busy && !root.ai-settings-visible && !root.style-visible && !root.style-confirm && !root.ai-send-visible && !root.ai-report-visible && !root.about-visible && !root.batch-settings-visible && !root.batch-report-visible && !root.exit-warning;
                             property <bool> dragged:false;
                             property <bool> shape-press:false;
                             property <float> start-pan-x;
@@ -482,6 +504,7 @@ export component AppWindow inherits Window {
                     ScrollView {
                         VerticalLayout {
                             spacing: 12px; padding-right: 6px;
+                            if root.style-has-advice: ToolButton {label:"试片本张批量建议";min-width:180px;active:!root.style-busy && !root.style-running && !root.busy && !root.ai-suggestion-ready;triggered=>{root.proof-style();}}
                             if root.ai-suggestion-ready: VerticalLayout {
                                 spacing:8px;
                                 Text {text:"AI 试片 · 尚未应用";color:#eed49c;font-size:14px;}
@@ -586,6 +609,11 @@ export component AppWindow inherits Window {
                 }
             }
         }
+        if root.style-status != "": HorizontalLayout {
+            height:36px;padding-left:18px;padding-right:18px;spacing:9px;
+            Text {text:root.style-status;color:#d4c29e;font-size:11px;overflow:elide;vertical-alignment:center;horizontal-stretch:1;}
+            ToolButton {label:"风格任务";min-width:85px;triggered=>{root.open-style();}}
+        }
         if root.ai-status != "": HorizontalLayout {
             height: 42px; padding-left: 18px; padding-right: 18px; spacing: 9px;
             Text { text: root.ai-status; color: #e5c58e; font-size: 11px; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; }
@@ -664,6 +692,55 @@ export component AppWindow inherits Window {
                     ToolButton { label: "清理已结束记录"; min-width: 122px; active: !root.batch-protected; triggered => { root.batch-clear(); } }
                     Rectangle { horizontal-stretch: 1; background: transparent; }
                     ToolButton { label: "返回暗房"; triggered => { root.batch-report-visible = false; } }
+                }
+            }
+        }
+    }
+    if root.style-visible: Rectangle {
+        background:#000000bb;TouchArea {}
+        Rectangle {
+            width:min(parent.width - 40px,900px);height:min(parent.height - 40px,700px);
+            x:(parent.width - self.width)/2;y:(parent.height - self.height)/2;background:#242b34;border-color:#536070;border-width:1px;border-radius:10px;
+            VerticalLayout {padding:20px;spacing:10px;
+                Text {text:"小批量风格 · 最多20张";color:#ecd39e;font-size:19px;}
+                Text {text:root.style-reference;color:#c9d6e2;font-size:12px;wrap:word-wrap;}
+                Text {text:"已选 "+root.style-count+" 张 · 待分析最多 "+root.style-calls+" 次调用";color:#d4bc8c;font-size:12px;}
+                ListView {for item in root.style-items: Rectangle {
+                    height:64px;background:item.is-reference?#33342f:#20262e;
+                    HorizontalLayout {padding:8px;spacing:8px;
+                        CheckBox {checked:item.chosen;enabled:!item.is-reference && !root.style-running && !root.style-busy;toggled=>{root.choose-style-photo(item.index,self.checked);}}
+                        VerticalLayout {Text {text:item.name;color:#dde4ee;font-size:12px;overflow:elide;} Text {text:item.status;color:#aab9c9;font-size:10px;overflow:elide;}}
+                        ToolButton {label:"查看";active:!root.style-busy;triggered=>{root.style-visible=false;root.select-photo(item.index);}}
+                    }
+                }}
+                Text {text:root.style-status;color:#d9c59b;font-size:11px;wrap:word-wrap;min-height:42px;vertical-stretch:0;}
+                Text {text:"复制参数不请求模型；逐张AI适配只生成建议。查看目标照片后，点右侧“试片本张批量建议”，检查并确认。";color:#a2b2c3;font-size:11px;wrap:word-wrap;min-height:32px;vertical-stretch:0;}
+                HorizontalLayout {
+                    ToolButton {label:"保存当前参考风格";min-width:140px;active:!root.style-running && !root.style-busy && !root.style-protected;triggered=>{root.capture-style();}}
+                    ToolButton {label:"复制参数（0次调用）";min-width:160px;active:root.style-count>0 && !root.style-running && !root.style-busy && !root.style-protected;triggered=>{root.copy-style();}}
+                }
+                HorizontalLayout {
+                    ToolButton {label:"逐张AI适配 / 继续重试";min-width:180px;primary:true;active:root.style-calls>0 && !root.style-running && !root.style-busy && !root.style-protected;triggered=>{root.review-style-send();}}
+                    ToolButton {label:"暂停后续";active:root.style-running;triggered=>{root.stop-style(false);}}
+                    ToolButton {label:"停止";active:root.style-running || root.style-busy;triggered=>{root.stop-style(true);}}
+                    Rectangle {horizontal-stretch:1;background:transparent;}
+                    ToolButton {label:"关闭";triggered=>{root.style-visible=false;}}
+                }
+            }
+        }
+    }
+    if root.style-confirm: Rectangle {
+        background:#000000bb;TouchArea {}
+        Rectangle {
+            width:min(parent.width - 40px,720px);height:min(parent.height - 40px,600px);
+            x:(parent.width - self.width)/2;y:(parent.height - self.height)/2;background:#242b34;border-color:#536070;border-width:1px;border-radius:10px;
+            VerticalLayout {padding:20px;spacing:12px;
+                Text {text:"检查本次逐张调用";color:#ecd39e;font-size:19px;}
+                ScrollView {viewport-width:self.width;VerticalLayout {Text {text:root.style-send-text;color:#d4dce6;font-size:12px;wrap:word-wrap;vertical-stretch:0;}}}
+                HorizontalLayout {
+                    ToolButton {label:"取消";triggered=>{root.style-confirm=false;}}
+                    Rectangle {horizontal-stretch:1;background:transparent;}
+                    ToolButton {label:"确认最多 "+root.style-calls+" 次分析";min-width:180px;primary:true;triggered=>{root.start-style();}}
                 }
             }
         }

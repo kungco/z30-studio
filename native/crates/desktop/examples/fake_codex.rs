@@ -84,10 +84,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     match env::var("Z30_FAKE_MODE").as_deref() {
         Ok("slow") => std::thread::sleep(Duration::from_secs(30)),
+        Ok("style") => std::thread::sleep(Duration::from_millis(env::var("Z30_FAKE_STYLE_DELAY_MS").ok().and_then(|v|v.parse::<u64>().ok()).unwrap_or(0).min(2000))),
         Ok("exit") => return Err("intentional failure".into()),
         _ => {}
     }
+    let sample=image::load_from_memory(&fs::read("current.jpg")?)?.to_rgb8();
+    let mean=sample.pixels().map(|p|p[0] as f64).sum::<f64>()/(sample.width()*sample.height()) as f64;
+    if env::var("Z30_FAKE_MODE").as_deref()==Ok("style") && mean>200. && env::var_os("Z30_FAKE_FAIL_MARKER").is_some_and(|p|std::path::Path::new(&p).exists()) {return Err("intentional per-photo failure".into());}
     let exposure = match env::var("Z30_FAKE_MODE").as_deref() {
+        Ok("style")=>if mean<80. {0.6}else{0.15},
         Ok("invalid") => 9.0,
         Ok("overexpose") => 4.0,
         Ok("warm") => 0.0,

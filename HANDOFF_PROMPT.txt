@@ -1,3 +1,5 @@
+2026-11-14 B实现已通过限定验证，先读 docs/reports/assistant-stage-b.md。当前下一步为C真实样片/模型效果与可靠交付；下文B作为下一步的描述为历史记录。没有真实付费调用或正式包验收。
+
 2026-11-14 A 实现已完成限定离线验证：先读 docs/reports/assistant-stage-a.md。当前下一项为 B 小批量风格复用；下文 A 作为下一步的描述是实现前记录。真实模型效果、Release/便携包与旧5F3中断验收仍未完成。
 
 2026-11-14 当前任务：用户已确认收窄为“中文 AI 后期助手”。先读 PRODUCT_DIRECTION.md，再读 PROJECT_PROGRESS.md 和 DEVELOPMENT_PLAN.md。下一项为 A：中文目标入口、生成建议后的本地强度试片、确认应用；之后 B 小批量风格复用与 C 可靠交付。复用已有 Rust/Slint 原生底座和 Codex CLI 登录，不再默认推进完整暗房迁移、人像扩展或 GPU。

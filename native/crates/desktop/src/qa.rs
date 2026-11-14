@@ -110,6 +110,13 @@ pub enum Command {
     AiCancel,
     AiTrial { strength: f32 },
     AiReview,
+    StyleCapture,
+    StyleChoose {index:i32,chosen:bool},
+    StyleCopy,
+    StyleReview,
+    StyleStart,
+    StyleStop {cancel:bool},
+    StyleProof,
     AiApply,
     AiDismiss,
     Compare {
