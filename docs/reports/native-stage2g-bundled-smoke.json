@@ -1,0 +1,63 @@
+{
+  "stage": "native-editing-callback-process",
+  "exe_sha256": "a9295783f5322eb4da027a12e4975c42d0de137bb35f66c4da527f7c0680421e",
+  "raw_runtime_mode": "bundled",
+  "raw_environment_override": false,
+  "checks": [
+    "process 1 provenance matches staged build",
+    "sliders update actual pixels and preserve neutral comparison",
+    "before/after toggle uses a neutral image",
+    "one undo reverses a whole drag gesture",
+    "redo restores edited pixels",
+    "reset restores neutral pixels",
+    "switching photos restores each set of sliders",
+    "rapid switching rejects stale preview requests",
+    "cancelled preview cannot reappear and retains recipe",
+    "jpg exports captured photo despite selection change",
+    "jpg output includes ICC",
+    "png exports captured photo despite selection change",
+    "png output includes ICC",
+    "tif exports captured photo despite selection change",
+    "real GUI TIFF output has sub-eight-bit precision",
+    "UI refuses to overwrite an existing original",
+    "real RAW enters the same editable UI pipeline",
+    "real RAW UI export is full-size 16-bit",
+    "cancellation leaves no final output or temporary parts",
+    "close during active rendering cancels and exits cleanly",
+    "close does not leave partial exports",
+    "process 2 provenance matches staged build",
+    "per-photo recipe restored after a real process restart",
+    "undo is explicitly in-memory and starts empty on restart",
+    "exit flushes the most recent slider value before debounce",
+    "all original sample hashes unchanged"
+  ],
+  "timings": {
+    "three_slider_changes_to_latest_preview_seconds": 0.5085359000004246,
+    "real_raw_export_seconds": 2.8742276999983005,
+    "close_during_render_seconds": 0.927117699997325
+  },
+  "physical_clicks_verified": false,
+  "screenshot_visual_acceptance": false,
+  "real_cloud_inference_requests": 0,
+  "build_provenance_checked": true,
+  "build1": {
+    "event_loop_ready_ms": 103.154,
+    "backend": "winit-software",
+    "version": "0.1.0",
+    "source_commit": "1c973d145a510108d56f103a04751fe6b105b089",
+    "source_dirty": true
+  },
+  "memory_mib": {
+    "peak_working_set": 543.184,
+    "working_set": 343.812,
+    "private_bytes": 535.73
+  },
+  "build2": {
+    "event_loop_ready_ms": 88.225,
+    "backend": "winit-software",
+    "version": "0.1.0",
+    "source_commit": "1c973d145a510108d56f103a04751fe6b105b089",
+    "source_dirty": true
+  },
+  "success": true
+}

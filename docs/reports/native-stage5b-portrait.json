@@ -1,0 +1,544 @@
+{
+  "stage": "5B-native-portrait-workflow",
+  "pre_commit_base": "efe7a70fa78985bbbe68941458715cb592a9fead",
+  "source_tree_dirty": true,
+  "rust": {
+    "passed": 66,
+    "ignored": 2
+  },
+  "python": {
+    "total": 175,
+    "passed": 173,
+    "skipped": 2
+  },
+  "node": {
+    "passed": 31
+  },
+  "portrait": {
+    "stage": "5B-native-portrait-ui",
+    "checks": [
+      "v2 draft migrates to v3 with exact original backup",
+      "native detector binds a face without automatically applying smoothing",
+      "portrait slider changes actual image pixels",
+      "one undo reverses the whole smoothing gesture",
+      "redo restores the same smoothed pixels",
+      "global edits retain the accepted portrait recipe",
+      "shared batch never transfers face coordinates to another photo",
+      "portrait batch output is full-size real TIFF16",
+      "normal workflow leaves every source byte unchanged",
+      "first portrait process closes cleanly",
+      "portrait binding and pixels restore without another model request",
+      "restored single export matches the earlier batch file exactly",
+      "changed source refuses old portrait coordinates",
+      "clearing the stale portrait restores normal editing",
+      "switching photos never applies old detection to the new photo",
+      "second portrait process closes cleanly",
+      "close during local detection exits cleanly",
+      "external public fixture and untouched second source remain unchanged"
+    ],
+    "exe_sha256": "f9113b892bde98f4d7f2407db7321e1ddf0315e028d6ed0d035cab8c529b5d38",
+    "physical_clicks_verified": false,
+    "cloud_requests": 0,
+    "qa_directory": "D:\\codex\\2026-10-23\\ni-k\\outputs\\Z30-Studio\\.development\\人像窗口 sq6swo_5",
+    "memory_mib": {
+      "peak_working_set": 77.391,
+      "working_set": 63.469,
+      "private_bytes": 35.371
+    },
+    "close_during_detection_seconds": 0.18069789999935892,
+    "success": true,
+    "intentional_test_copy_mutation": true
+  },
+  "editing": {
+    "stage": "native-editing-callback-process",
+    "exe_sha256": "f9113b892bde98f4d7f2407db7321e1ddf0315e028d6ed0d035cab8c529b5d38",
+    "raw_runtime_mode": "bundled",
+    "raw_environment_override": false,
+    "qa_directory": "D:\\codex\\2026-10-23\\ni-k\\outputs\\Z30-Studio\\.development\\native-editing\\UI 编辑 5dxnijt8",
+    "checks": [
+      "process 1 provenance matches staged build",
+      "sliders update actual pixels and preserve neutral comparison",
+      "before/after toggle uses a neutral image",
+      "one undo reverses a whole drag gesture",
+      "redo restores edited pixels",
+      "reset restores neutral pixels",
+      "switching photos restores each set of sliders",
+      "rapid switching rejects stale preview requests",
+      "cancelled preview cannot reappear and retains recipe",
+      "jpg exports captured photo despite selection change",
+      "jpg output includes ICC",
+      "png exports captured photo despite selection change",
+      "png output includes ICC",
+      "tif exports captured photo despite selection change",
+      "real GUI TIFF output has sub-eight-bit precision",
+      "UI refuses to overwrite an existing original",
+      "real RAW enters the same editable UI pipeline",
+      "real RAW UI export is full-size 16-bit",
+      "cancellation leaves no final output or temporary parts",
+      "close during active rendering cancels and exits cleanly",
+      "close does not leave partial exports",
+      "process 2 provenance matches staged build",
+      "per-photo recipe restored after a real process restart",
+      "undo is explicitly in-memory and starts empty on restart",
+      "exit flushes the most recent slider value before debounce",
+      "all original sample hashes unchanged"
+    ],
+    "timings": {
+      "three_slider_changes_to_latest_preview_seconds": 0.5085010000002512,
+      "real_raw_export_seconds": 2.494642499999827,
+      "close_during_render_seconds": 0.7758608000003733
+    },
+    "physical_clicks_verified": false,
+    "screenshot_visual_acceptance": false,
+    "real_cloud_inference_requests": 0,
+    "build_provenance_checked": true,
+    "build1": {
+      "pid": 30044,
+      "event_loop_ready_ms": 110.334,
+      "backend": "winit-software",
+      "version": "0.1.0",
+      "source_commit": "efe7a70fa78985bbbe68941458715cb592a9fead",
+      "source_dirty": true
+    },
+    "memory_mib": {
+      "peak_working_set": 662.551,
+      "working_set": 343.5,
+      "private_bytes": 536.32
+    },
+    "build2": {
+      "pid": 29824,
+      "event_loop_ready_ms": 107.186,
+      "backend": "winit-software",
+      "version": "0.1.0",
+      "source_commit": "efe7a70fa78985bbbe68941458715cb592a9fead",
+      "source_dirty": true
+    },
+    "success": true
+  },
+  "raw": {
+    "stage": "native-batch-real-z30",
+    "source_hashes": {
+      "D:\\codex\\2026-10-23\\ni-k\\work\\Z30-12bit.NEF": "75249c11a3a845367c7a322a1c4e7076f33c785ec2518fc6594c34c185b41161",
+      "D:\\codex\\2026-10-23\\ni-k\\work\\Z30-14bit.NEF": "03d94c1f184c4236ea8f890ab0fe30e91b65965e8b09cebecc397fba081a607f"
+    },
+    "exe_sha256": "8bfe44ed0a004c3d02450eb70f1aab86f8125d1085fa57c5a2208b07a7257e98",
+    "checks": [
+      "real window reuses full-size cache for an immediate repeat export",
+      "switching to another photo evicts the previous full-size cache before preview decode",
+      "idle full-size cache expires in the running window",
+      "single-export process closes cleanly",
+      "normal batch does not retain newly decoded full-size frames",
+      "two real Z30 jobs complete with no failed status",
+      "RAW 0 single/batch TIFF16 pixels identical",
+      "RAW 0 source SHA unchanged",
+      "RAW 0 16-bit output retains sub-8-bit detail",
+      "RAW 1 single/batch TIFF16 pixels identical",
+      "RAW 1 source SHA unchanged",
+      "RAW 1 16-bit output retains sub-8-bit detail",
+      "no unfinished part remains on successful batch",
+      "batch process closes cleanly"
+    ],
+    "timings": {
+      "single_0_seconds": 2.226,
+      "single_repeat_seconds": 0.993,
+      "single_1_seconds": 2.223,
+      "batch_seconds": 4.326
+    },
+    "bundled_raw": true,
+    "raw_environment_override": false,
+    "physical_clicks_verified": false,
+    "single_export_memory_mib": {
+      "peak_working_set": 669.66,
+      "working_set": 314.828,
+      "private_bytes": 297.367
+    },
+    "single_after_cache_expiry_memory_mib": {
+      "peak_working_set": 669.66,
+      "working_set": 78.297,
+      "private_bytes": 60.367
+    },
+    "memory_mib": {
+      "peak_working_set": 551.391,
+      "working_set": 78.316,
+      "private_bytes": 60.012
+    },
+    "queue_directory": "D:\\codex\\2026-10-23\\ni-k\\outputs\\Z30-Studio\\.development\\RAW 批量 o4ue4gl4"
+  },
+  "batch": {
+    "stage": "native-batch-ui",
+    "checks": [
+      "first job persisted running before background export",
+      "pause waits for active photo and keeps later jobs queued",
+      "paused process closes cleanly",
+      "restarted queue remains paused and retains per-photo recipes",
+      "existing target fails closed while later job completes",
+      "explicit retry completes only the failed item",
+      "all TIFF16 outputs have full resolution and high depth",
+      "individual recipes create distinct visible output",
+      "all originals remain byte identical",
+      "new batch cannot reuse already published target names",
+      "shared recipe mode freezes the selected photo parameters for every job",
+      "cancel keeps pending photos unpublished and marks them durably",
+      "cancelled photos can be explicitly retried without replacing earlier outputs",
+      "completed process closes cleanly"
+    ],
+    "source_sha256": {
+      "D:\\codex\\2026-10-23\\ni-k\\outputs\\Z30-Studio\\.development\\批量验收 j6g9otpy\\photos\\素材 1.png": "41483b10c9fa5f3b60184bb3f982bb10a81f8acf8ce8409fcba2858c75ef5796",
+      "D:\\codex\\2026-10-23\\ni-k\\outputs\\Z30-Studio\\.development\\批量验收 j6g9otpy\\photos\\素材 2.png": "41483b10c9fa5f3b60184bb3f982bb10a81f8acf8ce8409fcba2858c75ef5796",
+      "D:\\codex\\2026-10-23\\ni-k\\outputs\\Z30-Studio\\.development\\批量验收 j6g9otpy\\photos\\素材 3.png": "41483b10c9fa5f3b60184bb3f982bb10a81f8acf8ce8409fcba2858c75ef5796"
+    },
+    "physical_clicks_verified": false,
+    "real_cloud_inference_requests": 0,
+    "job_attempts": [
+      1,
+      2,
+      1
+    ],
+    "queue_directory": "D:\\codex\\2026-10-23\\ni-k\\outputs\\Z30-Studio\\.development\\批量验收 j6g9otpy"
+  },
+  "mock_cli": {
+    "stage": "native-ai-offline-callback-process",
+    "exe_sha256": "8bfe44ed0a004c3d02450eb70f1aab86f8125d1085fa57c5a2208b07a7257e98",
+    "fake_cli_sha256": "1c20636bfb0ab566889a361c875c0ec322fd7a47b3e594c6dfdc7b5a22e56c55",
+    "qa_directory": "D:\\codex\\2026-10-23\\ni-k\\outputs\\Z30-Studio\\.development\\native-ai\\AI 原生回归 7wkemnr1",
+    "real_cloud_inference_requests": 0,
+    "physical_clicks_verified": false,
+    "checks": [
+      "auto: original image is only referenced",
+      "auto: AI process started in the native UI",
+      "auto: two metadata-free bounded previews and strict schema reach the CLI fixture",
+      "auto: bounded advice is applied and undoable",
+      "auto: undo restores original recipe and pixels",
+      "auto: process shutdown",
+      "auto: no original bytes changed",
+      "auto: model temporary JPEGs cleaned",
+      "suggest: original image is only referenced",
+      "suggest: AI process started in the native UI",
+      "suggest: two metadata-free bounded previews and strict schema reach the CLI fixture",
+      "suggest: no edit before explicit apply",
+      "suggest: one apply records a single undo step",
+      "suggest: process shutdown",
+      "suggest: no original bytes changed",
+      "suggest: model temporary JPEGs cleaned",
+      "invalid: original image is only referenced",
+      "invalid: AI process started in the native UI",
+      "invalid: two metadata-free bounded previews and strict schema reach the CLI fixture",
+      "invalid: out-of-range model data fails closed",
+      "invalid: process shutdown",
+      "invalid: no original bytes changed",
+      "invalid: model temporary JPEGs cleaned",
+      "quality: original image is only referenced",
+      "quality: AI process started in the native UI",
+      "quality: two metadata-free bounded previews and strict schema reach the CLI fixture",
+      "quality: excessive warmth on a neutral gray image is reduced after pixel inspection",
+      "quality: process shutdown",
+      "quality: no original bytes changed",
+      "quality: model temporary JPEGs cleaned",
+      "cancel: original image is only referenced",
+      "cancel: AI process started in the native UI",
+      "cancel: child stops and no edits are applied",
+      "cancel: process shutdown",
+      "cancel: no original bytes changed",
+      "cancel: model temporary JPEGs cleaned",
+      "stale: original image is only referenced",
+      "stale: AI process started in the native UI",
+      "stale: an edit cancels old advice without overwriting it",
+      "stale: process shutdown",
+      "stale: no original bytes changed",
+      "stale: model temporary JPEGs cleaned",
+      "exit: original image is only referenced",
+      "exit: AI process started in the native UI",
+      "exit: active CLI stops and native process exits",
+      "exit: no original bytes changed",
+      "exit: model temporary JPEGs cleaned",
+      "raw_1: original image is only referenced",
+      "raw_1: AI process started in the native UI",
+      "raw_1: two metadata-free bounded previews and strict schema reach the CLI fixture",
+      "raw_1: actual NEF preview enters AI and returns a safe edit or quality fallback",
+      "raw_1: process shutdown",
+      "raw_1: no original bytes changed",
+      "raw_1: model temporary JPEGs cleaned",
+      "raw_2: original image is only referenced",
+      "raw_2: AI process started in the native UI",
+      "raw_2: two metadata-free bounded previews and strict schema reach the CLI fixture",
+      "raw_2: actual NEF preview enters AI and returns a safe edit or quality fallback",
+      "raw_2: process shutdown",
+      "raw_2: no original bytes changed",
+      "raw_2: model temporary JPEGs cleaned"
+    ],
+    "timings": {
+      "auto_seconds": 0.493,
+      "suggest_seconds": 0.343,
+      "invalid_seconds": 0.299,
+      "quality_seconds": 0.404,
+      "cancel_seconds": 0.297,
+      "stale_seconds": 0.297,
+      "exit_seconds": 0.3,
+      "raw_1_seconds": 0.883,
+      "raw_2_seconds": 0.841
+    },
+    "memory_mib": {
+      "auto_ready": {
+        "peak_working_set": 40.965,
+        "working_set": 39.785,
+        "private_bytes": 20.023
+      },
+      "auto_after": {
+        "peak_working_set": 47.457,
+        "working_set": 40.578,
+        "private_bytes": 20.273
+      },
+      "suggest_ready": {
+        "peak_working_set": 41.273,
+        "working_set": 39.625,
+        "private_bytes": 20.035
+      },
+      "suggest_after": {
+        "peak_working_set": 47.02,
+        "working_set": 40.156,
+        "private_bytes": 20.59
+      },
+      "invalid_ready": {
+        "peak_working_set": 41.23,
+        "working_set": 39.695,
+        "private_bytes": 20.031
+      },
+      "invalid_after": {
+        "peak_working_set": 41.23,
+        "working_set": 40.379,
+        "private_bytes": 21.023
+      },
+      "quality_ready": {
+        "peak_working_set": 41.324,
+        "working_set": 39.723,
+        "private_bytes": 20.023
+      },
+      "quality_after": {
+        "peak_working_set": 47.336,
+        "working_set": 40.32,
+        "private_bytes": 20.215
+      },
+      "cancel_ready": {
+        "peak_working_set": 41.176,
+        "working_set": 39.637,
+        "private_bytes": 20.051
+      },
+      "cancel_after": {
+        "peak_working_set": 41.176,
+        "working_set": 40.102,
+        "private_bytes": 20.055
+      },
+      "stale_ready": {
+        "peak_working_set": 41.281,
+        "working_set": 39.727,
+        "private_bytes": 20.02
+      },
+      "stale_after": {
+        "peak_working_set": 41.281,
+        "working_set": 40.48,
+        "private_bytes": 21.012
+      },
+      "exit_ready": {
+        "peak_working_set": 41.164,
+        "working_set": 39.785,
+        "private_bytes": 20.027
+      },
+      "raw_1_ready": {
+        "peak_working_set": 386.879,
+        "working_set": 79.609,
+        "private_bytes": 60.164
+      },
+      "raw_1_after": {
+        "peak_working_set": 386.879,
+        "working_set": 80.23,
+        "private_bytes": 60.27
+      },
+      "raw_2_ready": {
+        "peak_working_set": 386.918,
+        "working_set": 79.539,
+        "private_bytes": 60.176
+      },
+      "raw_2_after": {
+        "peak_working_set": 386.918,
+        "working_set": 80.309,
+        "private_bytes": 60.34
+      }
+    },
+    "success": true
+  },
+  "mock_http": {
+    "stage": "native-ai-compatible-loopback",
+    "exe_sha256": "8bfe44ed0a004c3d02450eb70f1aab86f8125d1085fa57c5a2208b07a7257e98",
+    "qa_directory": "D:\\codex\\2026-10-23\\ni-k\\outputs\\Z30-Studio\\.development\\native-ai\\HTTP 回归 mbhkpa50",
+    "real_cloud_inference_requests": 0,
+    "checks": [
+      "auto: original referenced unchanged",
+      "auto: HTTP job starts",
+      "auto: fake API key only in header",
+      "auto: two bounded images without original path or metadata",
+      "auto: model and JSON schema are sent without a temp-file secret",
+      "auto: advice applied and undoable",
+      "auto: undo restores preview",
+      "auto: native process shutdown",
+      "auto: original bytes unchanged",
+      "auto: HTTP request files cleaned",
+      "invalid: original referenced unchanged",
+      "invalid: HTTP job starts",
+      "invalid: fake API key only in header",
+      "invalid: two bounded images without original path or metadata",
+      "invalid: model and JSON schema are sent without a temp-file secret",
+      "invalid: model range check rejects bad content",
+      "invalid: native process shutdown",
+      "invalid: original bytes unchanged",
+      "invalid: HTTP request files cleaned",
+      "cancel: original referenced unchanged",
+      "cancel: HTTP job starts",
+      "cancel: fake API key only in header",
+      "cancel: two bounded images without original path or metadata",
+      "cancel: model and JSON schema are sent without a temp-file secret",
+      "cancel: no recipe applied",
+      "cancel: native process shutdown",
+      "cancel: original bytes unchanged",
+      "cancel: HTTP request files cleaned",
+      "stale: original referenced unchanged",
+      "stale: HTTP job starts",
+      "stale: fake API key only in header",
+      "stale: two bounded images without original path or metadata",
+      "stale: model and JSON schema are sent without a temp-file secret",
+      "stale: later edit is retained",
+      "stale: native process shutdown",
+      "stale: original bytes unchanged",
+      "stale: HTTP request files cleaned",
+      "exit: original referenced unchanged",
+      "exit: HTTP job starts",
+      "exit: fake API key only in header",
+      "exit: two bounded images without original path or metadata",
+      "exit: model and JSON schema are sent without a temp-file secret",
+      "exit: network process cancelled before window closes",
+      "exit: original bytes unchanged",
+      "exit: HTTP request files cleaned"
+    ],
+    "timings": {
+      "auto_seconds": 0.405,
+      "invalid_seconds": 0.248,
+      "cancel_seconds": 0.18,
+      "stale_seconds": 0.209,
+      "exit_seconds": 0.238
+    },
+    "memory_mib": {
+      "auto_ready": {
+        "peak_working_set": 40.91,
+        "working_set": 38.934,
+        "private_bytes": 20.031
+      },
+      "auto_after": {
+        "peak_working_set": 46.543,
+        "working_set": 39.953,
+        "private_bytes": 19.809
+      },
+      "invalid_ready": {
+        "peak_working_set": 41.285,
+        "working_set": 38.926,
+        "private_bytes": 20.012
+      },
+      "invalid_after": {
+        "peak_working_set": 41.285,
+        "working_set": 39.801,
+        "private_bytes": 20.012
+      },
+      "cancel_ready": {
+        "peak_working_set": 41.465,
+        "working_set": 39.074,
+        "private_bytes": 20.027
+      },
+      "cancel_after": {
+        "peak_working_set": 41.465,
+        "working_set": 39.793,
+        "private_bytes": 20.031
+      },
+      "stale_ready": {
+        "peak_working_set": 41.52,
+        "working_set": 39.043,
+        "private_bytes": 20.035
+      },
+      "stale_after": {
+        "peak_working_set": 41.52,
+        "working_set": 39.812,
+        "private_bytes": 20.035
+      },
+      "exit_ready": {
+        "peak_working_set": 41.363,
+        "working_set": 39.02,
+        "private_bytes": 20.035
+      }
+    },
+    "success": true
+  },
+  "raw_compatibility": {
+    "stage": "5B-portrait-disabled-raw-compatibility",
+    "all_tiff16_bytes_identical": true,
+    "pairs": [
+      {
+        "name": "Z30-12bit-z30-001.tif",
+        "old_sha256": "ce4216394603464ac14395df75a2c8c9ee6a3ef9ab59a657c3e1d8a0a7eeae8f",
+        "new_sha256": "ce4216394603464ac14395df75a2c8c9ee6a3ef9ab59a657c3e1d8a0a7eeae8f"
+      },
+      {
+        "name": "Z30-14bit-z30-002.tif",
+        "old_sha256": "8c10f8735d6cef2070e4fc5c6957d14bfd8dcb973196f83f94cea903fa0aafc5",
+        "new_sha256": "8c10f8735d6cef2070e4fc5c6957d14bfd8dcb973196f83f94cea903fa0aafc5"
+      }
+    ],
+    "before_timings": {
+      "single_0_seconds": 2.205,
+      "single_repeat_seconds": 0.989,
+      "single_1_seconds": 2.203,
+      "batch_seconds": 4.306
+    },
+    "after_timings": {
+      "single_0_seconds": 2.226,
+      "single_repeat_seconds": 0.993,
+      "single_1_seconds": 2.223,
+      "batch_seconds": 4.326
+    },
+    "before_batch_memory_mib": {
+      "peak_working_set": 551.363,
+      "working_set": 78.188,
+      "private_bytes": 60.094
+    },
+    "after_batch_memory_mib": {
+      "peak_working_set": 551.391,
+      "working_set": 78.316,
+      "private_bytes": 60.012
+    },
+    "timing_scope": "One observed desktop run per version, not a controlled speed improvement claim"
+  },
+  "visual": {
+    "stage": "5B-native-portrait-desktop-review",
+    "build": "stage-9fb0b6cf6b0f400ead14c90aec8ed5ad",
+    "native_window": "Z30 Studio · 原生开发预览",
+    "tool": "computer-use via @oai/sky",
+    "physical_actions": [
+      "Scroll portrait panel",
+      "Click locate face",
+      "Click smoothing slider to 70.15504"
+    ],
+    "observed": [
+      "Pinned bundled component discovered without an asset override",
+      "One face and five points align with the displayed letterboxed portrait",
+      "Detection starts at strength zero",
+      "Slider shows 70.16 and completes the actual preview",
+      "No component dialog used in this bundled workflow"
+    ],
+    "remaining": [
+      "High DPI, glasses, multiple people and user Z30 portraits remain unverified"
+    ],
+    "thumbnail_rechecked_build": "stage-ac929b2fc15f495aaf03004d204ed05f",
+    "thumbnail_overflow_fixed_and_visually_verified": true
+  },
+  "explicit_post_telemetry_change_validation": {
+    "workspace_passed": 66,
+    "raw_12_14_full_half_passed": true,
+    "pinned_cpu_face_fixture_passed": true
+  }
+}

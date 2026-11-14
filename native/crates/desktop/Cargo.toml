@@ -1,0 +1,33 @@
+[package]
+name = "z30-desktop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+build = "build.rs"
+
+[[bin]]
+name = "z30-native"
+path = "src/main.rs"
+
+[dependencies]
+z30-core = { path = "../core" }
+z30-vision = { path = "../vision" }
+slint = { version = "=1.18.1", default-features = false, features = ["std", "backend-winit", "renderer-software", "accessibility", "compat-1-2"] }
+rfd = { version = "0.16", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+tempfile = "3"
+base64 = "0.23"
+url = "2"
+
+[dev-dependencies]
+slint = { version = "=1.18.1", default-features = false, features = ["raw-window-handle-06"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+raw-window-handle = "=0.6.2"
+windows = { version = "=0.62.2", features = ["Win32_Foundation", "Win32_Graphics_Gdi"] }
+
+[build-dependencies]
+slint-build = "=1.18.1"

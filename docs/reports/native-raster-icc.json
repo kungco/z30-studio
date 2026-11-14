@@ -1,0 +1,536 @@
+{
+  "stage": "2C-raster-icc",
+  "full_migration_complete": false,
+  "probe_sha256": "373776f37676c3b01fe22fa91626f0801d3cdfe9d3b700d7245ba631d8a3864e",
+  "baseline_commit": "a2a2e089d760221a52c8774cca8a2e42f0a82269",
+  "native_base_commit": "37c15ddb9af9f372d004251bdc9318b032265c8f",
+  "source_sha256": {
+    "native/crates/core/src/raster.rs": "ede66996c65bff09e6b1bdf47b7f60502834a7e8ea7d6702aa1a7f3660402880",
+    "native/crates/core/src/colour.rs": "65f4cb7a38b14302de174f389bbdf9c0ed39e009d4bf04324a3402f7836ef8bb",
+    "native/crates/core/src/frame.rs": "19b3cd0cd46abbf40e43a76b7aaba2434a57e40531ce96b3dbf96b3e3a4b9eaa"
+  },
+  "cases": [
+    {
+      "name": "untagged-rgb",
+      "source_unchanged": true,
+      "max_abs_error": 1.0008611806000545e-07,
+      "tolerance": 2e-06,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "tagged-srgb",
+      "source_unchanged": true,
+      "max_abs_error": 3.336115034224818e-08,
+      "tolerance": 2e-06,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "wide-icc",
+      "source_unchanged": true,
+      "max_abs_error": 1.4263169164863143e-05,
+      "tolerance": 8e-05,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "gray-icc",
+      "source_unchanged": true,
+      "max_abs_error": 3.0329019453656514e-06,
+      "tolerance": 3e-05,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "gray-rgb-icc",
+      "source_unchanged": true,
+      "max_abs_error": 2.5803255004896997e-08,
+      "tolerance": 2e-06,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "gray-alpha",
+      "source_unchanged": true,
+      "max_abs_error": 6.508663497051259e-08,
+      "tolerance": 2e-06,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "rgba-icc",
+      "source_unchanged": true,
+      "max_abs_error": 8.118751426700044e-08,
+      "tolerance": 2e-06,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "palette-transparent",
+      "source_unchanged": true,
+      "max_abs_error": 0.0,
+      "tolerance": 2e-06,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "gamma-linear",
+      "source_unchanged": true,
+      "max_abs_error": 1.5895857530479063e-05,
+      "tolerance": 3e-05,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "gamma-wide-chroma",
+      "source_unchanged": true,
+      "max_abs_error": 1.5110783040422904e-05,
+      "tolerance": 8e-05,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "png-srgb-chunk",
+      "source_unchanged": true,
+      "max_abs_error": 1.0008611806000545e-07,
+      "tolerance": 2e-06,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "exif-adobe-interop",
+      "source_unchanged": true,
+      "max_abs_error": 1.5133171821668512e-05,
+      "tolerance": 8e-05,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "png-orientation-1",
+      "source_unchanged": true,
+      "max_abs_error": 1.0008611806000545e-07,
+      "tolerance": 2e-06,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "png-orientation-2",
+      "source_unchanged": true,
+      "max_abs_error": 1.0008611806000545e-07,
+      "tolerance": 2e-06,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "png-orientation-3",
+      "source_unchanged": true,
+      "max_abs_error": 1.0008611806000545e-07,
+      "tolerance": 2e-06,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "png-orientation-4",
+      "source_unchanged": true,
+      "max_abs_error": 1.0008611806000545e-07,
+      "tolerance": 2e-06,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "png-orientation-5",
+      "source_unchanged": true,
+      "max_abs_error": 1.0008611806000545e-07,
+      "tolerance": 2e-06,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "png-orientation-6",
+      "source_unchanged": true,
+      "max_abs_error": 1.0008611806000545e-07,
+      "tolerance": 2e-06,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "png-orientation-7",
+      "source_unchanged": true,
+      "max_abs_error": 1.0008611806000545e-07,
+      "tolerance": 2e-06,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "png-orientation-8",
+      "source_unchanged": true,
+      "max_abs_error": 1.0008611806000545e-07,
+      "tolerance": 2e-06,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "jpeg-orientation-1",
+      "source_unchanged": true,
+      "max_abs_error": 1.0008611806000545e-07,
+      "tolerance": 0.009,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "jpeg-orientation-2",
+      "source_unchanged": true,
+      "max_abs_error": 1.0008611806000545e-07,
+      "tolerance": 0.009,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "jpeg-orientation-3",
+      "source_unchanged": true,
+      "max_abs_error": 1.0008611806000545e-07,
+      "tolerance": 0.009,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "jpeg-orientation-4",
+      "source_unchanged": true,
+      "max_abs_error": 1.0008611806000545e-07,
+      "tolerance": 0.009,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "jpeg-orientation-5",
+      "source_unchanged": true,
+      "max_abs_error": 1.0008611806000545e-07,
+      "tolerance": 0.009,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "jpeg-orientation-6",
+      "source_unchanged": true,
+      "max_abs_error": 1.0008611806000545e-07,
+      "tolerance": 0.009,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "jpeg-orientation-7",
+      "source_unchanged": true,
+      "max_abs_error": 1.0008611806000545e-07,
+      "tolerance": 0.009,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "jpeg-orientation-8",
+      "source_unchanged": true,
+      "max_abs_error": 1.0008611806000545e-07,
+      "tolerance": 0.009,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "jpeg-srgb-icc",
+      "source_unchanged": true,
+      "max_abs_error": 3.336115034224818e-08,
+      "tolerance": 0.009,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "jpeg-gray",
+      "source_unchanged": true,
+      "max_abs_error": 3.062016293298164e-08,
+      "tolerance": 2e-06,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "jpeg-dct-boundary",
+      "source_unchanged": true,
+      "max_abs_error": 1.86893634346319e-07,
+      "tolerance": 0.009,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "jpeg-420-False",
+      "source_unchanged": true,
+      "max_abs_error": 1.86893634346319e-07,
+      "tolerance": 0.009,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "jpeg-420-True",
+      "source_unchanged": true,
+      "max_abs_error": 1.86893634346319e-07,
+      "tolerance": 0.009,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "corrupt-icc",
+      "source_unchanged": true,
+      "expected_rejection": true,
+      "success": true
+    },
+    {
+      "name": "gray-icc-on-rgb",
+      "source_unchanged": true,
+      "expected_rejection": true,
+      "success": true
+    },
+    {
+      "name": "cmyk-untagged",
+      "source_unchanged": true,
+      "expected_rejection": true,
+      "success": true
+    },
+    {
+      "name": "cmyk-rgb-icc",
+      "source_unchanged": true,
+      "expected_rejection": true,
+      "success": true
+    },
+    {
+      "name": "chroma-without-gamma",
+      "source_unchanged": true,
+      "expected_rejection": true,
+      "success": true
+    },
+    {
+      "name": "zero-gamma",
+      "source_unchanged": true,
+      "expected_rejection": true,
+      "success": true
+    },
+    {
+      "name": "empty-icc",
+      "source_unchanged": true,
+      "expected_rejection": true,
+      "success": true
+    },
+    {
+      "name": "duplicate-icc",
+      "source_unchanged": true,
+      "expected_rejection": true,
+      "success": true
+    },
+    {
+      "name": "hdr-cicp",
+      "source_unchanged": true,
+      "expected_rejection": true,
+      "success": true
+    },
+    {
+      "name": "truncated-jpeg",
+      "source_unchanged": true,
+      "expected_rejection": true,
+      "success": true
+    },
+    {
+      "name": "excessive-jpeg-scans",
+      "source_unchanged": true,
+      "expected_rejection": true,
+      "success": true
+    },
+    {
+      "name": "empty-jpeg-icc",
+      "source_unchanged": true,
+      "expected_rejection": true,
+      "success": true
+    },
+    {
+      "name": "partial-jpeg-icc",
+      "source_unchanged": true,
+      "expected_rejection": true,
+      "success": true
+    },
+    {
+      "name": "jpeg-icc-segment-order-(0, 1)",
+      "source_unchanged": true,
+      "max_abs_error": 3.336115034224818e-08,
+      "tolerance": 0.009,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "jpeg-icc-segment-order-(1, 0)",
+      "source_unchanged": true,
+      "max_abs_error": 3.336115034224818e-08,
+      "tolerance": 0.009,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "exif-after-idat",
+      "source_unchanged": true,
+      "max_abs_error": 1.0008611806000545e-07,
+      "tolerance": 2e-06,
+      "source_bits": 8,
+      "success": true
+    },
+    {
+      "name": "png16-rgb",
+      "source_unchanged": true,
+      "max_abs_error": 1.1436189217839399e-09,
+      "tolerance": 2e-06,
+      "source_bits": 16,
+      "success": true
+    },
+    {
+      "name": "png16-rgb-icc",
+      "source_unchanged": true,
+      "max_abs_error": 2.590074370256712e-10,
+      "tolerance": 2e-06,
+      "source_bits": 16,
+      "success": true
+    },
+    {
+      "name": "png16-gray",
+      "source_unchanged": true,
+      "max_abs_error": 8.588989610681941e-11,
+      "tolerance": 2e-06,
+      "source_bits": 16,
+      "success": true
+    }
+  ],
+  "performance": [
+    {
+      "name": "jpeg20mp-untagged",
+      "native": {
+        "decode_seconds": 0.3241655,
+        "height": 3712,
+        "policy": "sRGB（无 ICC）",
+        "source_bits": 8,
+        "warnings": [
+          "文件无 ICC；按 sRGB 解释，无法确认原始色彩空间"
+        ],
+        "width": 5568,
+        "peak_working_set_mib": 302.273,
+        "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+      },
+      "source_unchanged": true,
+      "baseline": {
+        "width": 5568,
+        "height": 3712,
+        "decode_seconds": 0.9183919999995851,
+        "policy": "sRGB（无 ICC）",
+        "warnings": [
+          "文件无 ICC；按 sRGB 解释，无法确认原始色彩空间"
+        ],
+        "peak_working_set_mib": 1198.496,
+        "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+      },
+      "old_output_comparison": {
+        "max_abs_error": 0.0,
+        "mean_abs_error": 0.0,
+        "different_channels": 0,
+        "nonfinite_channels": 0,
+        "within_one_rgb16_code": true,
+        "max_rgb8_code_difference": 0,
+        "within_jpeg_decode_tolerance": true
+      }
+    },
+    {
+      "name": "jpeg20mp-icc",
+      "native": {
+        "decode_seconds": 11.7990034,
+        "height": 3712,
+        "policy": "ICC → 浮点线性 sRGB",
+        "source_bits": 8,
+        "warnings": [],
+        "width": 5568,
+        "peak_working_set_mib": 302.277,
+        "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+      },
+      "source_unchanged": true,
+      "baseline": {
+        "width": 5568,
+        "height": 3712,
+        "decode_seconds": 1.119895699999688,
+        "policy": "ICC → sRGB",
+        "warnings": [],
+        "peak_working_set_mib": 1357.008,
+        "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+      },
+      "old_output_comparison": {
+        "max_abs_error": 4.172325134277344e-06,
+        "mean_abs_error": 2.881018622759583e-06,
+        "different_channels": 61806845,
+        "nonfinite_channels": 0,
+        "within_one_rgb16_code": true,
+        "max_rgb8_code_difference": 0,
+        "within_jpeg_decode_tolerance": true
+      }
+    },
+    {
+      "name": "jpeg20mp-420",
+      "native": {
+        "decode_seconds": 0.3121378,
+        "height": 3712,
+        "policy": "sRGB（无 ICC）",
+        "source_bits": 8,
+        "warnings": [
+          "文件无 ICC；按 sRGB 解释，无法确认原始色彩空间"
+        ],
+        "width": 5568,
+        "peak_working_set_mib": 300.293,
+        "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+      },
+      "source_unchanged": true,
+      "baseline": {
+        "width": 5568,
+        "height": 3712,
+        "decode_seconds": 0.8034706000007645,
+        "policy": "sRGB（无 ICC）",
+        "warnings": [
+          "文件无 ICC；按 sRGB 解释，无法确认原始色彩空间"
+        ],
+        "peak_working_set_mib": 1198.617,
+        "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+      },
+      "old_output_comparison": {
+        "max_abs_error": 0.0,
+        "mean_abs_error": 0.0,
+        "different_channels": 0,
+        "nonfinite_channels": 0,
+        "within_one_rgb16_code": true,
+        "max_rgb8_code_difference": 0,
+        "within_jpeg_decode_tolerance": true
+      }
+    },
+    {
+      "name": "png16-20mp",
+      "native": {
+        "decode_seconds": 0.6562968,
+        "height": 3712,
+        "policy": "sRGB（无 ICC）",
+        "source_bits": 16,
+        "warnings": [
+          "文件无 ICC；按 sRGB 解释，无法确认原始色彩空间"
+        ],
+        "width": 5568,
+        "peak_working_set_mib": 487.383,
+        "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+      },
+      "source_unchanged": true,
+      "analytic_max_abs_error": 2.6883538450928057e-07,
+      "analytic_tolerance": 2e-06,
+      "baseline": "Original Python explicitly rejects RGB16 PNG; no fabricated timing/equivalence"
+    }
+  ],
+  "success": true,
+  "limitations": [
+    "One measurement per synthetic case; no statistical speed claim",
+    "ICC float path deliberately avoids original Python 8-bit CMS intermediate",
+    "CMYK/YCCK and cICP/HDR are explicitly rejected pending separate implementation",
+    "sRGB display output; monitor ICC and visual/print calibration unverified"
+  ]
+}

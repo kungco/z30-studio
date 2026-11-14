@@ -1,0 +1,259 @@
+{
+  "stage": "2B-float-develop",
+  "parameters": {
+    "exposure": 0.75,
+    "contrast": 15,
+    "highlights": -35,
+    "shadows": 20,
+    "temperature": 30,
+    "tint": 10,
+    "saturation": 30,
+    "vibrance": 25,
+    "sharpen": 35
+  },
+  "full_migration_complete": false,
+  "oracle_mode": "baseline",
+  "oracle_base_commit": "a2a2e089d760221a52c8774cca8a2e42f0a82269",
+  "native_base_commit": "31af75ba91468762df3c5383d903ad109f1fdf2c",
+  "native_tree_dirty": true,
+  "native_probe_sha256": "5d9d66e26b1cf5504a7a136cb6c6ffe019026e6a3439848fdd08101d960c1f19",
+  "native_source_sha256": {
+    "native\\crates\\core\\src\\raw.rs": "731c319b10fc5311fe7dca0f0dc8ab315b2ff143c57c90f5c7e32a7c8793f494",
+    "native\\crates\\core\\src\\raw_geometry.rs": "0e4bcb3f8c5b1d6c7a103ddbfbd3c5cbc38ffd2fa727435a1813d25786f4ac10",
+    "native\\crates\\core\\src\\native_raw.c": "ad66d23da20a7f2c8df43cd12b7e56149d5c425eabeab6118352505e814a0c6d",
+    "native\\crates\\core\\src\\develop.rs": "ff8e4e546c290653fd19fec0e67725ae23969152115161bd6392e47699aa16ca"
+  },
+  "oracle_module_sha256": "f4ac48a0f6e8800ef70ecfb218a5813de07f29db2ea7fc27bbb3ea21c8ced669",
+  "oracle_processing_sha256": "a0a3507730b0acc16ebd92268dcc67c03b5b2b6c21a26860fe5a6bfd2cc8fb77",
+  "libraw_dll_sha256": "6a459c22039abf0eac4d263673337c8ed5f223acbd372fcf77610debf80ac8cd",
+  "cases": [
+    {
+      "label": "12bit-full",
+      "source_sha256": "75249c11a3a845367c7a322a1c4e7076f33c785ec2518fc6594c34c185b41161",
+      "source_unchanged": true,
+      "oracle": {
+        "width": 3712,
+        "height": 5568,
+        "decode_seconds": 0.8618317999998908,
+        "rawpy": "0.27.1",
+        "libraw": "0.22.1",
+        "openmp": true,
+        "original_flip": 5,
+        "render_seconds": 5.43973219999998,
+        "peak_working_set_mib": 712.5,
+        "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+      },
+      "native": {
+        "decode_seconds": 2.1965402,
+        "height": 5568,
+        "metadata": {
+          "active_height": 3728,
+          "active_width": 5600,
+          "half_size": false,
+          "libraw_version": "0.22.2",
+          "linear_space": "linear-srgb",
+          "model": "Z 30",
+          "original_flip": 5,
+          "output_bits": 16,
+          "sensor_height": 3728,
+          "sensor_width": 5600,
+          "source_bits": 12
+        },
+        "output_space": "encoded-srgb-float32",
+        "render_seconds": 10.2274485,
+        "timings": {
+          "bitmap_seconds": 0.0372429,
+          "geometry_seconds": 0.1146809,
+          "open_seconds": 0.0009183,
+          "process_seconds": 1.759732,
+          "release_seconds": 0.0035062,
+          "unpack_seconds": 0.2779064
+        },
+        "width": 3712,
+        "peak_working_set_mib": 478.969,
+        "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+      },
+      "comparison": {
+        "max_abs_error": 0.06293805688619614,
+        "mean_abs_error": 4.538605158916787e-05,
+        "different_channels": 57502558,
+        "nonfinite_channels": 0,
+        "within_one_rgb16_code": false,
+        "within_render_tolerance": false
+      }
+    },
+    {
+      "label": "12bit-half",
+      "source_sha256": "75249c11a3a845367c7a322a1c4e7076f33c785ec2518fc6594c34c185b41161",
+      "source_unchanged": true,
+      "oracle": {
+        "width": 1856,
+        "height": 2784,
+        "decode_seconds": 0.3851346999999805,
+        "rawpy": "0.27.1",
+        "libraw": "0.22.1",
+        "openmp": true,
+        "original_flip": 5,
+        "render_seconds": 1.4917929999996886,
+        "peak_working_set_mib": 228.645,
+        "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+      },
+      "native": {
+        "decode_seconds": 0.4040587,
+        "height": 2784,
+        "metadata": {
+          "active_height": 3728,
+          "active_width": 5600,
+          "half_size": true,
+          "libraw_version": "0.22.2",
+          "linear_space": "linear-srgb",
+          "model": "Z 30",
+          "original_flip": 5,
+          "output_bits": 16,
+          "sensor_height": 3728,
+          "sensor_width": 5600,
+          "source_bits": 12
+        },
+        "output_space": "encoded-srgb-float32",
+        "render_seconds": 2.6143193,
+        "timings": {
+          "bitmap_seconds": 0.0094166,
+          "geometry_seconds": 0.0301165,
+          "open_seconds": 0.0007496,
+          "process_seconds": 0.0864733,
+          "release_seconds": 0.0014807,
+          "unpack_seconds": 0.2747755
+        },
+        "width": 1856,
+        "peak_working_set_mib": 123.887,
+        "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+      },
+      "comparison": {
+        "max_abs_error": 0.014377016574144363,
+        "mean_abs_error": 5.3722199559900375e-05,
+        "different_channels": 14837396,
+        "nonfinite_channels": 0,
+        "within_one_rgb16_code": false,
+        "within_render_tolerance": false
+      }
+    },
+    {
+      "label": "14bit-full",
+      "source_sha256": "03d94c1f184c4236ea8f890ab0fe30e91b65965e8b09cebecc397fba081a607f",
+      "source_unchanged": true,
+      "oracle": {
+        "width": 3712,
+        "height": 5568,
+        "decode_seconds": 0.8520226000000548,
+        "rawpy": "0.27.1",
+        "libraw": "0.22.1",
+        "openmp": true,
+        "original_flip": 5,
+        "render_seconds": 5.665343099999973,
+        "peak_working_set_mib": 711.512,
+        "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+      },
+      "native": {
+        "decode_seconds": 2.099748,
+        "height": 5568,
+        "metadata": {
+          "active_height": 3728,
+          "active_width": 5600,
+          "half_size": false,
+          "libraw_version": "0.22.2",
+          "linear_space": "linear-srgb",
+          "model": "Z 30",
+          "original_flip": 5,
+          "output_bits": 16,
+          "sensor_height": 3728,
+          "sensor_width": 5600,
+          "source_bits": 14
+        },
+        "output_space": "encoded-srgb-float32",
+        "render_seconds": 10.0886634,
+        "timings": {
+          "bitmap_seconds": 0.0371777,
+          "geometry_seconds": 0.1154964,
+          "open_seconds": 0.0007251,
+          "process_seconds": 1.6687387999999999,
+          "release_seconds": 0.0034566,
+          "unpack_seconds": 0.2717193
+        },
+        "width": 3712,
+        "peak_working_set_mib": 478.742,
+        "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+      },
+      "comparison": {
+        "max_abs_error": 0.0202223751693964,
+        "mean_abs_error": 6.096245623849655e-05,
+        "different_channels": 57560039,
+        "nonfinite_channels": 0,
+        "within_one_rgb16_code": false,
+        "within_render_tolerance": false
+      }
+    },
+    {
+      "label": "14bit-half",
+      "source_sha256": "03d94c1f184c4236ea8f890ab0fe30e91b65965e8b09cebecc397fba081a607f",
+      "source_unchanged": true,
+      "oracle": {
+        "width": 1856,
+        "height": 2784,
+        "decode_seconds": 0.3760739000003923,
+        "rawpy": "0.27.1",
+        "libraw": "0.22.1",
+        "openmp": true,
+        "original_flip": 5,
+        "render_seconds": 1.4572834000000512,
+        "peak_working_set_mib": 228.098,
+        "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+      },
+      "native": {
+        "decode_seconds": 0.4160524,
+        "height": 2784,
+        "metadata": {
+          "active_height": 3728,
+          "active_width": 5600,
+          "half_size": true,
+          "libraw_version": "0.22.2",
+          "linear_space": "linear-srgb",
+          "model": "Z 30",
+          "original_flip": 5,
+          "output_bits": 16,
+          "sensor_height": 3728,
+          "sensor_width": 5600,
+          "source_bits": 14
+        },
+        "output_space": "encoded-srgb-float32",
+        "render_seconds": 2.6102204,
+        "timings": {
+          "bitmap_seconds": 0.0096191,
+          "geometry_seconds": 0.0291454,
+          "open_seconds": 0.0007833,
+          "process_seconds": 0.0868635,
+          "release_seconds": 0.0014889,
+          "unpack_seconds": 0.2871025
+        },
+        "width": 1856,
+        "peak_working_set_mib": 123.906,
+        "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+      },
+      "comparison": {
+        "max_abs_error": 0.02635280229151249,
+        "mean_abs_error": 7.040250997599795e-05,
+        "different_channels": 14827445,
+        "nonfinite_channels": 0,
+        "within_one_rgb16_code": false,
+        "within_render_tolerance": false
+      }
+    }
+  ],
+  "success": false,
+  "limitations": [
+    "Single run per case; not a statistically stable performance claim",
+    "Public samples, not user camera originals",
+    "Camera WB + linear sRGB only; other WB/ICC/wide gamut not yet accepted",
+    "Core probe only; RAW editing/export UI remains disabled",
+    "Clean-machine VC runtime and final LGPL redistribution pending"
+  ]
+}

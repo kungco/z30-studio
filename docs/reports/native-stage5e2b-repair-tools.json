@@ -1,0 +1,92 @@
+{
+  "stage": "5E2b",
+  "baseline": "cd299b033dcc0c2db8ac3187f6e3205cdf1f6365",
+  "scope": "Mouse repair, explicit clone donor, per-point edits, viewport geometry and asynchronous guards",
+  "tests": {
+    "rust_passed": 105,
+    "external_fixtures_explicit_passed": 2,
+    "python_passed": 180,
+    "python_skipped": 0,
+    "node_passed": 31,
+    "precommit_tool_process_checks": 56,
+    "physical_checks": 9,
+    "final_process_suite_expected": 289
+  },
+  "geometry": {
+    "pixel_centres": "displayed preview grid; repairs x*(width-1), y*(height-1)",
+    "letterbox_ignored": true,
+    "pan_clamped": true,
+    "portrait_landscape": true,
+    "marker_hit_radius_logical_pixels": 10,
+    "drag_threshold_logical_pixels": 4
+  },
+  "sampling": {
+    "original_linear_thumbnail_only": true,
+    "ui_thread_decode": false,
+    "full_frame_copy": false,
+    "background_bounded": true,
+    "source_binding_before_and_after": true,
+    "mode_requires_explicit_clone_donor": true,
+    "revision_and_displayed_recipe_guard": true,
+    "cancel_switch_modal_race_passed": true
+  },
+  "persistence": {
+    "session_version": 6,
+    "queue_version": 4,
+    "schema_change": false
+  },
+  "precommit_observation": {
+    "pointer_roundtrip_seconds": [
+      0.20019590000083554,
+      0.09048139999867999,
+      0.20021180000185268,
+      0.19964410000102362,
+      0.11086670000076992,
+      0.1108531000027142,
+      0.20103679999738233,
+      0.1108868999981496,
+      0.20170929999949294,
+      0.1116041999994195,
+      0.0914413999998942,
+      0.11240940000061528,
+      0.26606360000005225,
+      0.24710309999863966
+    ],
+    "raw_cases": [
+      {
+        "source_sha256": "75249c11a3a845367c7a322a1c4e7076f33c785ec2518fc6594c34c185b41161",
+        "output_sha256": "a3ad3645851fd253737c0e337340584f2d9e374648c160464712d884ce3ae28b",
+        "memory_mib": {
+          "peak_working_set": 792.828,
+          "working_set": 319.727,
+          "private_bytes": 300.422
+        }
+      },
+      {
+        "source_sha256": "03d94c1f184c4236ea8f890ab0fe30e91b65965e8b09cebecc397fba081a607f",
+        "output_sha256": "99e25546c0bff972de9a869444b570730f9cc30982ed0b59d76fa6e80487ad19",
+        "memory_mib": {
+          "peak_working_set": 792.828,
+          "working_set": 319.508,
+          "private_bytes": 300.027
+        }
+      }
+    ],
+    "memory_mib": {
+      "peak_working_set": 793.004,
+      "working_set": 42.43,
+      "private_bytes": 22.875
+    }
+  },
+  "real_z30_portrait": false,
+  "diverse_skin_tones": false,
+  "automatic_blemish_detection": false,
+  "contour": false,
+  "gpu": false,
+  "high_dpi": false,
+  "clean_windows": false,
+  "cloud_requests": 0,
+  "automatic_resume": false,
+  "automatic_shutdown": false,
+  "artifact_and_ci": "Final clean commit, ZIP, process comparisons and CI are recorded in the local checkpoint/final-artifact after commit"
+}

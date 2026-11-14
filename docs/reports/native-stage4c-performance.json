@@ -1,0 +1,496 @@
+{
+  "date": "2026-10-26",
+  "stage": "4C bounded full-size cache and public RAW batch",
+  "measured_base_commit": "d4900ff41e6a231d04b691ecca7f7722079a3fb8",
+  "measured_tree_dirty": true,
+  "source_hashes": {
+    "Z30-12bit.NEF": "75249c11a3a845367c7a322a1c4e7076f33c785ec2518fc6594c34c185b41161",
+    "Z30-14bit.NEF": "03d94c1f184c4236ea8f890ab0fe30e91b65965e8b09cebecc397fba081a607f"
+  },
+  "code_hashes": {
+    "native/crates/core/src/export_job.rs": "f316507f219407b42534317da096d06eac956ab14c2d755829544afbf809a00b",
+    "native/crates/core/src/batch.rs": "db31e2eed0ec3fccf1f6672295f467da601845790e1a392db10191cd4c47c0d4",
+    "native/crates/core/src/editor.rs": "1e3498bc839477728fd4a9f4cf83d3317f405e5ad778a2141b212abe69a68650",
+    "native/crates/desktop/src/main.rs": "65b05033ee7e9997c0616a116ac1e882b55b2082425a280a22b00f0cae2ca365",
+    "native/crates/core/examples/full_cache_probe.rs": "c5d89cc1acec74c8f50aefe531f0ba20be6a8bf294dfd8a9d4e163d9e3d2ae7a"
+  },
+  "cache_policy": {
+    "max_frames": 1,
+    "max_frame_mib": 320,
+    "idle_expiry_seconds": 30,
+    "single_export_retains": true,
+    "batch_miss_retains": false,
+    "invalidation": [
+      "path/size/mtime",
+      "RAW white balance",
+      "runtime path",
+      "preview source change"
+    ]
+  },
+  "stages_single_observations": [
+    {
+      "source": "Z30-12bit.NEF",
+      "first_preview_seconds": 1.5735456,
+      "warm_preview_seconds": 0.0753114,
+      "decode_seconds": 1.2859097,
+      "render_seconds": 0.8322023,
+      "encoders": [
+        {
+          "bytes": 124012298,
+          "encode_seconds": 0.40073,
+          "file": "developed.tif"
+        },
+        {
+          "bytes": 36347218,
+          "encode_seconds": 0.4249633,
+          "file": "developed.png"
+        },
+        {
+          "bytes": 11404665,
+          "encode_seconds": 0.6580871,
+          "file": "developed.jpg"
+        }
+      ],
+      "peak_core_mib": 479.098
+    },
+    {
+      "source": "Z30-14bit.NEF",
+      "first_preview_seconds": 1.5855150999999998,
+      "warm_preview_seconds": 0.066572,
+      "decode_seconds": 1.3555392,
+      "render_seconds": 0.729657,
+      "encoders": [
+        {
+          "bytes": 124012298,
+          "encode_seconds": 0.3505647,
+          "file": "developed.tif"
+        },
+        {
+          "bytes": 34284603,
+          "encode_seconds": 0.4054863,
+          "file": "developed.png"
+        },
+        {
+          "bytes": 10196366,
+          "encode_seconds": 0.6541656,
+          "file": "developed.jpg"
+        }
+      ],
+      "peak_core_mib": 479.094
+    }
+  ],
+  "cache_repeated_export": [
+    {
+      "source": "Z30-12bit.NEF",
+      "repeats": 3,
+      "summary": {
+        "uncached": {
+          "second_export_median_seconds": 2.0484505,
+          "second_decode_median_seconds": 1.222003,
+          "peak_working_set_max_mib": 478.125
+        },
+        "cached": {
+          "second_export_median_seconds": 0.8023972,
+          "second_decode_median_seconds": 6e-07,
+          "peak_working_set_max_mib": 595.703
+        }
+      },
+      "all_tiff_bytes_identical": true,
+      "output_sha256": "ce4216394603464ac14395df75a2c8c9ee6a3ef9ab59a657c3e1d8a0a7eeae8f",
+      "source_unchanged": true,
+      "runs": [
+        {
+          "mode": "uncached",
+          "repeat": 0,
+          "receipts": [
+            {
+              "bytes": 124012298,
+              "decode_seconds": 1.2134024,
+              "encode_seconds": 0.3277677,
+              "name": "first.tif",
+              "render_seconds": 0.4749016,
+              "reused_decode": false,
+              "seconds": 2.0219403
+            },
+            {
+              "bytes": 124012298,
+              "decode_seconds": 1.2185845,
+              "encode_seconds": 0.3515245,
+              "name": "second.tif",
+              "render_seconds": 0.4718016,
+              "reused_decode": false,
+              "seconds": 2.0484505
+            }
+          ],
+          "peak_working_set_mib": 478.121
+        },
+        {
+          "mode": "cached",
+          "repeat": 0,
+          "receipts": [
+            {
+              "bytes": 124012298,
+              "decode_seconds": 1.2132054,
+              "encode_seconds": 0.3275118,
+              "name": "first.tif",
+              "render_seconds": 0.4721731,
+              "reused_decode": false,
+              "seconds": 2.0128934
+            },
+            {
+              "bytes": 124012298,
+              "decode_seconds": 6e-07,
+              "encode_seconds": 0.3280089,
+              "name": "second.tif",
+              "render_seconds": 0.4712377,
+              "reused_decode": true,
+              "seconds": 0.7992484
+            }
+          ],
+          "peak_working_set_mib": 595.699
+        },
+        {
+          "mode": "cached",
+          "repeat": 1,
+          "receipts": [
+            {
+              "bytes": 124012298,
+              "decode_seconds": 1.2240517,
+              "encode_seconds": 0.3296454,
+              "name": "first.tif",
+              "render_seconds": 0.4759539,
+              "reused_decode": false,
+              "seconds": 2.0296543
+            },
+            {
+              "bytes": 124012298,
+              "decode_seconds": 8e-07,
+              "encode_seconds": 0.3315054,
+              "name": "second.tif",
+              "render_seconds": 0.4708897,
+              "reused_decode": true,
+              "seconds": 0.8023972
+            }
+          ],
+          "peak_working_set_mib": 595.699
+        },
+        {
+          "mode": "uncached",
+          "repeat": 1,
+          "receipts": [
+            {
+              "bytes": 124012298,
+              "decode_seconds": 1.2243078,
+              "encode_seconds": 0.3306553,
+              "name": "first.tif",
+              "render_seconds": 0.476019,
+              "reused_decode": false,
+              "seconds": 2.0376936
+            },
+            {
+              "bytes": 124012298,
+              "decode_seconds": 1.222003,
+              "encode_seconds": 0.3313878,
+              "name": "second.tif",
+              "render_seconds": 0.4715656,
+              "reused_decode": false,
+              "seconds": 2.0312019
+            }
+          ],
+          "peak_working_set_mib": 478.125
+        },
+        {
+          "mode": "uncached",
+          "repeat": 2,
+          "receipts": [
+            {
+              "bytes": 124012298,
+              "decode_seconds": 1.2244534,
+              "encode_seconds": 0.3301447,
+              "name": "first.tif",
+              "render_seconds": 0.4823689,
+              "reused_decode": false,
+              "seconds": 2.0426311
+            },
+            {
+              "bytes": 124012298,
+              "decode_seconds": 1.2617258,
+              "encode_seconds": 0.3313675,
+              "name": "second.tif",
+              "render_seconds": 0.4774362,
+              "reused_decode": false,
+              "seconds": 2.0758487
+            }
+          ],
+          "peak_working_set_mib": 478.125
+        },
+        {
+          "mode": "cached",
+          "repeat": 2,
+          "receipts": [
+            {
+              "bytes": 124012298,
+              "decode_seconds": 1.2258102,
+              "encode_seconds": 0.3379188,
+              "name": "first.tif",
+              "render_seconds": 0.4780083,
+              "reused_decode": false,
+              "seconds": 2.0417405
+            },
+            {
+              "bytes": 124012298,
+              "decode_seconds": 6e-07,
+              "encode_seconds": 0.3327718,
+              "name": "second.tif",
+              "render_seconds": 0.470847,
+              "reused_decode": true,
+              "seconds": 0.8036208
+            }
+          ],
+          "peak_working_set_mib": 595.703
+        }
+      ]
+    },
+    {
+      "source": "Z30-14bit.NEF",
+      "repeats": 3,
+      "summary": {
+        "uncached": {
+          "second_export_median_seconds": 2.0225931,
+          "second_decode_median_seconds": 1.2397141999999999,
+          "peak_working_set_max_mib": 478.125
+        },
+        "cached": {
+          "second_export_median_seconds": 0.7795099,
+          "second_decode_median_seconds": 8e-07,
+          "peak_working_set_max_mib": 595.699
+        }
+      },
+      "all_tiff_bytes_identical": true,
+      "output_sha256": "8c10f8735d6cef2070e4fc5c6957d14bfd8dcb973196f83f94cea903fa0aafc5",
+      "source_unchanged": true,
+      "runs": [
+        {
+          "mode": "uncached",
+          "repeat": 0,
+          "receipts": [
+            {
+              "bytes": 124012298,
+              "decode_seconds": 1.236489,
+              "encode_seconds": 0.3324149,
+              "name": "first.tif",
+              "render_seconds": 0.4506369,
+              "reused_decode": false,
+              "seconds": 2.0258479
+            },
+            {
+              "bytes": 124012298,
+              "decode_seconds": 1.2498532,
+              "encode_seconds": 0.3330793,
+              "name": "second.tif",
+              "render_seconds": 0.4479974,
+              "reused_decode": false,
+              "seconds": 2.0375818
+            }
+          ],
+          "peak_working_set_mib": 478.125
+        },
+        {
+          "mode": "cached",
+          "repeat": 0,
+          "receipts": [
+            {
+              "bytes": 124012298,
+              "decode_seconds": 1.2371602,
+              "encode_seconds": 0.3322228,
+              "name": "first.tif",
+              "render_seconds": 0.4505441,
+              "reused_decode": false,
+              "seconds": 2.01993
+            },
+            {
+              "bytes": 124012298,
+              "decode_seconds": 9e-07,
+              "encode_seconds": 0.3367656,
+              "name": "second.tif",
+              "render_seconds": 0.4441376,
+              "reused_decode": true,
+              "seconds": 0.7809052
+            }
+          ],
+          "peak_working_set_mib": 595.699
+        },
+        {
+          "mode": "cached",
+          "repeat": 1,
+          "receipts": [
+            {
+              "bytes": 124012298,
+              "decode_seconds": 1.2429235,
+              "encode_seconds": 0.3289911,
+              "name": "first.tif",
+              "render_seconds": 0.4515334,
+              "reused_decode": false,
+              "seconds": 2.0234517
+            },
+            {
+              "bytes": 124012298,
+              "decode_seconds": 8e-07,
+              "encode_seconds": 0.3298128,
+              "name": "second.tif",
+              "render_seconds": 0.4453844,
+              "reused_decode": true,
+              "seconds": 0.7751988
+            }
+          ],
+          "peak_working_set_mib": 595.699
+        },
+        {
+          "mode": "uncached",
+          "repeat": 1,
+          "receipts": [
+            {
+              "bytes": 124012298,
+              "decode_seconds": 1.2452782,
+              "encode_seconds": 0.3345015,
+              "name": "first.tif",
+              "render_seconds": 0.4503004,
+              "reused_decode": false,
+              "seconds": 2.0367851
+            },
+            {
+              "bytes": 124012298,
+              "decode_seconds": 1.2397141999999999,
+              "encode_seconds": 0.3309546,
+              "name": "second.tif",
+              "render_seconds": 0.4459652,
+              "reused_decode": false,
+              "seconds": 2.0225931
+            }
+          ],
+          "peak_working_set_mib": 478.125
+        },
+        {
+          "mode": "uncached",
+          "repeat": 2,
+          "receipts": [
+            {
+              "bytes": 124012298,
+              "decode_seconds": 1.2866096,
+              "encode_seconds": 0.3374892,
+              "name": "first.tif",
+              "render_seconds": 0.4542468,
+              "reused_decode": false,
+              "seconds": 2.0824773
+            },
+            {
+              "bytes": 124012298,
+              "decode_seconds": 1.2330666,
+              "encode_seconds": 0.332352,
+              "name": "second.tif",
+              "render_seconds": 0.4466071,
+              "reused_decode": false,
+              "seconds": 2.0187522
+            }
+          ],
+          "peak_working_set_mib": 478.125
+        },
+        {
+          "mode": "cached",
+          "repeat": 2,
+          "receipts": [
+            {
+              "bytes": 124012298,
+              "decode_seconds": 1.2357127,
+              "encode_seconds": 0.331377,
+              "name": "first.tif",
+              "render_seconds": 0.4482697,
+              "reused_decode": false,
+              "seconds": 2.0153624
+            },
+            {
+              "bytes": 124012298,
+              "decode_seconds": 7e-07,
+              "encode_seconds": 0.332703,
+              "name": "second.tif",
+              "render_seconds": 0.4468052,
+              "reused_decode": true,
+              "seconds": 0.7795099
+            }
+          ],
+          "peak_working_set_mib": 595.699
+        }
+      ]
+    }
+  ],
+  "raw_ui_baseline": {
+    "timings": {
+      "single_0_seconds": 2.661,
+      "single_1_seconds": 2.416,
+      "batch_seconds": 5.039
+    },
+    "memory_mib": {
+      "peak_working_set": 553.234,
+      "working_set": 80.02,
+      "private_bytes": 61.012
+    }
+  },
+  "raw_ui_final": {
+    "timings": {
+      "single_0_seconds": 2.224,
+      "single_repeat_seconds": 0.989,
+      "single_1_seconds": 2.206,
+      "batch_seconds": 4.326
+    },
+    "single_export_memory_mib": {
+      "peak_working_set": 669.398,
+      "working_set": 314.496,
+      "private_bytes": 296.898
+    },
+    "single_after_cache_expiry_memory_mib": {
+      "peak_working_set": 669.398,
+      "working_set": 77.965,
+      "private_bytes": 59.895
+    },
+    "memory_mib": {
+      "peak_working_set": 550.965,
+      "working_set": 77.906,
+      "private_bytes": 59.93
+    },
+    "checks": [
+      "real window reuses full-size cache for an immediate repeat export",
+      "switching to another photo evicts the previous full-size cache before preview decode",
+      "idle full-size cache expires in the running window",
+      "single-export process closes cleanly",
+      "normal batch does not retain newly decoded full-size frames",
+      "two real Z30 jobs complete with no failed status",
+      "RAW 0 single/batch TIFF16 pixels identical",
+      "RAW 0 source SHA unchanged",
+      "RAW 0 16-bit output retains sub-8-bit detail",
+      "RAW 1 single/batch TIFF16 pixels identical",
+      "RAW 1 source SHA unchanged",
+      "RAW 1 16-bit output retains sub-8-bit detail",
+      "no unfinished part remains on successful batch",
+      "batch process closes cleanly"
+    ]
+  },
+  "tests": {
+    "rust_workspace_pass": 51,
+    "rust_default_ignored": 1,
+    "explicit_raw_fixture_pass": 1,
+    "python_total": 171,
+    "python_skipped": 2,
+    "node_pass": 31,
+    "synthetic_batch_checks": 14,
+    "raw_batch_checks": 14,
+    "editing_checks": 26
+  },
+  "limitations": [
+    "Dirty build measured before final clean packaging; exact code hashes recorded",
+    "Stage breakdown and GUI batch timings are single observations, not causal speedup evidence",
+    "Repeated export comparison uses three alternate fresh-process runs per mode and fixture",
+    "Cache increases peak and idle memory until expiry",
+    "No clean Windows, user original photos, calibrated skin/print, GPU or real cloud inference validation",
+    "Disk/strip/LRU cache, parallel batch/ETA and batch AI remain outside this stage"
+  ]
+}

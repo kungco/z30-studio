@@ -1,0 +1,28 @@
+name: Native Windows migration
+on:
+  push:
+    paths: ['native/**', 'tools/native_build.ps1', 'tools/*native*.py', '.github/workflows/native-windows.yml']
+  pull_request:
+    paths: ['native/**', 'tools/native_build.ps1', 'tools/*native*.py', '.github/workflows/native-windows.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Install pinned compiler
+        run: rustup toolchain install 1.99.1 --profile minimal --no-self-update
+      - name: Native regression and Release build
+        run: ./tools/native_build.ps1 -Test -RepaintProbe
+      - name: Native Win32 invalidation at synthetic scale factors
+        run: python tools/verify_native_repaint.py --probe native/target/release/examples/repaint_probe.exe --out native/dist/repaint-ci.json
+      - name: Check developer verification harness syntax
+        run: python -m compileall -q tools
+      - name: Report stage binary size
+        shell: pwsh
+        run: |
+          Get-Item native/target/release/z30-native.exe | Select-Object Name,Length
+          Get-FileHash native/target/release/z30-native.exe -Algorithm SHA256
+          Write-Output 'Migration stage binary; this is not yet the complete-feature distribution.'

@@ -42,3 +42,8 @@ dist/
 # Downloaded local inference weights
 *.onnx
 models/
+
+# Native migration build/cache and local development checkpoints
+native/target/
+.development/
+native/dist/

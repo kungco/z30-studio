@@ -1,0 +1,148 @@
+{
+  "stage": "5C2",
+  "baseline_commit": "aa0012242c76d0a8da3c18de6d68bc3ab5728744",
+  "pre_commit_validation": true,
+  "tests": {
+    "rust_passed": 78,
+    "rust_default_ignored": 2,
+    "explicit_external_fixtures_passed": 2,
+    "python_total": 180,
+    "python_skipped": 2,
+    "node_passed": 31,
+    "skin_callbacks": 23,
+    "portrait_callbacks": 18,
+    "raw_callbacks": 14,
+    "original_model_reference_cases": 9,
+    "python_explicit_skips_passed": 2
+  },
+  "semantic_ui": {
+    "checks": [
+      "v3 draft migrates to v4 and backs up original bytes",
+      "explicit segmentation saves a bounded mask without applying strength",
+      "mask overlay is available with neutral strength",
+      "semantic smoothing changes actual float-rendered preview pixels",
+      "strength undo retains accepted skin area",
+      "one further undo removes segmentation and retains face",
+      "redo restores identical mask and smoothed pixels",
+      "mask visibility does not bake overlay into rendered pixels",
+      "before comparison still uses neutral image",
+      "shared batch captures first photo semantic mask",
+      "shared batch never transfers skin mask to another photo",
+      "semantic batch writes full-size real 16-bit TIFF",
+      "first skin process closes cleanly",
+      "restart without model folders restores identical skin effect",
+      "restoring saved mask does not load ONNX runtime",
+      "model-free restored export matches prior semantic batch pixels",
+      "reset and undo restore persisted semantic mask",
+      "same-length corrupted model is rejected and prior mask preserved",
+      "switching photos cannot apply old skin result to next photo",
+      "cancellation preserves saved mask and source binding",
+      "close with segmentation requested exits cleanly",
+      "all public input and test source copies stay byte-identical",
+      "successful exports leave no part files"
+    ],
+    "close_seconds": 0.12145820000023377,
+    "first_segmentation_seconds": 0.28190509999967617,
+    "memory": {
+      "peak_working_set": 117.238,
+      "working_set": 65.797,
+      "private_bytes": 36.953
+    },
+    "model_free_restore": true,
+    "model_free_tiff_matches": true
+  },
+  "compression": {
+    "before_payload_bytes": 87384,
+    "after_payload_bytes": 908,
+    "lossless": true,
+    "decoded_mask_sha256": "3ffdd765dcc85811b211a6bfa48a931636e063c6fee8a9a673bd5e9ba67f28fa"
+  },
+  "capacity": [
+    {
+      "draft_bytes": 1051677,
+      "draft_load_seconds": 0.0141111,
+      "draft_save_seconds": 0.0150134,
+      "job_count": 512,
+      "mode": "natural",
+      "photo_count": 256,
+      "portrait_quality_test": false,
+      "queue_bytes": 2273482,
+      "queue_load_seconds": 0.0286493,
+      "queue_save_seconds": 0.0202655,
+      "roundtrip_identical": true,
+      "synthetic_capacity_records": true,
+      "peak_working_set_mib": 61.617,
+      "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+    },
+    {
+      "draft_bytes": 23188875,
+      "draft_load_seconds": 0.0307214,
+      "draft_save_seconds": 0.0456783,
+      "job_count": 512,
+      "mode": "worst",
+      "photo_count": 256,
+      "portrait_quality_test": false,
+      "queue_bytes": 46546854,
+      "queue_load_seconds": 0.0616265,
+      "queue_save_seconds": 0.0955583,
+      "roundtrip_identical": true,
+      "synthetic_capacity_records": true,
+      "peak_working_set_mib": 194.086,
+      "memory_measurement": "Actual image worker's Windows peak working-set counter, polled every 20 ms; venv redirector excluded"
+    }
+  ],
+  "raw_output_hashes": {
+    "single-0.tif": "ce4216394603464ac14395df75a2c8c9ee6a3ef9ab59a657c3e1d8a0a7eeae8f",
+    "single-1.tif": "8c10f8735d6cef2070e4fc5c6957d14bfd8dcb973196f83f94cea903fa0aafc5",
+    "single-repeat.tif": "ce4216394603464ac14395df75a2c8c9ee6a3ef9ab59a657c3e1d8a0a7eeae8f",
+    "batch\\Z30-12bit-z30-001.tif": "ce4216394603464ac14395df75a2c8c9ee6a3ef9ab59a657c3e1d8a0a7eeae8f",
+    "batch\\Z30-14bit-z30-002.tif": "8c10f8735d6cef2070e4fc5c6957d14bfd8dcb973196f83f94cea903fa0aafc5"
+  },
+  "identical_to_5b": true,
+  "raw_timings": {
+    "single_0_seconds": 2.224,
+    "single_repeat_seconds": 0.989,
+    "single_1_seconds": 2.207,
+    "batch_seconds": 4.311
+  },
+  "raw_memory": {
+    "peak_working_set": 553.324,
+    "working_set": 79.828,
+    "private_bytes": 60.613
+  },
+  "raw_timing_scope": "Functional dirty-build run overlapped compilation; final clean-package observation stored separately",
+  "model_reference": {
+    "passed": true,
+    "cases": 9,
+    "max_probability_error": 1.0013580322265625e-05
+  },
+  "physical_visual_review": {
+    "observed_utc": "2026-10-27T03:54:32.785137+00:00",
+    "exe": "D:\\codex\\2026-10-23\\ni-k\\outputs\\Z30-Studio\\native\\dist\\stage-f0e7f6aa520c450f85585f5d245fad15\\Z30Studio.exe",
+    "exe_sha256": "4206447b9ef754e568216608da43b2c28bd7f8520ca343a302d425f9a867c50f",
+    "source_tree_dirty": true,
+    "public_image_sha256": "88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5",
+    "physical_clicks": [
+      "locate face",
+      "segment skin",
+      "set smoothing with slider",
+      "zoom",
+      "before comparison",
+      "close"
+    ],
+    "observed_strength": 70.15504,
+    "green_overlay_excludes_eyes_mouth_hair_clothes": true,
+    "zoom_alignment_verified": true,
+    "before_comparison_hides_overlay": true,
+    "scope": "one public portrait at 1322x892; pre-RLE build, no layout change from compression",
+    "user_z30_portrait": false,
+    "high_dpi": false,
+    "clean_windows": false
+  },
+  "final_artifact": "See post-commit .development/native-5c2-final-artifact.json; not a Release",
+  "user_z30_portrait_validated": false,
+  "diverse_skin_tones_validated": false,
+  "gpu_validated": false,
+  "clean_windows_validated": false,
+  "cloud_requests": 0
+}

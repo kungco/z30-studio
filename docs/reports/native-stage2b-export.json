@@ -1,0 +1,20 @@
+{
+  "bytes": 6954,
+  "export_seconds": 0.011602,
+  "height": 1,
+  "width": 1024,
+  "shape": [
+    1,
+    1024,
+    3
+  ],
+  "dtype": "uint16",
+  "bits_per_sample": 16,
+  "unique_red_values": 1024,
+  "sub_eight_bit_values": true,
+  "independent_pillow_icc_match": true,
+  "existing_output_rejected": true,
+  "existing_output_unchanged": true,
+  "fixture": "Synthetic 1024-colour gradient; NOT a full-size NEF export acceptance",
+  "success": true
+}

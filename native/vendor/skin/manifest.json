@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "model": {
+    "name": "selfie_multiclass_256x256.onnx",
+    "bytes": 16454497,
+    "sha256": "13961350bb2099688eb96182ffe26f24eb12c77b1df278a2ec95bbdc923136e1",
+    "url": "https://huggingface.co/FreeHugsForRobots/ps-skin-seg/resolve/f3a72025451688fb893083991fdfd4562814a4dd/selfie_multiclass_256x256.onnx",
+    "revision": "f3a72025451688fb893083991fdfd4562814a4dd",
+    "license": "Apache-2.0",
+    "modification": "Upstream community conversion from Google TFLite to ONNX; graph not modified by Z30 Studio"
+  },
+  "reference": {
+    "name": "selfie_multiclass_256x256.tflite",
+    "bytes": 16371837,
+    "sha256": "c6748b1253a99067ef71f7e26ca71096cd449baefa8f101900ea23016507e0e0",
+    "url": "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/1/selfie_multiclass_256x256.tflite",
+    "model_card_url": "https://storage.googleapis.com/mediapipe-assets/Model%20Card%20Multiclass%20Segmentation.pdf",
+    "model_card_sha256": "59372fce0666d4c75b3877540fa77f80ac4b2a0f75e914711417f85fc490a9e6"
+  },
+  "input": {"name":"input_29", "shape":[1,256,256,3], "channels":"RGB", "normalization_mean":127.5, "normalization_std":127.5, "range":[-1,1], "resize":"bilinear half-pixel, no letterbox"},
+  "output": {"name":"Identity", "shape":[1,256,256,6], "activation":"softmax of logits", "labels":["background","hair","body-skin","face-skin","clothes","others"]},
+  "gate": {"class":3, "smoothstep_thresholds":[0.55,0.85], "erosion_radius":1, "storage":"uint8 confidence only; image data remains float"},
+  "runtime": "Reuse native/vendor/vision/manifest.json ONNX Runtime 1.31.0 CPU and its external Microsoft VC++ x64 requirement",
+  "desktop_integration": true,
+  "automatic_download": false,
+  "user_photos_validated": false,
+  "clean_windows_validated": false
+}

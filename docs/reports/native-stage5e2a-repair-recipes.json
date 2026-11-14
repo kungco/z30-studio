@@ -1,0 +1,63 @@
+{
+  "stage": "5E2a",
+  "baseline": "fdfd0077d65f59ca11615570d296b0d20a98a98c",
+  "scope": "Source-bound repair recipes, persistence, preview/export and cooperative cancellation; mouse tool pending",
+  "tests": {
+    "rust_passed": 98,
+    "external_fixtures_default_ignored": 2,
+    "python_passed": 180,
+    "python_skipped": 0,
+    "node_passed": 31,
+    "precommit_process_checks": 24,
+    "final_process_suite_expected": 233
+  },
+  "migrations": {
+    "session_write": 6,
+    "session_read": "1..6",
+    "queue_write": 4,
+    "queue_read": "1..4",
+    "exact_legacy_backups": true
+  },
+  "point_data_shared": true,
+  "source_geometry_guard": true,
+  "apply_before_global_develop": true,
+  "preview_export_same_recipe": true,
+  "observation": {
+    "png_memory": {
+      "peak_working_set": 34.672,
+      "working_set": 33.441,
+      "private_bytes": 13.199
+    },
+    "cancel_to_default_preview_seconds": 0.20497489999979734,
+    "raw_cases": [
+      {
+        "source_sha256": "75249c11a3a845367c7a322a1c4e7076f33c785ec2518fc6594c34c185b41161",
+        "output_sha256": "54da0f4b26dfd7f5d0742a80340a4ec4672accd97ecdfbaa165093df77dced24",
+        "memory_mib": {
+          "peak_working_set": 789.324,
+          "working_set": 316.312,
+          "private_bytes": 297.539
+        }
+      },
+      {
+        "source_sha256": "03d94c1f184c4236ea8f890ab0fe30e91b65965e8b09cebecc397fba081a607f",
+        "output_sha256": "088eb7882a8889ca0658a11d60bb1d3b4392b4db9fb14ea6ae0ca985fd5492fd",
+        "memory_mib": {
+          "peak_working_set": 789.246,
+          "working_set": 316.184,
+          "private_bytes": 297.371
+        }
+      }
+    ]
+  },
+  "mouse_repair_tool": false,
+  "automatic_blemish_detection": false,
+  "real_z30_portrait": false,
+  "diverse_skin_tones": false,
+  "gpu": false,
+  "clean_windows": false,
+  "cloud_requests": 0,
+  "automatic_resume": false,
+  "automatic_shutdown": false,
+  "artifact_and_ci": "Clean package/hash/CI in local checkpoint after commit"
+}

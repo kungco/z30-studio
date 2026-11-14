@@ -2,3 +2,11 @@
 *.bat text eol=crlf
 *.ps1 text eol=crlf
 *.png binary
+# Preserve the exact pinned upstream header/license hashes, including CRLF.
+native/vendor/libraw/libraw/** -text -whitespace
+native/vendor/libraw/LICENSE.* -text -whitespace
+native/vendor/libraw/COPYRIGHT -text -whitespace
+native/vendor/vision/*-LICENSE.txt -text -whitespace
+native/vendor/vision/ONNXRuntime-ThirdPartyNotices.txt -text -whitespace
+# Keep the application-integrated GUI patch byte-identical on all build hosts.
+native/vendor/slint-winit/** -text -whitespace

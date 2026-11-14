@@ -16,6 +16,25 @@ LMS_LAB = np.array([[.2104542553, .7936177850, -.0040720468],
                     [.0259040371, .7827717662, -.8086757660]], np.float32)
 LAB_LMS = np.linalg.inv(LMS_LAB).astype(np.float32)
 LMS_RGB = np.linalg.inv(RGB_LMS).astype(np.float32)
+# Keep the forward colour contract, but solve gamut boundaries with paired
+# double-precision inverses. A 10-step float32 search amplified two ULPs of
+# lightness into ~0.008 encoded blue on the public Z30 sample.
+LAB_LMS64 = np.linalg.inv(LMS_LAB.astype(np.float64))
+LMS_RGB64 = np.linalg.inv(RGB_LMS.astype(np.float64))
+
+
+def rgb_to_oklab_precise(rgb):
+    """Use one precise path for colour controls, including negative wide RGB.
+
+    Premature float32 Lab rounding otherwise shifts high-chroma boundary roots.
+    Frame storage and final encoded output remain float32.
+    """
+    return np.cbrt(rgb.astype(np.float64) @ RGB_LMS.astype(np.float64).T) @ LMS_LAB.astype(np.float64).T
+
+
+def _gamut_rgb64(lab, space):
+    lms = lab @ LAB_LMS64.T
+    return colour.from_working((lms * lms * lms) @ LMS_RGB64.T, space)
 
 
 def rgb_to_oklab(rgb):
@@ -41,24 +60,30 @@ def channel_bounds(rgb):
 def gamut_map(lab, space="srgb"):
     """Reduce only out-of-gamut chroma at fixed OKLab lightness and hue."""
     lab[..., 0] = np.clip(lab[..., 0], 0, 1)
-    rgb = colour.from_working(oklab_to_rgb(lab),space)
+    lab64 = lab.astype(np.float64, copy=False)
+    rgb = _gamut_rgb64(lab64, space)
+    neutral = _gamut_rgb64(np.stack([lab64[...,0],np.zeros_like(lab64[...,0]),np.zeros_like(lab64[...,0])],axis=-1),space)
+    # A continuous inner boundary, rather than an abrupt extra contraction only
+    # after crossing -1e-6. Adapt it near black/white so neutral values stay valid.
+    guard=np.maximum(0,np.minimum(1e-5,np.minimum(neutral.min(axis=-1)*.25,(1-neutral.max(axis=-1))*.25)))
     low, high = channel_bounds(rgb)
-    mask = (low < -1e-6) | (high > 1 + 1e-6)
+    mask = (low < guard) | (high > 1 - guard)
     if mask.any():
-        selected = lab[mask].copy()
-        lo = np.zeros(selected.shape[0], np.float32)
+        selected = lab64[mask].copy()
+        lo = np.zeros(selected.shape[0], np.float64)
         hi = np.ones_like(lo)
         original = selected[:, 1:].copy()
-        for _ in range(10):
+        margin=guard[mask]
+        for _ in range(24):
             mid = (lo + hi) * .5
             selected[:, 1:] = original * mid[:, None]
-            test = colour.from_working(oklab_to_rgb(selected),space)
+            test = _gamut_rgb64(selected, space)
             lower, upper = channel_bounds(test)
-            good = (lower >= 0) & (upper <= 1)
+            good = (lower >= margin) & (upper <= 1-margin)
             lo = np.where(good, mid, lo); hi = np.where(good, hi, mid)
         selected[:, 1:] = original * lo[:, None]
-        rgb[mask] = colour.from_working(oklab_to_rgb(selected),space)
-    return np.clip(rgb, 0, 1)
+        rgb[mask] = _gamut_rgb64(selected, space)
+    return np.clip(rgb, 0, 1).astype(np.float32)
 
 
 def tone_luminance(y, p):
@@ -111,7 +136,7 @@ def display_chunk(arr, p):
     target=colour.from_working(x,space)
     needs_gamut = bool(target.min() < 0 or target.max() > 1)
     if p['saturation'] or p['vibrance'] or needs_gamut:
-        lab = rgb_to_oklab(x)
+        lab = rgb_to_oklab_precise(x)
         if p['saturation'] or p['vibrance']:
             chroma = np.sqrt(lab[..., 1] ** 2 + lab[..., 2] ** 2)
             hue = np.arctan2(lab[..., 2], lab[..., 1])
