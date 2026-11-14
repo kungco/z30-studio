@@ -2,7 +2,7 @@
 
 面向摄影新手的中文 AI 后期助手，优先服务尼康 Z30 使用者：描述想要的效果，检查调色建议，调整强度并安全导出。支持 NEF 显影及 Codex CLI / 兼容接口接入。独立项目，与尼康官方无关联。
 
-2026-11-14 起主线收窄为“单张建议与试片 → 小批量风格复用 → 可靠交付”，详见 [产品定位与验收计划](PRODUCT_DIRECTION.md)。当前 Rust + Slint 原生开发版说明在 [native/README.md](native/README.md)；下文功能与网页便携版用法属于历史 Python 2.0，不能作为原生版已完成功能清单。新主流程尚需按计划实现和验收。
+2026-11-14 起主线收窄为“单张建议与试片 → 小批量风格复用 → 可靠交付”，详见 [产品定位与验收计划](PRODUCT_DIRECTION.md)。当前 Rust + Slint 原生开发版说明在 [native/README.md](native/README.md)；下文功能与网页便携版用法属于历史 Python 2.0，不能作为原生版已完成功能清单。A 的单张建议/本地试片已实现并通过限定的离线流程与实际点击验证，见 [A 阶段报告](docs/reports/assistant-stage-a.md)；真实模型效果、小批量和正式交付仍待。
 
 交给其他开发者或 AI 接手：先读 [项目交接说明](AI_HANDOFF.md)，可直接使用 [接手提示词](HANDOFF_PROMPT.txt)。
 

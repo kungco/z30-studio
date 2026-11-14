@@ -32,6 +32,7 @@ mod repair_workflow;
 mod warp_workflow;
 mod blemish_workflow;
 mod contour_workflow;
+mod ai_trial;
 
 enum AiBackend {
     Codex,
@@ -94,7 +95,7 @@ struct AiOutcome {
 }
 struct AiSuggestion {
     request: EditRequest,
-    source: ExportSource,
+    source: Arc<ExportSource>,
     revision: u64,
     product: AiProduct,
 }
@@ -217,14 +218,20 @@ fn flush_edits(state: &mut State, ui: &AppWindow) {
     sync_recipe(state, ui);
 }
 fn invalidate_ai(state: &mut State, ui: &AppWindow) {
+    let had_ai = state.ai_suggestion.is_some() || !ui.get_ai_status().is_empty();
     state.edit_revision = state.edit_revision.wrapping_add(1);
     state.ai_suggestion = None;
     ui.set_ai_suggestion_ready(false);
+    ui.set_ai_trial_ready(false);
+    ui.set_ai_trial_busy(false);
+    ui.set_ai_send_visible(false);
     ui.set_ai_report("".into());
     ui.set_ai_report_visible(false);
     if let Some(control) = &state.ai_control {
         control.store(true, Ordering::Release);
         ui.set_ai_status("照片或参数已变化；正在取消旧 AI 任务…".into());
+    } else if had_ai {
+        ui.set_ai_status("编辑已变化；AI 试片已收起，可重新生成建议。".into());
     }
     if let Some(control)=&state.face_control {control.store(true,Ordering::Release);ui.set_face_status("照片或参数已变化，正在取消旧定位任务…".into());}
     if state.face_candidates.as_ref().is_some_and(|set|state.edits.current().is_none_or(|request|request.path!=set.path)) {state.face_candidates=None;}
@@ -411,13 +418,29 @@ fn evaluate_ai(
             cancel,
         )?,
     };
-    let bounded = options.constrain(request.recipe.parameters, advice.adjustments.parameters())?;
     let reference = ai::metrics(current.as_bytes(), current.width(), current.height())?;
+    render_ai_advice(request, source, advice, options, reference, compute, engine, ||cancel.load(Ordering::Acquire))
+}
+
+// Shared local rendering/quality protection; no model adapter is reachable here.
+fn render_ai_advice(
+    request: &EditRequest, source: &ExportSource, advice: Advice, options: Options,
+    reference: ai::Metrics, compute: &Mutex<()>, engine: &Mutex<PreviewEngine>,
+    mut cancelled: impl FnMut() -> bool,
+) -> z30_core::Result<AiProduct> {
+    let bounded = options.constrain(request.recipe.parameters, advice.adjustments.parameters())?;
     let mut last_reasons = Vec::new();
-    let _guard = compute.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = loop {
+        if cancelled() {return Err(z30_core::Error::Policy("AI 试片已取消".into()));}
+        match compute.try_lock() {
+            Ok(g)=>break g,
+            Err(std::sync::TryLockError::Poisoned(e))=>break e.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock)=>std::thread::sleep(Duration::from_millis(5)),
+        }
+    };
     let mut engine = engine.lock().unwrap_or_else(|e| e.into_inner());
     for fraction in [1.0, 0.75, 0.5, 0.25, 0.0] {
-        if cancel.load(Ordering::Acquire) {
+        if cancelled() {
             return Err(z30_core::Error::Policy(
                 "AI 调色已取消；没有应用参数".into(),
             ));
@@ -428,7 +451,7 @@ fn evaluate_ai(
             parameters,
             ..request.recipe.clone()
         };
-        let preview = engine.preview_with_cancel(&request.path, recipe,||cancel.load(Ordering::Acquire))?;
+        let preview = engine.preview_with_cancel(&request.path, recipe,&mut cancelled)?;
         let rgb: Vec<u8> = preview
             .rendered
             .pixels
@@ -486,7 +509,7 @@ fn display_ai_preview(
 
 fn ai_report(product: &AiProduct) -> String {
     format!(
-        "{}\n\n{}\n\n画面观察\n{}\n\n建议局限\n{}\n\n{} · 实际强度 {}%",
+        "模型建议：{}\n\n{}\n\n模型观察（供参考）\n{}\n\n模型说明的局限\n{}\n\n本机检测：{} · 实际强度 {}%",
         product.advice.title,
         product.advice.summary,
         product
@@ -508,6 +531,8 @@ fn apply_ai_product(
     rows: &Rc<VecModel<PhotoView>>,
     product: AiProduct,
 ) {
+    ui.set_ai_trial_ready(false);
+    ui.set_compare(false);
     match state.edits.apply_ai(product.parameters) {
         Ok(changed) => {
             if changed {
@@ -690,6 +715,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let warps=warp_workflow::bind(&ui,Rc::clone(&state),Rc::clone(&worker));
     let blemishes=blemish_workflow::bind(&ui,Rc::clone(&state),Rc::clone(&worker),Arc::clone(&engine),Arc::clone(&compute));
     let contours=contour_workflow::bind(&ui,Rc::clone(&state),Rc::clone(&worker),Arc::clone(&engine),Arc::clone(&compute));
+    let ai_trial=ai_trial::bind(&ui,Rc::clone(&state),Arc::clone(&engine),Arc::clone(&compute));
     let (picked, files) = mpsc::channel::<Vec<PathBuf>>();
     {
         let weak = ui.as_weak();
@@ -875,18 +901,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         ui.on_auto_grade(move || {
             let Some(ui)=weak.upgrade() else {return};
             if !ui.get_has_preview() || ui.get_busy() || ui.get_ai_busy() || ui.get_repair_busy() {return}
-            let user_goal=ui.get_ai_goal();
-            if user_goal.chars().count()>350 {
-                ui.set_ai_status("补充目标最多 350 字；没有发送照片".into());return;
-            }
-            let style=match ui.get_ai_style() {
-                1=>"柔和人像，保持自然肤色和面部层次，不增加生硬对比或过度饱和。",
-                2=>"温暖但克制的胶片氛围，柔和高光，保留暗部层次，不声称复刻特定胶片。",
-                3=>"产品与静物，保持物体颜色可信、背景干净，避免强制把暖光白色变成纯白。",
-                4=>"保留夜景与低调氛围，控制灯光溢出，不把夜景整体变成白天，不承诺降噪。",
-                _=>"自然通透，保持现场氛围与真实色彩。",
-            };
-            let goal=format!("{} 风格偏好：{} 用户补充风格数据：{}",ai::AUTO_GOAL,style,user_goal);
+            ui.set_ai_send_visible(false);
+            let goal=match ai_trial::goal(&ui) {Ok(v)=>v,Err(e)=>{ui.set_ai_status(e.to_string().into());return;}};
             let options=Options{strength:ui.get_ai_strength(),..Options::default()};
             if let Err(e)=options.validate() {ui.set_ai_status(e.to_string().into());return}
             let backend=match ui.get_ai_provider() {
@@ -919,6 +935,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let auto_apply=ui.get_ai_mode()==0;
             state.ai_suggestion=None;
             ui.set_ai_suggestion_ready(false);
+            ui.set_ai_trial_ready(false);
+            ui.set_ai_trial_busy(false);
             ui.set_ai_report("".into());
             ui.set_ai_report_visible(false);
             let cancel=Arc::new(AtomicBool::new(false));
@@ -959,6 +977,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             state.ai_suggestion = None;
             ui.set_ai_suggestion_ready(false);
+            ui.set_ai_trial_ready(false);
+            ui.set_ai_trial_busy(false);
             ui.set_ai_status("".into());
             ui.set_ai_report("".into());
             ui.set_ai_report_visible(false);
@@ -970,11 +990,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let rows = Rc::clone(&rows);
         ui.on_apply_ai_suggestion(move || {
             let Some(ui) = weak.upgrade() else { return };
+            if ui.get_ai_trial_busy() {return;}
             let mut state = state.borrow_mut();
             let Some(suggestion) = state.ai_suggestion.take() else {
                 return;
             };
             ui.set_ai_suggestion_ready(false);
+            ui.set_ai_trial_ready(false);
             if state.edit_revision != suggestion.revision
                 || state.edits.current().as_ref() != Some(&suggestion.request)
             {
@@ -1457,7 +1479,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         Ok(product) => {
                             ui.set_ai_report(ai_report(&product).into());
                             ui.set_ai_status(format!("AI 建议已就绪 · 强度 {}% · {} · {}。点击应用建议或关闭。",product.used_strength,product.advice.title,product.quality_note).into());
-                            state.ai_suggestion=Some(AiSuggestion{request:outcome.request,source:outcome.source,revision:outcome.revision,product});
+                            ai_trial::show(&ui,&product,&outcome.request.recipe.parameters);
+                            ui.set_ai_trial_strength(ui.get_ai_strength());
+                            state.ai_suggestion=Some(AiSuggestion{request:outcome.request,source:Arc::new(outcome.source),revision:outcome.revision,product});
                             ui.set_ai_suggestion_ready(true);
                         }
                         Err(e) => ui.set_ai_status(format!("AI 调色失败：{e}；可手动重试").into()),
@@ -1543,6 +1567,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 // face and AI state; never publish "preview ready" with stale gates.
                 blemishes.poll(&ui);
                 contours.poll(&ui);
+                ai_trial.poll(&ui);
                 match qa.command() {
                     Ok(Some((id, command))) => {
                         match command {
@@ -1616,6 +1641,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                 ui.invoke_auto_grade();
                             }
                             qa::Command::AiCancel => ui.invoke_cancel_ai(),
+                            qa::Command::AiTrial {strength} => ui.invoke_trial_ai(strength),
+                            qa::Command::AiReview => ui.invoke_review_ai(),
                             qa::Command::AiApply => ui.invoke_apply_ai_suggestion(),
                             qa::Command::AiDismiss => ui.invoke_dismiss_ai_suggestion(),
                             qa::Command::Compare { enabled } => { if ui.get_has_preview() { ui.set_compare(enabled); } }
@@ -1637,6 +1664,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             "draft_status":ui.get_draft_status().as_str(),"export_busy":ui.get_export_busy(),
                             "export_status":ui.get_export_status().as_str(),"exit_warning":ui.get_exit_warning(),
                             "ai_busy":ui.get_ai_busy(),"ai_status":ui.get_ai_status().as_str(),
+                            "ai_trial_ready":ui.get_ai_trial_ready(),"ai_trial_busy":ui.get_ai_trial_busy(),
+                            "ai_trial_strength":ui.get_ai_trial_strength(),"ai_trial_fingerprint":ui.get_ai_trial_fingerprint().as_str(),
+                            "ai_send_visible":ui.get_ai_send_visible(),"ai_mode":ui.get_ai_mode(),
                             "ai_suggestion_ready":ui.get_ai_suggestion_ready()});
                         let response = if let Some(object) = response.as_object() {
                             let mut object = object.clone();

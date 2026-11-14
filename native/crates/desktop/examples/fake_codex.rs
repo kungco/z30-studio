@@ -36,6 +36,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let mut prompt = String::new();
     io::stdin().read_to_string(&mut prompt)?;
+    if let Some(counter)=env::var_os("Z30_FAKE_COUNTER") {
+        use std::io::Write;
+        let mut file=fs::OpenOptions::new().create(true).append(true).open(counter)?;
+        writeln!(file,"analysis")?;
+    }
     if !prompt.contains("当前九参数") || !prompt.contains("当前白平衡模式") {
         return Err("prompt omitted contract".into());
     }

@@ -108,6 +108,8 @@ pub enum Command {
         key: Option<String>,
     },
     AiCancel,
+    AiTrial { strength: f32 },
+    AiReview,
     AiApply,
     AiDismiss,
     Compare {

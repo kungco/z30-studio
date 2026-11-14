@@ -134,13 +134,23 @@ export component AppWindow inherits Window {
     in property <string> ai-report: "";
     in-out property <bool> ai-report-visible: false;
     in property <bool> ai-suggestion-ready: false;
+    in property <bool> ai-trial-ready: false;
+    in property <bool> ai-trial-busy: false;
+    in property <image> ai-trial-preview;
+    in property <string> ai-trial-fingerprint;
+    in property <string> ai-trial-summary;
+    in-out property <float> ai-trial-strength: 100;
+    in-out property <bool> ai-send-visible: false;
+    in property <image> ai-send-neutral;
+    in property <image> ai-send-current;
+    in property <string> ai-send-text;
     in-out property <bool> ai-settings-visible: false;
     in-out property <int> ai-style: 0;
     in-out property <int> ai-provider: 0;
     in-out property <string> ai-api-base: "";
     in-out property <string> ai-model: "";
     in-out property <string> ai-api-key: "";
-    in-out property <int> ai-mode: 0;
+    in-out property <int> ai-mode: 1;
     in-out property <float> ai-strength: 100;
     in-out property <string> ai-goal: "";
     in property <string> photo-name: "欢迎来到你的暗房";
@@ -219,6 +229,8 @@ export component AppWindow inherits Window {
     callback auto-grade();
     callback cancel-ai();
     callback apply-ai-suggestion();
+    callback trial-ai(float);
+    callback review-ai();
     callback dismiss-ai-suggestion();
     callback confirm-exit();
     callback find-blemishes();
@@ -250,17 +262,23 @@ export component AppWindow inherits Window {
                 VerticalLayout {
                     alignment: center; spacing: 2px;
                     Text { text: "Z30  STUDIO"; color: #f0d39b; font-size: 23px; font-weight: 700; }
-                    Text { text: "你的摄影暗房"; color: #969faa; font-size: 10px; }
+                    Text { text: "中文 AI 后期助手"; color: #969faa; font-size: 10px; }
                 }
                 Rectangle { horizontal-stretch: 1; background: transparent; }
                 ToolButton { label: "＋ 导入照片"; min-width: 108px; active: root.can-import; triggered => { root.import-files(); } }
-                ToolButton { label: "一键 AI 调色"; min-width: 105px; active: root.ai-ready && root.has-preview && !root.busy && !root.ai-busy && !root.batch-running && !root.repair-busy; triggered => { root.auto-grade(); } }
+                ToolButton { label: "生成调色建议"; min-width: 105px; active: root.ai-ready && root.has-preview && !root.busy && !root.ai-busy && !root.batch-running && !root.repair-busy && !root.ai-suggestion-ready; triggered => { root.review-ai(); } }
                 ToolButton { label: "AI 设置"; min-width: 68px; triggered => { root.ai-settings-visible = true; } }
                 ComboBox { width: 145px; height: 34px; model: ["JPEG · 95", "PNG · 8 位", "TIFF · 16 位"]; current-index <=> root.export-format; enabled: !root.export-busy; }
-                ToolButton { label: "导出照片"; primary: true; active: root.engine-ready && root.has-preview && !root.busy && !root.export-busy && !root.batch-running && !root.face-busy && !root.repair-busy; triggered => { root.export-photo(); } }
+                ToolButton { label: root.ai-suggestion-ready ? "导出已应用" : "导出照片"; primary: true; active: root.engine-ready && root.has-preview && !root.busy && !root.export-busy && !root.batch-running && !root.face-busy && !root.repair-busy; triggered => { root.export-photo(); } }
                 ToolButton { label: "批量导出"; min-width: 84px; active: root.photos.length > 0 && !root.batch-protected && !root.batch-running && !root.export-busy && !root.ai-busy && !root.face-busy && !root.repair-busy; triggered => { root.batch-settings-visible = true; } }
                 ToolButton { label: "关于"; min-width: 54px; triggered => { root.about-visible = true; } }
             }
+        }
+        HorizontalLayout {
+            height: 48px; padding-left: 18px; padding-right: 18px; spacing: 12px;
+            Text {text:"想要什么效果";color:#e4cfab;vertical-alignment:center;}
+            LineEdit {text<=>root.ai-goal;placeholder-text:"例如：保留傍晚暖光，提亮人物，肤色自然";enabled:!root.ai-busy && !root.ai-suggestion-ready;horizontal-stretch:1;}
+            ComboBox {width:145px;model:["自然通透","柔和人像","温暖胶片","产品静物","夜景氛围"];current-index<=>root.ai-style;enabled:!root.ai-busy && !root.ai-suggestion-ready;}
         }
         HorizontalLayout {
             spacing: 1px;
@@ -322,7 +340,7 @@ export component AppWindow inherits Window {
                         property <length> image-left: (self.width - self.fit-width)/2+self.applied-pan-x;
                         property <length> image-top: (self.height - self.fit-height)/2+self.applied-pan-y;
                         if root.has-preview: Image {
-                            source: root.compare ? root.original-preview : root.preview; image-fit: contain;
+                            source: root.compare ? (root.ai-trial-ready ? root.preview : root.original-preview) : (root.ai-trial-ready ? root.ai-trial-preview : root.preview); image-fit: contain;
                             width: picture.fit-width; height: picture.fit-height;
                             x: picture.image-left; y: picture.image-top;
                         }
@@ -391,7 +409,7 @@ export component AppWindow inherits Window {
                         canvas-keys:=FocusScope {
                             width:0px;height:0px;
                             key-pressed(event)=>{
-                                if root.ai-settings-visible || root.ai-report-visible || root.about-visible || root.batch-settings-visible || root.batch-report-visible || root.exit-warning {return reject;}
+                                if root.ai-settings-visible || root.ai-send-visible || root.ai-report-visible || root.about-visible || root.batch-settings-visible || root.batch-report-visible || root.exit-warning {return reject;}
                                 if event.text==Key.Escape {root.warp-tool(false);root.repair-tool(0);return accept;}
                                 if event.text==Key.Delete && root.repair-mode>0 {root.remove-repair();return accept;}
                                 if event.modifiers.control && (event.text=="z" || event.text=="Z") {if event.modifiers.shift {root.redo-edit();}else{root.undo-edit();}return accept;}
@@ -406,7 +424,7 @@ export component AppWindow inherits Window {
                             border-radius: self.width/2;border-width:1px;border-color:#e7c889;background:#16e7c889;
                         }
                         canvas-pointer:=TouchArea {
-                            enabled:root.has-preview && !root.repair-busy && !root.ai-settings-visible && !root.ai-report-visible && !root.about-visible && !root.batch-settings-visible && !root.batch-report-visible && !root.exit-warning;
+                            enabled:root.has-preview && !root.repair-busy && !root.ai-settings-visible && !root.ai-send-visible && !root.ai-report-visible && !root.about-visible && !root.batch-settings-visible && !root.batch-report-visible && !root.exit-warning;
                             property <bool> dragged:false;
                             property <bool> shape-press:false;
                             property <float> start-pan-x;
@@ -464,6 +482,15 @@ export component AppWindow inherits Window {
                     ScrollView {
                         VerticalLayout {
                             spacing: 12px; padding-right: 6px;
+                            if root.ai-suggestion-ready: VerticalLayout {
+                                spacing:8px;
+                                Text {text:"AI 试片 · 尚未应用";color:#eed49c;font-size:14px;}
+                                Text {text:root.ai-trial-summary;color:#c3d0da;font-size:11px;wrap:word-wrap;min-height:180px;vertical-stretch:0;}
+                                Adjustment {label:"试片强度 (%)";minimum:0;maximum:100;value<=>root.ai-trial-strength;active:!root.ai-busy;adjusted(v)=>{root.trial-ai(v);}}
+                                Text {text:root.ai-trial-busy?"正在本机更新试片…":"拖动强度不再请求模型；确认后保存，导出只使用已应用参数。";color:#a9b9c8;font-size:11px;wrap:word-wrap;min-height:32px;vertical-stretch:0;}
+                                ToolButton {label:"确认应用试片";primary:true;active:!root.ai-trial-busy && root.ai-trial-ready;triggered=>{root.apply-ai-suggestion();}}
+                                ToolButton {label:"丢弃试片";triggered=>{root.dismiss-ai-suggestion();}}
+                            }
                             VerticalLayout {
                                 spacing:10px;
                                 Text {text:"局部形变 · "+root.warp-count+" / 4";color:#e7d0a4;font-size:13px;}
@@ -564,7 +591,7 @@ export component AppWindow inherits Window {
             Text { text: root.ai-status; color: #e5c58e; font-size: 11px; overflow: elide; vertical-alignment: center; horizontal-stretch: 1; }
             ToolButton { label: "查看分析"; width: 76px; active: root.ai-report != "" && !root.ai-busy; triggered => { root.ai-report-visible = true; } }
             ToolButton { label: "取消 AI"; width: 76px; active: root.ai-busy; triggered => { root.cancel-ai(); } }
-            ToolButton { label: "应用建议"; width: 88px; primary: true; active: root.ai-suggestion-ready && !root.ai-busy; triggered => { root.apply-ai-suggestion(); } }
+            ToolButton { label: "应用建议"; width: 88px; primary: true; active: root.ai-suggestion-ready && !root.ai-busy && !root.ai-trial-busy; triggered => { root.apply-ai-suggestion(); } }
             ToolButton { label: "关闭"; width: 56px; active: !root.ai-busy; triggered => { root.dismiss-ai-suggestion(); } }
         }
         if root.export-status != "": HorizontalLayout {
@@ -637,6 +664,33 @@ export component AppWindow inherits Window {
                     ToolButton { label: "清理已结束记录"; min-width: 122px; active: !root.batch-protected; triggered => { root.batch-clear(); } }
                     Rectangle { horizontal-stretch: 1; background: transparent; }
                     ToolButton { label: "返回暗房"; triggered => { root.batch-report-visible = false; } }
+                }
+            }
+        }
+    }
+    if root.ai-send-visible: Rectangle {
+        background:#000000bb;
+        TouchArea {}
+        Rectangle {
+            width:min(parent.width - 40px,720px);height:min(parent.height - 40px,640px);
+            x:(parent.width - self.width)/2;y:(parent.height - self.height)/2;
+            background:#242b34;border-color:#536070;border-width:1px;border-radius:10px;
+            VerticalLayout {
+                padding:20px;spacing:12px;
+                Text {text:"检查发送内容";color:#ecd39e;font-size:19px;}
+                HorizontalLayout {
+                    height:145px;spacing:12px;
+                    VerticalLayout {Text {text:"中性预览";color:#b7c4d2;} Image {source:root.ai-send-neutral;image-fit:contain;}}
+                    VerticalLayout {Text {text:"当前编辑预览";color:#b7c4d2;} Image {source:root.ai-send-current;image-fit:contain;}}
+                }
+                ScrollView {
+                    viewport-width:self.width;
+                    VerticalLayout {Text {text:root.ai-send-text;color:#d4dce6;font-size:12px;wrap:word-wrap;vertical-stretch:0;}}
+                }
+                HorizontalLayout {
+                    ToolButton {label:"取消";triggered=>{root.ai-send-visible=false;}}
+                    Rectangle {horizontal-stretch:1;background:transparent;}
+                    ToolButton {label:"发送预览并分析";min-width:140px;primary:true;triggered=>{root.ai-send-visible=false;root.auto-grade();}}
                 }
             }
         }
