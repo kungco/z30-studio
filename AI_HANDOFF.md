@@ -1,3 +1,8 @@
+2026-11-14 当前任务：用户已确认收窄为“中文 AI 后期助手”。先读 PRODUCT_DIRECTION.md，再读 PROJECT_PROGRESS.md 和 DEVELOPMENT_PLAN.md。下一项为 A：中文目标入口、生成建议后的本地强度试片、确认应用；之后 B 小批量风格复用与 C 可靠交付。复用已有 Rust/Slint 原生底座和 Codex CLI 登录，不再默认推进完整暗房迁移、人像扩展或 GPU。
+
+旧功能和项目兼容性保留；不覆盖原片、不新增必需付费 API、不自动调用/重试消费、不自动合并/发布/关机。旧 5F3 最终实际点击验收被 Esc 中断，不能标为已完成。本轮定位调整只改计划，未改变二进制；本机旧 .development 检查点可能缺失，以实际存在的证据为准。
+
+以下为历史交接记录，旧“下一步”和“全部迁移”描述不再决定当前主线：
 2026-10-25 最新原生断点：2A RAW、2B 暖色稳定性、2C 浮点 ICC 输入通过限定验收。查看器已接 ICC/16 位 PNG，52 合成案例通过；矩阵/TRC 缓存已通过精度/性能验证，通用复杂 LUT 尚慢。2D 完整 NEF 最终文件和 JPEG 编码优化已通过，2E 配方 v2/迁移备份/50 步撤销和缓存核心已通过。sRGB 插值/35 Rust/四组 RAW 和最终文件复测通过，全尺寸暖色约 5.6–5.8 秒。下一步用现成接口连接编辑/导出 GUI，验收后再进 AI。阶段 2 整体未完，先读 PROJECT_PROGRESS.md / docs/reports/native-stage2c.md / 检查点；不跳 AI、不自动关机。
 
 > 新任务：当前开发分支为 `feat/native-slint`，正在进行 Rust + Slint 原生迁移。请优先阅读 PROJECT_PROGRESS.md 和 DEVELOPMENT_PLAN.md。下文 2.0“已完成”仅指历史 Python 工作台，不代表原生迁移完成。严禁据此直接宣布新总任务完成或关机。
